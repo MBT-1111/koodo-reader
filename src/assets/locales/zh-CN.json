@@ -1265,8 +1265,20 @@
   "custom.sync.error.CUSTOM_NO_BACKUP": "当前书库与连接尚无同步前备份。",
   "custom.sync.error.CUSTOM_DUPLICATE_BOOK": "本机多条书籍记录的文件内容完全相同。请保留一份后再同步，避免混合各副本的统计。",
   "custom.sync.kind.tag": "笔记标签",
-  "custom.tts.sharedStyle": "使用相同 Azure 音色的角色共用该音色的情绪设置。",
+  "custom.tts.sharedStyle": "使用相同 Azure 音色的角色共用该音色的情绪和强度设置。",
   "custom.sync.statsPolicy": "已有历史时长取最大值作为共同基线，接入后各设备新增时长再相加。清空本机统计不会复位已同步的总数。",
   "custom.sync.present": "保留",
-  "custom.sync.recentRank": "最近阅读顺序 {{count}}"
+  "custom.sync.recentRank": "最近阅读顺序 {{count}}",
+  "custom.tts.degree": "情绪强度",
+  "custom.tts.degreeValue": "{{value}} 倍",
+  "custom.tts.degreeHelp": "先选择非中性风格；部分语音可能忽略强度参数。",
+  "custom.ai.CUSTOM_AI_NOT_CONFIGURED": "请先在设置 → AI 服务中配置对应的自有模型。",
+  "custom.ai.CUSTOM_AI_REQUEST_FAILED": "自有 AI 请求失败，请检查模型配置和网络连接。",
+  "custom.ai.CUSTOM_AI_INVALID_RESPONSE": "模型返回格式不符合要求，请重试或更换模型。",
+  "custom.ai.CUSTOM_AI_TEXT_TOO_LONG": "当前文本超过单次处理上限，请调整分页后重试。",
+  "custom.ai.rolesHelp": "角色分析使用你配置的 AI 辅助模型，朗读使用所选系统或自有语音。当前阅读文本会发送到该模型。",
+  "custom.ai.readingHelp": "全文翻译使用翻译模型，生词释义使用词典模型。请在 AI 服务中配置兼容 OpenAI 的接口。",
+  "custom.sync.unchanged": "没有需要更新的数据",
+  "custom.sync.identityHelp": "书籍按完整文件的 SHA-256 匹配。文件名和路径可以不同，文件内容必须一致；修改内容或重新打包会改变书籍标识。",
+  "custom.sync.snapshotHelp": "云端保留每台设备最近 3 代快照，用于并发合并与恢复。没有变化的同步不上传新文件。"
 }

@@ -17,6 +17,8 @@ import DatabaseService from "../../utils/storage/databaseService";
 import Note from "../../models/Note";
 import ConfigUtil from "../../utils/file/configUtil";
 import { useAppStore } from "../../store/useAppStore";
+import { personalMode } from "../../custom/personal";
+import { hasReadingAI, readingAIIdentity, readingAIErrorKey } from "../../custom/ai/reader";
 
 export interface PageWidgetState {
   isSingle: boolean;
@@ -140,7 +142,7 @@ const PageWidget = () => {
           currentBook.key
         ) ||
         ConfigService.getReaderConfig("fullTranslationMode") === "no" ||
-        !isAuthed
+        (personalMode ? !hasReadingAI("translation") : !isAuthed)
       ) {
         return;
       }
@@ -148,6 +150,7 @@ const PageWidget = () => {
       let batchTransTexts: string[] = await rendition.getBatchTransTexts();
       if (batchTransTexts && batchTransTexts.length > 0) {
         let targetLang = getFullTranslationTarget();
+        const cacheLanguage = personalMode ? JSON.stringify([targetLang, readingAIIdentity("translation")]) : targetLang;
         let chapterDocIndex = "";
         if (typeof rendition.getPosition === "function") {
           chapterDocIndex = rendition.getPosition()?.chapterDocIndex || "";
@@ -163,7 +166,7 @@ const PageWidget = () => {
         let pendingIndexes: number[] = [];
         let pendingTexts: string[] = [];
         batchTransTexts.forEach((text, index) => {
-          let cachedText = cache[targetLang] && cache[targetLang][text];
+          let cachedText = cache[cacheLanguage] && cache[cacheLanguage][text];
           if (cachedText !== undefined) {
             translatedTexts[index] = cachedText;
           } else {
@@ -179,21 +182,22 @@ const PageWidget = () => {
               if (isRateLimitedResult(res.data.texts[i])) {
                 return;
               }
-              if (!cache[targetLang]) {
-                cache[targetLang] = {};
+              if (!cache[cacheLanguage]) {
+                cache[cacheLanguage] = {};
               }
-              cache[targetLang][batchTransTexts[index]] = res.data.texts[i];
+              cache[cacheLanguage][batchTransTexts[index]] = res.data.texts[i];
             });
             saveTransCache(chapterDocIndex, cache);
           }
         }
         if (translatedTexts.every((text) => text !== undefined)) {
+          if (personalMode && useAppStore.getState().reader.htmlBook?.rendition !== rendition) return;
           rendition.handleBatchTransResult(batchTransTexts, translatedTexts);
         }
       }
     });
     batchTranslationLock.current = next.catch(() => {});
-    return next;
+    return personalMode ? next.catch((error: unknown) => { toast.error(t(readingAIErrorKey(error)), { id: "custom-ai-reading" }); }) : next;
   };
 
   const handleWordDefinition = async (rendition) => {
@@ -203,7 +207,7 @@ const PageWidget = () => {
         !ConfigService.getAllListConfig("wordDefinitionBooks").includes(
           currentBook.key
         ) ||
-        !isAuthed
+        (personalMode ? !hasReadingAI("dictionary") : !isAuthed)
       ) {
         return;
       }
@@ -228,6 +232,7 @@ const PageWidget = () => {
         let res = await getWordDefinitions(wordTexts, currentLevel, lang);
 
         if (res && res.data && res.data.results) {
+          if (personalMode && useAppStore.getState().reader.htmlBook?.rendition !== rendition) return;
           rendition.handleWordDefinitionResult(
             res.data.results,
             lang,
@@ -237,7 +242,7 @@ const PageWidget = () => {
       }
     });
     batchTranslationLock.current = next.catch(() => {});
-    return next;
+    return personalMode ? next.catch((error: unknown) => { toast.error(t(readingAIErrorKey(error)), { id: "custom-ai-reading" }); }) : next;
   };
 
   const handlePageNum = async (rendition) => {

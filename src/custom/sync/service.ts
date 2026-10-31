@@ -5,7 +5,8 @@ import Book from "../../models/Book";
 import { getStorageLocation } from "../../utils/common";
 import { useAppStore } from "../../store/useAppStore";
 import { changes, configKeys, plan, snapshot, tables } from "./data";
-import { acknowledge, conflicts, copy, envelope, freshCheckpoint, materialize, reconcile, stable, validateEnvelope } from "./protocol";
+import { acknowledge, conflicts, copy, envelope, freshCheckpoint, materialize, mergeDocuments, reconcile, stable, validateEnvelope } from "./protocol";
+import { personalMode } from "../personal";
 import type { Change, Checkpoint, Conflict, RawData, Row, SyncStatus, Table } from "./types";
 
 export const customSyncIPC = <T>(action: string, data: Record<string, unknown> = {}): Promise<T> => window.electronAPI.invoke<T>("custom-sync", { ...data, action });
@@ -67,7 +68,7 @@ async function apply(expected: RawData, next: RawData, token: string): Promise<v
 }
 
 let running = false;
-export interface SyncResult { conflicts: Conflict[]; pendingBooks: number; skippedBooks: number }
+export interface SyncResult { conflicts: Conflict[]; pendingBooks: number; skippedBooks: number; unchanged: boolean }
 function describeConflicts(state: Checkpoint): Conflict[] {
   const values = materialize(state.entries);
   return conflicts(state.entries).map((conflict) => {
@@ -80,7 +81,7 @@ function describeConflicts(state: Checkpoint): Conflict[] {
 }
 export async function runCustomSync(resolutions: Record<string, string> = {}): Promise<SyncResult> {
   if (running) throw new Error("CUSTOM_SYNC_BUSY");
-  if (ConfigService.getItem("defaultSyncOption") || ConfigService.getReaderConfig("isEnableKoodoSync") === "yes") throw new Error("CUSTOM_OTHER_SYNC_ENABLED");
+  if (!personalMode && (ConfigService.getItem("defaultSyncOption") || ConfigService.getReaderConfig("isEnableKoodoSync") === "yes")) throw new Error("CUSTOM_OTHER_SYNC_ENABLED");
   running = true;
   let token: string | undefined;
   try {
@@ -94,9 +95,10 @@ export async function runCustomSync(resolutions: Record<string, string> = {}): P
     const local = snapshot(raw, state.mappings);
     const merged = reconcile(state, local, session.documents, resolutions);
     const next = plan(raw, merged);
+    const publish = stable(merged.entries) !== stable(mergeDocuments(session.documents));
     // No upload or local write after a stale capture.
     if (stable(await collect()) !== stable(raw)) throw new Error("CUSTOM_LOCAL_CHANGED");
-    await customSyncIPC("stage", { token, document: envelope(merged), checkpoint: merged, backup: raw });
+    await customSyncIPC("stage", { token, document: envelope(merged), checkpoint: merged, backup: raw, publish });
     // A large upload may take time; recheck before applying any incoming data.
     if (stable(await collect()) !== stable(raw)) throw new Error("CUSTOM_LOCAL_CHANGED");
     await apply(raw, next, token);
@@ -107,6 +109,7 @@ export async function runCustomSync(resolutions: Record<string, string> = {}): P
     await Promise.all([store.handleFetchBooks(), store.handleFetchNotes(), store.handleFetchBookmarks()]);
     const known = new Set(Object.values(merged.mappings.books));
     return {
+      unchanged: !publish && stable(raw) === stable(next),
       conflicts: describeConflicts(merged),
       pendingBooks: Object.entries(merged.entries).filter(([id, revisions]) => revisions[0].kind === "book" && !known.has(id.slice(5))).length,
       skippedBooks: raw.tables.books.filter((book) => !merged.mappings.books[book.key]).length,

@@ -2,6 +2,7 @@ import { useTranslation } from "react-i18next";
 import { useReducer, useState } from "react";
 import { Trans } from "react-i18next";
 import { useAppStore } from "../../../store/useAppStore";
+import { personalMode, isOfficialPlugin } from "../../../custom/personal";
 import { isElectron } from "react-device-detect";
 import "./convertDialog.css";
 import { ConfigService } from "../../../assets/lib/kookit-extra-browser.min";
@@ -73,6 +74,7 @@ const ConvertDialog = () => {
   );
   const engineList = getOcrEngineList(plugins);
   const filteredOcrEngineList = engineList.filter((item) => {
+    if (personalMode && isOfficialPlugin(item.value)) return false;
     if (!isElectron && isScanned) {
       return item.value !== "system-ocr";
     }

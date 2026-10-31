@@ -1,5 +1,8 @@
 import { useTranslation } from "react-i18next";
 import { useNavigate } from "react-router-dom";
+import { personalMode } from "../../custom/personal";
+import { customSyncIPC, runCustomSync, syncErrorKey } from "../../custom/sync/service";
+import type { SyncStatus } from "../../custom/sync/types";
 import { useEffect, useRef, useState } from "react";
 import "./header.css";
 import SearchBox from "../../components/searchBox";
@@ -128,6 +131,7 @@ const Header = (props: HeaderProps) => {
   };
 
   const startScheduledSync = () => {
+    if (personalMode) return;
     if (scheduledSyncTimerRef.current) {
       clearInterval(scheduledSyncTimerRef.current);
       scheduledSyncTimerRef.current = null;
@@ -225,6 +229,7 @@ const Header = (props: HeaderProps) => {
   };
 
   const handleFinishReading = async () => {
+    if (personalMode) return;
     if (
       ConfigService.getReaderConfig("isDisableAutoSync") !== "yes" &&
       ConfigService.getItem("defaultSyncOption") &&
@@ -370,6 +375,7 @@ const Header = (props: HeaderProps) => {
   const handleCloudSync = async (
     userInfo?: any
   ): Promise<false | undefined> => {
+    if (personalMode) return false;
     if (isSyncingRef.current) {
       console.info("Sync already in progress, skipping...");
       return false;
@@ -687,7 +693,7 @@ const Header = (props: HeaderProps) => {
         }
       };
       document.addEventListener("visibilitychange", visibilityHandler);
-      let willAutoSync =
+      let willAutoSync = !personalMode &&
         ConfigService.getReaderConfig("isDisableAutoSync") !== "yes" &&
         ConfigService.getItem("defaultSyncOption");
       if (!willAutoSync) {
@@ -725,7 +731,7 @@ const Header = (props: HeaderProps) => {
   useEffect(() => {
     const wasAuthed = prevIsAuthedRef.current;
     prevIsAuthedRef.current = isAuthed;
-    if (!isAuthed || wasAuthed) {
+    if (personalMode || !isAuthed || wasAuthed) {
       return;
     }
     const handleAuthed = async () => {
@@ -772,7 +778,7 @@ const Header = (props: HeaderProps) => {
       className="header"
       style={isCollapsed ? { marginLeft: "40px" } : {}}
     >
-      {isAuthed && (
+      {!personalMode && isAuthed && (
         <div
           className="header-chat-widget"
           onClick={async () => {
@@ -861,7 +867,7 @@ const Header = (props: HeaderProps) => {
             ></span>
           </span>
         </div>
-        {!isAuthed && (
+        {!personalMode && !isAuthed && (
           <div
             className="setting-icon-container"
             onClick={() => {
@@ -889,6 +895,20 @@ const Header = (props: HeaderProps) => {
         <div
           className="setting-icon-container"
           onClick={async () => {
+            if (personalMode) {
+              if (state.isSync) return;
+              setIsSync(true);
+              try {
+                const status = await customSyncIPC<SyncStatus>("status");
+                if (!status.configured) { handleSetting(true); handleSettingMode("sync"); return; }
+                const result = await runCustomSync();
+                toast.success(t(result.unchanged ? "custom.sync.unchanged" : "custom.sync.complete"));
+                if (result.conflicts.length) { handleSetting(true); handleSettingMode("sync"); }
+                if (result.pendingBooks) toast(t("custom.sync.pendingBooks", { count: result.pendingBooks }));
+              } catch (error) { toast.error(t(syncErrorKey(error))); }
+              finally { setIsSync(false); }
+              return;
+            }
             if (isAuthed) {
               if (!ConfigService.getItem("defaultSyncOption")) {
                 toast(
@@ -935,7 +955,7 @@ const Header = (props: HeaderProps) => {
         </div>
       </div>
 
-      {!isAuthed &&
+      {!personalMode && !isAuthed &&
       !state.isHidePro &&
       window.location.hostname !== "web.koodoreader.cn" ? (
         <div className="header-report-container">
@@ -966,7 +986,7 @@ const Header = (props: HeaderProps) => {
           ></span>
         </div>
       ) : null}
-      {isAuthed &&
+      {!personalMode && isAuthed &&
       userInfo &&
       ((userInfo.type === "pro" &&
         userInfo.valid_until <
@@ -1009,7 +1029,7 @@ const Header = (props: HeaderProps) => {
           </span>
         </div>
       ) : null}
-      {isAuthed &&
+      {!personalMode && isAuthed &&
       userInfo &&
       userInfo.type === "trial" &&
       userInfo.valid_until >

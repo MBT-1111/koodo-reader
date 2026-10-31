@@ -19,6 +19,9 @@ const { isInside } = require("../src/utils/main/custom/runtime");
     const page = await app.firstWindow();
     page.setDefaultTimeout(60000);
     await page.waitForFunction(() => !!window.electronAPI);
+    await page.locator(".header").waitFor();
+    assert.equal(await page.locator(".header .icon-account").count(), 0, "Personal build should hide the account entry");
+    assert.equal(await page.locator(".header-report-container").count(), 0, "Personal build should hide Pro promotions");
     const invoke = (channel, data) => page.evaluate(({ channel, data }) => window.electronAPI.invoke(channel, data), { channel, data });
     const update = await page.evaluate(async () => {
       try { await window.electronAPI.invoke("update-win-app", { version: "0.0.0" }); return "ALLOWED"; }
@@ -38,13 +41,21 @@ const { isInside } = require("../src/utils/main/custom/runtime");
       localStorage.setItem("recordLocation", JSON.stringify({ "synthetic-book": { percentage: "0.5", cfi: "fixture" } }));
     });
     await invoke("custom-sync", { action: "configure", provider: "folder", namespace: "smoke", autoMinutes: 0, folder: remote });
+    await page.locator(".header .icon-sync.setting-icon").click();
+    await page.getByText(/^(Personal sync completed|自有同步已完成)$/).waitFor();
+    assert.ok(!page.url().includes("/login"), "Header sync should run personal sync directly");
+    const folder = path.join(remote, "KoodoReaderCustom-v1-smoke");
+    const firstGeneration = fs.readdirSync(folder).filter((name) => name.endsWith(".json")).sort();
+    assert.equal(firstGeneration.length, 1);
     await page.locator(".icon-setting.setting-icon").click();
+    assert.equal(await page.locator(".setting-dialog-sidebar-item").filter({ hasText: /^(Account|账户)$/ }).count(), 0);
     await page.locator(".setting-dialog-sidebar-item").filter({ hasText: /Sync and backup|同步与备份|同步和备份/ }).click();
+    assert.equal(await page.locator(".add-source-card").count(), 0, "Only personal sync should be shown");
     const button = page.locator(".custom-sync").getByRole("button", { name: /^(Sync now|立即同步)$/ });
     await button.click();
-    await page.getByText(/^(Personal sync completed|自有同步已完成)$/).waitFor();
+    await page.getByText(/^(Everything is up to date|没有需要更新的数据)$/).waitFor();
     await page.waitForTimeout(100);
-    const folder = path.join(remote, "KoodoReaderCustom-v1-smoke");
+    assert.deepEqual(fs.readdirSync(folder).filter((name) => name.endsWith(".json")).sort(), firstGeneration, "Unchanged data must not create a new cloud generation");
     assert.ok(fs.readdirSync(folder).some((name) => name.endsWith(".json")), "UI sync should publish a snapshot");
     for (const filename of fs.readdirSync(folder).filter((name) => name.endsWith(".json"))) {
       const text = fs.readFileSync(path.join(folder, filename), "utf8");
@@ -58,8 +69,10 @@ const { isInside } = require("../src/utils/main/custom/runtime");
       catch (error) { return String(error.message); }
     });
     assert.match(blocked, /CUSTOM_TEST_NETWORK_BLOCKED/);
+    await page.evaluate(() => { window.location.hash = "/login"; });
+    await page.waitForFunction(() => window.location.hash.startsWith("#/manager"));
     fs.mkdirSync(path.resolve("dist"), { recursive: true });
-    fs.writeFileSync(path.resolve("dist/custom-smoke.json"), JSON.stringify({ passed: true, source: process.env.GITHUB_SHA || "working-tree", platform: process.platform, checks: ["profile-isolation", "official-update-blocked", "real-database-ipc", "personal-sync-ui", "immutable-folder-provider", "credential-exclusion", "tts-network-blocked"] }, null, 2));
+    fs.writeFileSync(path.resolve("dist/custom-smoke.json"), JSON.stringify({ passed: true, source: process.env.GITHUB_SHA || "working-tree", platform: process.platform, checks: ["profile-isolation", "official-update-blocked", "real-database-ipc", "personal-sync-ui", "header-personal-sync", "unchanged-sync-no-upload", "official-account-hidden", "login-route-redirect", "immutable-folder-provider", "credential-exclusion", "tts-network-blocked"] }, null, 2));
     console.info("Custom Windows smoke checks passed (synthetic data only).");
   } finally {
     if (app) await app.close();

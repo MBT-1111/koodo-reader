@@ -13,6 +13,7 @@ import * as Kookit from "../assets/lib/kookit.min";
 import DatabaseService from "./storage/databaseService";
 import toast from "react-hot-toast";
 import i18n from "../i18n";
+import { personalMode, isOfficialPlugin } from "../custom/personal";
 import {
   encryptToken,
   getCloudSyncToken,
@@ -1999,7 +2000,7 @@ export const getDefaultOcrEngine = (currentBook: any) => {
       ? "scannedOcrEngine"
       : "textOcrEngine"
   );
-  if (engine) return engine;
+  if (engine && (!personalMode || !isOfficialPlugin(engine))) return engine;
   if (currentBook.description.indexOf("scanned") > -1) {
     return "paddle";
   } else {

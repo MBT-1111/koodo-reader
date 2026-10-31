@@ -40,13 +40,15 @@ export default function CustomSyncSettings() {
   const sync = (resolutions: Record<string, string> = {}) => execute(async () => {
     const result = await runCustomSync(resolutions);
     setVersions(result.conflicts);
-    toast.success(t("custom.sync.complete"));
+    toast.success(t(result.unchanged ? "custom.sync.unchanged" : "custom.sync.complete"));
     if (result.pendingBooks) toast(t("custom.sync.pendingBooks", { count: result.pendingBooks }));
     if (result.skippedBooks) toast(t("custom.sync.skippedBooks", { count: result.skippedBooks }));
   });
   return <section className="custom-sync" aria-labelledby="custom-sync-title">
     <h3 id="custom-sync-title">{t("custom.sync.title")}</h3>
     <p>{t("custom.sync.description")}</p>
+    <p>{t("custom.sync.identityHelp")}</p>
+    <p>{t("custom.sync.snapshotHelp")}</p>
     <p>{t("custom.sync.statsPolicy")}</p>
     <p>{t("custom.sync.closeReaders")}</p>
     <fieldset disabled={busy || !status}>

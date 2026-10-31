@@ -19,6 +19,7 @@ import DictSetting from "../../../containers/settings/dictSetting";
 import MoreSetting from "../../../containers/settings/moreSetting";
 import ShortcutSetting from "../../../containers/settings/shortcutSetting";
 import { isElectron } from "react-device-detect";
+import { personalMode } from "../../../custom/personal";
 const SettingDialog = () => {
   const settingMode = useAppStore((s) => s.manager.settingMode);
   const handleSetting = useAppStore((s) => s.handleSetting);
@@ -112,7 +113,7 @@ const SettingDialog = () => {
 
           {/* First group */}
           <div className="setting-dialog-sidebar-group">
-            {renderSidebarItem("account", "icon-user", "Account", "18px")}
+            {!personalMode && renderSidebarItem("account", "icon-user", "Account", "18px")}
             {renderSidebarItem("general", "icon-setting", "General", "")}
             {renderSidebarItem("data", "icon-archive", "Data", "15px")}
             {renderSidebarItem(
@@ -217,7 +218,7 @@ const SettingDialog = () => {
             ) : settingMode === "sync" ? (
               <SyncSetting />
             ) : settingMode === "account" ? (
-              <AccountSetting />
+              personalMode ? <AISetting /> : <AccountSetting />
             ) : settingMode === "data" ? (
               <DataSetting />
             ) : settingMode === "about" ? (

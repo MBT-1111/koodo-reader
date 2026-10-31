@@ -20,6 +20,7 @@ import {
   isCustomRendererPlugin,
 } from "../../../utils/plugins/customPlugin";
 import { useAppStore } from "../../../store/useAppStore";
+import { personalMode, isOfficialPlugin } from "../../../custom/personal";
 
 export interface PopupTransProps {
   isDockedRight: boolean;
@@ -247,7 +248,7 @@ const PopupTrans = (props: PopupTransProps) => {
     const nextOriginalText = originalText.replace(/(\r\n|\n|\r)/gm, "");
     setState((prev) => ({ ...prev, originalText: nextOriginalText }));
     (async () => {
-      if (!state.transService) {
+      if (!state.transService || (personalMode && isOfficialPlugin(state.transService))) {
         let pluginList = plugins.filter(
           (item) =>
             item.type === "translation" && !item.key.startsWith("official-ai-")
@@ -256,7 +257,7 @@ const PopupTrans = (props: PopupTransProps) => {
           setState((prev) => ({ ...prev, transService: pluginList[0].key }));
           ConfigService.setReaderConfig("transService", pluginList[0].key);
           await new Promise((resolve) => setTimeout(resolve, 100));
-        } else if (isAuthed) {
+        } else if (!personalMode && isAuthed) {
           setState((prev) => ({
             ...prev,
             transService: "official-ai-trans-plugin",

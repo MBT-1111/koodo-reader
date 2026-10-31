@@ -21,6 +21,7 @@ import { chatStream, llmReport } from "../../../utils/request/common";
 import { marked } from "marked";
 import { sampleQuestion } from "../../../constants/settingList";
 import { useAppStore } from "../../../store/useAppStore";
+import { personalMode, isOfficialPlugin } from "../../../custom/personal";
 
 export type AiChatMessage = {
   role: "user" | "assistant";
@@ -203,7 +204,7 @@ const PopupAssist = (props: PopupAssistProps) => {
       });
       handleQuoteText("");
     }
-    if (!state.aiService) {
+    if (!state.aiService || (personalMode && isOfficialPlugin(state.aiService))) {
       let pluginList = plugins.filter(
         (item) =>
           item.type === "assistant" && !item.key.startsWith("official-ai-")
@@ -213,7 +214,7 @@ const PopupAssist = (props: PopupAssistProps) => {
           aiService: pluginList[0].key,
         });
         ConfigService.setReaderConfig("aiService", pluginList[0].key);
-      } else if (isAuthed) {
+      } else if (!personalMode && isAuthed) {
         mergeState({
           aiService: "official-ai-assistant-plugin",
           isAddNew: false,
@@ -428,7 +429,7 @@ const PopupAssist = (props: PopupAssistProps) => {
         ConfigService.getReaderConfig("aiService") !==
           "official-ai-assistant-plugin"
       ) {
-      } else if (isAuthed) {
+      } else if (!personalMode && isAuthed) {
         let plugin = plugins.find(
           (item) => item.key === "official-ai-assistant-plugin"
         );

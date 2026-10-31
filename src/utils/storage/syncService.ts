@@ -4,12 +4,13 @@ import {
 } from "../../assets/lib/kookit-extra-browser.min";
 import { isTokenExpired } from "../common";
 import { getCloudConfig } from "../file/common";
+import { personalMode } from "../../custom/personal";
 
 class SyncService {
   private static syncUtilCache: { [key: string]: SyncUtil } = {};
   private static pickerUtilCache: { [key: string]: SyncUtil } = {};
   static async getSyncUtil() {
-    let service = ConfigService.getItem("defaultSyncOption");
+    let service = personalMode ? "" : ConfigService.getItem("defaultSyncOption");
     if (!service) {
       return new SyncUtil("", {});
     }

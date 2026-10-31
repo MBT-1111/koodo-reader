@@ -6,6 +6,7 @@ import "../metadataDialog/metadataDialog.css";
 
 import { Trans } from "react-i18next";
 import { useAppStore } from "../../../store/useAppStore";
+import { personalMode } from "../../../custom/personal";
 import toast from "react-hot-toast";
 import DatabaseService from "../../../utils/storage/databaseService";
 import CoverUtil from "../../../utils/file/coverUtil";
@@ -314,6 +315,7 @@ const EditDialog = () => {
         <div
           style={{
             fontSize: 16,
+            display: personalMode ? "none" : undefined,
             color: "rgb(231, 69, 69)",
             position: "absolute",
             right: 20,
@@ -374,7 +376,7 @@ const EditDialog = () => {
             <span className="edit-dialog-label">
               <Trans>Book name</Trans>
             </span>
-            <span className="edit-dialog-ai-button" onClick={handleAnalyzeTitle}>
+            <span className="edit-dialog-ai-button" style={{ display: personalMode ? "none" : undefined }} onClick={handleAnalyzeTitle}>
               <svg
                 viewBox="0 0 24 24"
                 width="14"

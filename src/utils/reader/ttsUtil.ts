@@ -1,5 +1,6 @@
 import { Howl } from "howler";
 import PluginModel from "../../models/Plugin";
+import { availablePlugin, isOfficialPlugin, personalMode } from "../../custom/personal";
 import { getAllVoices, getFormatFromAudioPath } from "../common";
 import { getTTSAudio } from "../request/reader";
 import { isElectron } from "react-device-detect";
@@ -255,6 +256,7 @@ class TTSUtil {
     isFirst: boolean
   ) {
     // 朗读前应用文本替换 / 删除规则
+    if (personalMode && isOfficialPlugin(voiceEngine)) throw new Error("CUSTOM_OFFICIAL_SERVICE_HIDDEN");
     text = this.applyTextRules(text);
     if (voiceEngine === "official-ai-voice-plugin") {
       // 内容哈希：相同文本/语速/音色命中同一文件，跨会话复用（与 expo 端 key 设计一致）
@@ -309,7 +311,7 @@ class TTSUtil {
         config: voice.config,
       };
       if (voiceEngine === AZURE_PLUGIN) {
-        const azure = azureParameters(voice as PluginVoice, ConfigService.getItem("customAzureStyles") || "{}", speed);
+        const azure = azureParameters(voice as PluginVoice, ConfigService.getItem("customAzureStyles") || "{}", speed, ConfigService.getItem("customAzureDegrees") || "{}");
         payload.speed = azure.speed;
         payload.config = azure.config;
       }
@@ -333,7 +335,7 @@ class TTSUtil {
     return this.player;
   }
   static getVoiceList(plugins: PluginModel[]) {
-    let voices = getAllVoices(plugins);
+    let voices = getAllVoices(plugins.filter(availablePlugin));
 
     return voices;
   }

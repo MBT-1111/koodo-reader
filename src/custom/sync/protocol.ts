@@ -90,12 +90,17 @@ export function conflicts(entries: Envelope["entries"]): Conflict[] {
 }
 
 // Observe local edits before merging remote heads, so independent edits remain concurrent.
+export function mergeDocuments(documents: unknown[]): Envelope["entries"] {
+  const entries: Envelope["entries"] = {};
+  for (const input of documents) for (const [id, revisions] of Object.entries(validateEnvelope(input).entries)) entries[id] = heads([...(entries[id] || []), ...revisions]);
+  return entries;
+}
+
 export function reconcile(checkpoint: Checkpoint, local: Snapshot, documents: unknown[], resolutions: Record<string, string> = {}): Checkpoint {
   validateEnvelope(checkpoint);
   const state = copy(checkpoint);
   const remote = documents.map(validateEnvelope);
-  const remoteEntries: Envelope["entries"] = {};
-  for (const document of remote) for (const [id, revisions] of Object.entries(document.entries)) remoteEntries[id] = heads([...(remoteEntries[id] || []), ...revisions]);
+  const remoteEntries = mergeDocuments(remote);
   // Existing identical data on a newly enrolled device is a shared baseline,
   // not an independent edit that should later conflict with a real rename.
   for (const [id, item] of Object.entries(local)) {

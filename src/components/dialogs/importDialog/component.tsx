@@ -5,6 +5,7 @@ import "./importDialog.css";
 import { driveList } from "../../../constants/driveList";
 import { Trans } from "react-i18next";
 import { useAppStore } from "../../../store/useAppStore";
+import { personalMode } from "../../../custom/personal";
 import toast from "react-hot-toast";
 import { isElectron } from "react-device-detect";
 import { getCloudConfig } from "../../../utils/file/common";
@@ -413,6 +414,7 @@ const ImportDialog = () => {
             {driveList
               .filter(
                 (item) =>
+                  (!personalMode || !item.isPro) &&
                   !item.scoped &&
                   item.support.includes(isElectron ? "desktop" : "browser")
               )

@@ -7,6 +7,7 @@ import { ConfigService } from "../../../assets/lib/kookit-extra-browser.min";
 import { readingSettingList } from "../../../constants/settingList";
 import SwitchRow from "../../../components/readerSettings/switchRow";
 import { useAppStore } from "../../../store/useAppStore";
+import { personalMode } from "../../../custom/personal";
 
 export interface SettingInfoState {
   isTouch: boolean;
@@ -135,7 +136,7 @@ const ReadingSetting = () => {
 
   return (
     <>
-      {renderSwitchOption(readingSettingList)}
+      {renderSwitchOption(readingSettingList.filter(item => !personalMode || item.propName !== "isLemmatizeWord"))}
       {isElectron && (
         <>
           <div className="setting-dialog-new-title">

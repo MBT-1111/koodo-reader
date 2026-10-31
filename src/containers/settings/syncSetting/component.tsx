@@ -49,6 +49,7 @@ import ConfigUtil from "../../../utils/file/configUtil";
 import TokenService from "../../../utils/storage/tokenService";
 import { useAppStore } from "../../../store/useAppStore";
 import CustomSyncSettings from "../../../custom/sync/Settings";
+import { personalMode } from "../../../custom/personal";
 
 export interface SettingInfoState {
   isKeepLocal: boolean;
@@ -647,6 +648,7 @@ const SyncSetting = () => {
   };
 
   const { showDefaultSyncAddGrid } = state;
+  if (personalMode) return <CustomSyncSettings />;
   return (
     <>
       {isElectron && <CustomSyncSettings />}

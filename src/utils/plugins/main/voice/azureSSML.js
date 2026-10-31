@@ -5,13 +5,14 @@ const xmlEscape = (value) => Array.from(String(value), (char) => {
 
 const normalizeStyles = (styles) => ["neutral", ...new Set(Array.isArray(styles) ? styles.filter((s) => typeof s === "string" && /^[a-z][a-z0-9_-]{0,79}$/.test(s) && s !== "neutral") : [])];
 
-const azureSSML = (text, speed, voice, style = "neutral") => {
+const azureSSML = (text, speed, voice, style = "neutral", degree = 1) => {
   if (typeof text !== "string" || !text.trim() || text.length > 50000 || !Number.isFinite(speed) || speed < 0.1 || speed > 8) throw new Error("INVALID_AZURE_REQUEST");
   const selected = normalizeStyles(voice.styles).includes(style) ? style : "neutral";
+  if (!Number.isFinite(degree) || degree < 0.01 || degree > 2) throw new Error("INVALID_AZURE_STYLE_DEGREE");
   const percent = Math.round((speed - 1) * 100);
   const rate = `${percent > 0 ? "+" : ""}${percent}%`;
   let body = `<prosody rate="${rate}">${xmlEscape(text)}</prosody>`;
-  if (selected !== "neutral") body = `<mstts:express-as style="${xmlEscape(selected)}">${body}</mstts:express-as>`;
+  if (selected !== "neutral") body = `<mstts:express-as style="${xmlEscape(selected)}" styledegree="${degree}">${body}</mstts:express-as>`;
   return `<speak version="1.0" xmlns="http://www.w3.org/2001/10/synthesis" xmlns:mstts="https://www.w3.org/2001/mstts" xml:lang="${xmlEscape(voice.locale)}"><voice name="${xmlEscape(voice.name)}">${body}</voice></speak>`;
 };
 

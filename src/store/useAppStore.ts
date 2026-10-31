@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import BookModel from "../models/Book";
 import PluginModel from "../models/Plugin";
+import { availablePlugin, personalMode, personalSettingMode } from "../custom/personal";
 import NoteModel from "../models/Note";
 import BookmarkModel from "../models/Bookmark";
 import HtmlBookModel from "../models/HtmlBook";
@@ -344,7 +345,7 @@ export const useAppStore = create<AppState>()((set, get) => {
     handleDetailDialog: (isDetailDialog: boolean) =>
       setManager({ isDetailDialog }),
     handleSetting: (isSettingOpen: boolean) => setManager({ isSettingOpen }),
-    handleSettingMode: (settingMode: string) => setManager({ settingMode }),
+    handleSettingMode: (settingMode: string) => setManager({ settingMode: personalSettingMode(settingMode) }),
     handlePluginSettingTab: (pluginSettingTab: string) =>
       setManager({ pluginSettingTab }),
     handleShowPopupNote: (isShowPopupNote: boolean) =>
@@ -541,6 +542,7 @@ export const useAppStore = create<AppState>()((set, get) => {
       );
     },
     handleFetchUserInfo: async () => {
+      if (personalMode) return null;
       let response = await fetchUserInfo();
       let userInfo: any = null;
       if (response.code === 200) {
@@ -716,7 +718,7 @@ export const useAppStore = create<AppState>()((set, get) => {
               pluginList.push(assistPlugin);
             }
           }
-          if (ConfigService.getReaderConfig("isDisableAI") !== "yes") {
+          if (!personalMode && ConfigService.getReaderConfig("isDisableAI") !== "yes") {
             let dictPlugin = new PluginModel(
               "official-ai-dict-plugin",
               "dictionary",
@@ -761,7 +763,7 @@ export const useAppStore = create<AppState>()((set, get) => {
             pluginList.push(sumPlugin);
           }
           const isAuthed = (await TokenService.getToken("is_authed")) === "yes";
-          if (ConfigService.getReaderConfig("isDisableAI") !== "yes") {
+          if (!personalMode && ConfigService.getReaderConfig("isDisableAI") !== "yes") {
             let sortedVoiceList = [
               ...KookitConfig.OfficialVoiceList.map((item) => {
                 return {
@@ -829,7 +831,7 @@ export const useAppStore = create<AppState>()((set, get) => {
             if (isAuthed && !ConfigService.getItem("serverRegion")) {
               ConfigService.setItem("serverRegion", "global");
             }
-            get().handlePlugins(pluginList);
+            get().handlePlugins(pluginList.filter(availablePlugin));
           });
         } catch (error) {
           const errorMessage =

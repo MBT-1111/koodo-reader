@@ -3,7 +3,7 @@ import { afterAll, describe, expect, it, vi } from "vitest";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { AZURE_PLUGIN, azureParameters, azureStyles, selectedAzureStyle } from "./emotion";
+import { AZURE_PLUGIN, azureParameters, azureStyles, selectedAzureStyle, selectedAzureDegree } from "./emotion";
 import type { PluginVoice } from "../../utils/plugins/types";
 
 const require = createRequire(import.meta.url);
@@ -33,15 +33,26 @@ describe("Azure emotion and SSML", () => {
     expect(azureSSML("Text", 1, { name: "v", locale: "en-US", styles: [] }, "sad")).not.toContain("<mstts:express-as");
     expect(() => azureSSML("Text", NaN, voice)).toThrow();
   });
+  it("validates intensity preferences and passes them into SSML and synthesis parameters", () => {
+    const saved = JSON.stringify({ [voice.name]: 1.75 });
+    expect(selectedAzureDegree(voice, saved)).toBe(1.75);
+    expect(selectedAzureDegree(voice, JSON.stringify({ [voice.name]: 3 }))).toBe(1);
+    expect(selectedAzureDegree(voice, "broken")).toBe(1);
+    expect(azureParameters(voice, "{}", 0, saved).config.styleDegree).toBe(1.75);
+    expect(azureSSML("Text", 1, voice, "sad", 0.01)).toContain('styledegree="0.01"');
+    expect(azureSSML("Text", 1, voice, "neutral", 2)).not.toContain("express-as");
+    for (const invalid of [0, 2.01, NaN, Infinity]) expect(() => azureSSML("Text", 1, voice, "sad", invalid)).toThrow("INVALID_AZURE_STYLE_DEGREE");
+  });
   it("fetches authoritative capabilities, separates style caches and excludes credentials from cache identity", async () => {
     const get = vi.spyOn(axios, "get").mockResolvedValue({ data: [{ ShortName: voice.name, Locale: "zh-CN", Gender: "Female", LocalName: "Voice", StyleList: ["sad"] }] });
     const post = vi.spyOn(axios, "post").mockResolvedValue({ data: Buffer.from("ID3synthetic-audio") });
     const voices = await azure.getTTSVoice(voice.config);
     expect(voices[0].styles).toEqual(["neutral", "sad"]);
     const sad = await azure.getAudioPath("Text", 1, root, { ...voice.config, style: "sad" });
+    const strong = await azure.getAudioPath("Text", 1, root, { ...voice.config, style: "sad", styleDegree: 2 });
     const neutral = await azure.getAudioPath("Text", 1, root, { ...voice.config, style: "neutral" });
     const reused = await azure.getAudioPath("Text", 1, root, { ...voice.config, apiKey: "other-synthetic-key", style: "neutral" });
-    expect(sad).not.toBe(neutral); expect(reused).toBe(neutral); expect(post).toHaveBeenCalledTimes(2);
+    expect(sad).not.toBe(neutral); expect(strong).not.toBe(sad); expect(reused).toBe(neutral); expect(post).toHaveBeenCalledTimes(3);
     expect(get).toHaveBeenCalledTimes(1);
     expect(post.mock.calls[0][1]).toContain('style="sad"');
     get.mockRestore(); post.mockRestore();

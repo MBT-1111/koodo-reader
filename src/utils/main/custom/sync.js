@@ -253,6 +253,7 @@ const createCustomSync = ({ app, safeStorage, dialog, shell, runtime, hasReaders
         return result;
       }
       if (request.action === "stage") {
+        if (request.publish !== undefined && typeof request.publish !== "boolean") throw new Error("CUSTOM_INVALID_REQUEST");
         validDocument(request.document); validDocument(request.checkpoint);
         if (JSON.stringify(request.document.entries) !== JSON.stringify(request.checkpoint.entries) || request.document.deviceId !== request.checkpoint.deviceId || request.document.sequence !== request.checkpoint.sequence || !request.backup?.tables || !request.backup?.config || Buffer.byteLength(JSON.stringify(request.backup)) > 100 * 1024 * 1024) throw new Error("CUSTOM_INVALID_REQUEST");
         if (lease.restoring) throw new Error("CUSTOM_INVALID_REQUEST");
@@ -261,7 +262,7 @@ const createCustomSync = ({ app, safeStorage, dialog, shell, runtime, hasReaders
         atomicWrite(path.join(root, `${lease.scope}.json`), request.checkpoint);
         atomicWrite(path.join(root, `${lease.scope}.recovery.json`), { phase: "prepared" });
         lease.phase = "prepared";
-        await withProvider(lease.config, (p) => p.append(request.document));
+        if (request.publish !== false) await withProvider(lease.config, (p) => p.append(request.document));
         assertLease(event, request.token);
         return true;
       }

@@ -1263,8 +1263,20 @@
   "custom.sync.error.CUSTOM_NO_BACKUP": "No pre-sync backup is available for this library and connection.",
   "custom.sync.error.CUSTOM_DUPLICATE_BOOK": "Multiple local books have identical contents. Keep one local copy before syncing to avoid merging separate statistics.",
   "custom.sync.kind.tag": "Note tag",
-  "custom.tts.sharedStyle": "Roles that use the same Azure voice share its speaking style.",
+  "custom.tts.sharedStyle": "Roles that use the same Azure voice share its speaking style and intensity.",
   "custom.sync.statsPolicy": "Historical time uses the largest existing baseline; new time from each enrolled device is added. Clearing local statistics does not reset synced totals.",
   "custom.sync.present": "Keep",
-  "custom.sync.recentRank": "Recent reading position {{count}}"
+  "custom.sync.recentRank": "Recent reading position {{count}}",
+  "custom.tts.degree": "Speaking style intensity",
+  "custom.tts.degreeValue": "{{value}}×",
+  "custom.tts.degreeHelp": "Choose a non-neutral style first. Some voices may ignore intensity.",
+  "custom.ai.CUSTOM_AI_NOT_CONFIGURED": "Configure the corresponding personal model in Settings → AI service first.",
+  "custom.ai.CUSTOM_AI_REQUEST_FAILED": "The personal AI request failed. Check your model configuration and connection.",
+  "custom.ai.CUSTOM_AI_INVALID_RESPONSE": "The model returned an unsupported response. Retry or select another model.",
+  "custom.ai.CUSTOM_AI_TEXT_TOO_LONG": "The current text exceeds the request limit. Adjust pagination and retry.",
+  "custom.ai.rolesHelp": "Role analysis uses your AI assistance model. Narration uses the system or personal voices you select. The current reading text is sent to your model.",
+  "custom.ai.readingHelp": "Full text translation uses your translation model; word definitions use your dictionary model. Configure an OpenAI-compatible endpoint in AI service.",
+  "custom.sync.unchanged": "Everything is up to date",
+  "custom.sync.identityHelp": "Books are matched by their complete file SHA-256. Names and paths may differ; file contents must be identical. Editing or repackaging a book changes its identity.",
+  "custom.sync.snapshotHelp": "The cloud keeps the latest three snapshots per device for concurrent merging and recovery. Syncing unchanged data does not upload a new file."
 }

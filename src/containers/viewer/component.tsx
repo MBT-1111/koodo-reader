@@ -60,6 +60,8 @@ import type { PluginConfig } from "../../utils/plugins/types";
 import { useAppStore } from "../../store/useAppStore";
 
 import BookModel from "../../models/Book";
+import { personalMode } from "../../custom/personal";
+import { hasReadingAI } from "../../custom/ai/reader";
 
 export interface ViewerProps {
   book: BookModel;
@@ -426,7 +428,7 @@ const Viewer = (props: ViewerProps) => {
         fullTranslationMode:
           ConfigService.getAllListConfig("fullTranslationBooks").includes(
             propsRef.current.currentBook.key
-          ) && propsRef.current.isAuthed
+          ) && (personalMode ? hasReadingAI("translation") : propsRef.current.isAuthed)
             ? ConfigService.getReaderConfig("fullTranslationMode")
             : "no",
         textOrientation: ConfigService.getReaderConfig("textOrientation"),
@@ -458,7 +460,7 @@ const Viewer = (props: ViewerProps) => {
         ),
         pageGap: ConfigService.getReaderConfig("pageGap"),
         isEnableKoReaderSync:
-          ConfigService.getReaderConfig("isEnableKoReaderSync") === "yes",
+          !personalMode && ConfigService.getReaderConfig("isEnableKoReaderSync") === "yes",
         password: getPdfPassword(propsRef.current.currentBook),
         pdfCrop,
         scale: parseFloat(propsRef.current.scale),

@@ -63,6 +63,17 @@ async function client(id: number, namespace: string): Promise<Client> {
 async function sync(client: Client) { fixture.current = client; return runCustomSync(); }
 
 describe("full personal-sync lifecycle with separate device profiles", () => {
+  it("does not publish new generations for unchanged data, and publishes actual edits", async () => {
+    const a = await client(40, "unchanged");
+    await sync(a);
+    const directory = path.join(remote, "KoodoReaderCustom-v1-unchanged");
+    const before = fs.readdirSync(directory).filter(name => name.endsWith(".json"));
+    for (let index = 0; index < 4; index++) expect((await sync(a)).unchanged).toBe(true);
+    expect(fs.readdirSync(directory).filter(name => name.endsWith(".json"))).toEqual(before);
+    a.raw.tables.books[0].name = "Actually changed";
+    expect((await sync(a)).unchanged).toBe(false);
+    expect(fs.readdirSync(directory).filter(name => name.endsWith(".json"))).toHaveLength(2);
+  });
   it("converges notes and per-device time increments across retries without touching local book files", async () => {
     const a = await client(1, "devices"), b = await client(2, "devices");
     a.raw.tables.notes = [{ key: "same-timestamp", bookKey: "1-book", text: "Device A" }];

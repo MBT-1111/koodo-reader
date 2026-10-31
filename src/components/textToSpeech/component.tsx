@@ -28,6 +28,8 @@ import { Howl } from "howler";
 import { useAppStore } from "../../store/useAppStore";
 import EmotionSelect from "../../custom/tts/EmotionSelect";
 import type { PluginVoice } from "../../utils/plugins/types";
+import { personalMode } from "../../custom/personal";
+import { hasReadingAI, readingAIErrorKey } from "../../custom/ai/reader";
 
 export interface TextToSpeechState {
   isAudioOn: boolean;
@@ -76,7 +78,7 @@ const TextToSpeech = () => {
       "multiRoleVoiceBooks"
     ).includes(currentBook?.key),
     multiRoleVoiceType:
-      ConfigService.getReaderConfig("multiRoleVoiceType") || "system",
+      personalMode && ConfigService.getReaderConfig("multiRoleVoiceType") === "official-ai-voice-plugin" ? "custom" : ConfigService.getReaderConfig("multiRoleVoiceType") || "system",
     multiRoleNarratorVoice:
       ConfigService.getReaderConfig("multiRoleNarratorVoice") ||
       ConfigService.getReaderConfig("voiceName"),
@@ -131,6 +133,7 @@ const TextToSpeech = () => {
   const voicesRef = useRef<any>([]);
   const nativeVoicesRef = useRef<any>([]);
   const previewPlayerRef = useRef<Howl | null>(null);
+  const speechGenerationRef = useRef(0);
   const highlightUtilRef = useRef<any>(null);
   if (!highlightUtilRef.current) {
     highlightUtilRef.current = new HighlightUtil(ConfigService);
@@ -223,7 +226,7 @@ const TextToSpeech = () => {
             ConfigService.setReaderConfig("voiceEngine", "system");
           }
         }
-        if (!voiceName && !voiceEngine && voicesRef.current.length > 0) {
+        if (((!voiceName && !voiceEngine) || (personalMode && !voicesRef.current.some((voice: PluginVoice) => voice.name === voiceName && voice.plugin === voiceEngine))) && voicesRef.current.length > 0) {
           let defaultVoice =
             voicesRef.current.find(
               (item: any) => item.plugin !== "official-ai-voice-plugin"
@@ -305,7 +308,11 @@ const TextToSpeech = () => {
   };
   const handleMultiRoleToggle = (enabled: boolean) => {
     if (enabled) {
-      if (!isAuthed) {
+      if (personalMode && !hasReadingAI("roles")) {
+        toast(t("custom.ai.CUSTOM_AI_NOT_CONFIGURED"));
+        handleSetting(true); handleSettingMode("ai"); return;
+      }
+      if (!personalMode && !isAuthed) {
         toast(t("Please upgrade to Pro to use this feature"));
         handleSetting(true);
         handleSettingMode("account");
@@ -469,7 +476,7 @@ const TextToSpeech = () => {
   };
   const handleStartAudio = async () => {
     if (
-      isAuthed &&
+      !personalMode && isAuthed &&
       ConfigService.getReaderConfig("voiceEngine") !== "system"
     ) {
       toast.loading(t("Loading audio, please wait..."), {
@@ -501,6 +508,7 @@ const TextToSpeech = () => {
     setState({ isPaused: true });
   };
   const handleStop = async () => {
+    speechGenerationRef.current++;
     window.speechSynthesis && window.speechSynthesis.cancel();
     await TTSUtil.stopAudio();
     setState({ isAudioOn: false, isPaused: false, currentIndex: 0 });
@@ -589,7 +597,7 @@ const TextToSpeech = () => {
     TTSUtil.setAudioPaths();
 
     // AI 语音需要刷新用户信息
-    if (isAuthed && newVoiceEngine !== "system") {
+    if (!personalMode && isAuthed && newVoiceEngine !== "system") {
       toast.loading(t("Loading audio, please wait..."), {
         id: "tts-load",
       });
@@ -615,11 +623,15 @@ const TextToSpeech = () => {
     }
   };
   const handleStartSpeech = () => {
+    speechGenerationRef.current++;
     setState({ isAudioOn: true, isPaused: false, currentIndex: 0 });
     handleAudio();
   };
   const handleAudio = async () => {
-    nodeListRef.current = await handleGetText();
+    const generation = speechGenerationRef.current;
+    const nodes = await handleGetText();
+    if (generation !== speechGenerationRef.current || !stateRef.current.isAudioOn) return;
+    nodeListRef.current = nodes;
     if (nodeListRef.current.length === 0) {
       return;
     }
@@ -634,6 +646,7 @@ const TextToSpeech = () => {
     }
   };
   const handleGetText = async () => {
+    const generation = speechGenerationRef.current;
     if ((ConfigService.getReaderConfig("animation") || "none") !== "none") {
       await sleep(1000);
     }
@@ -654,7 +667,7 @@ const TextToSpeech = () => {
       nodeTextList = nodeTextList.slice(speechStartIndex);
     }
     clearSpeechStartState();
-    if (!stateRef.current.multiRoleEnabled || !isAuthed) {
+    if (!stateRef.current.multiRoleEnabled || (!personalMode && !isAuthed)) {
       nodeList = nodeTextList.map((text: string) => {
         return {
           text,
@@ -665,8 +678,7 @@ const TextToSpeech = () => {
     } else {
       // 多角色朗读的所有角色统一使用 multiRoleVoiceType 约束的引擎类型，
       // 并校验 voice/engine 组合在声音列表中真实存在（自动修复遗留的混合组合）
-      const voiceType =
-        ConfigService.getReaderConfig("multiRoleVoiceType") || "";
+      const voiceType = stateRef.current.multiRoleVoiceType;
       const resolveVoice = (voiceName: string, voiceEngine: string) => {
         if (!voiceName) return null;
         const matched =
@@ -718,7 +730,13 @@ const TextToSpeech = () => {
       let splitTextList = rawNodeList.flatMap((texts, index) =>
         texts.map((text) => ({ text, index: index }))
       );
-      let res = await getSplitSentence(splitTextList);
+      if (generation !== speechGenerationRef.current || !stateRef.current.isAudioOn) return [];
+      let analysisError = "";
+      let res = await getSplitSentence(splitTextList).catch((error: unknown) => {
+        analysisError = personalMode ? readingAIErrorKey(error) : "Analysis failed";
+        return null;
+      });
+      if (generation !== speechGenerationRef.current || !stateRef.current.isAudioOn) return [];
       toast.dismiss("tts-load");
 
       const narratorVoice = narratorVoiceInfo || {
@@ -757,7 +775,7 @@ const TextToSpeech = () => {
           };
         });
       } else {
-        toast.error(t("Analysis failed"));
+        toast.error(t(analysisError || "Analysis failed"));
         setState({ isAudioOn: false });
         return [];
       }
@@ -1348,7 +1366,7 @@ const TextToSpeech = () => {
           title={
             <>
               <Trans>AI multi-role speech</Trans>
-              <span style={{ fontSize: "13px", color: "#f16464" }}> (Pro)</span>
+              {!personalMode && <span style={{ fontSize: "13px", color: "#f16464" }}> (Pro)</span>}
             </>
           }
           titleStyle={{ width: "calc(100% - 50px)" }}
@@ -1375,6 +1393,7 @@ const TextToSpeech = () => {
         </p>
         {stateRef.current.multiRoleEnabled && (
           <>
+            {personalMode && <p className="setting-option-subtitle" style={{ margin: "12px 20px" }}>{t("custom.ai.rolesHelp")}</p>}
             {[
               ["Narrator voice", state.multiRoleNarratorVoice, state.multiRoleNarratorEngine],
               ["Male voice", state.multiRoleMaleVoice, state.multiRoleMaleEngine],
@@ -1426,12 +1445,12 @@ const TextToSpeech = () => {
                 <option value="system" className="lang-setting-option">
                   {t("System voice")}
                 </option>
-                <option
+                {!personalMode && <option
                   value="official-ai-voice-plugin"
                   className="lang-setting-option"
                 >
                   {t("Official AI Voice")}
-                </option>
+                </option>}
                 <option value="custom" className="lang-setting-option">
                   {t("Custom voice")}
                 </option>

@@ -35,6 +35,7 @@ import {
   isCustomRendererPlugin,
 } from "../../../utils/plugins/customPlugin";
 import { useAppStore } from "../../../store/useAppStore";
+import { personalMode, isOfficialPlugin } from "../../../custom/personal";
 
 export interface PopupDictProps {
   isDockedRight: boolean;
@@ -315,7 +316,7 @@ const PopupDict = (props: PopupDictProps) => {
     if (ConfigService.getReaderConfig("isLemmatizeWord") === "yes") {
       originalText = originalText;
     }
-    if (!stateRef.current.dictService) {
+    if (!stateRef.current.dictService || (personalMode && isOfficialPlugin(stateRef.current.dictService))) {
       let pluginList = plugins.filter(
         (item) =>
           item.type === "dictionary" && !item.key.startsWith("official-ai-")
@@ -324,7 +325,7 @@ const PopupDict = (props: PopupDictProps) => {
         updateState({ dictService: pluginList[0].key });
         ConfigService.setReaderConfig("dictService", pluginList[0].key);
         await new Promise((resolve) => setTimeout(resolve, 100));
-      } else if (isAuthed) {
+      } else if (!personalMode && isAuthed) {
         updateState({
           dictService: "official-ai-dict-plugin",
           isAddNew: false,

@@ -12,6 +12,8 @@ import {
 import { detectLocalLanguage } from "../../../utils/common";
 import SwitchRow from "../../readerSettings/switchRow";
 import { useAppStore } from "../../../store/useAppStore";
+import { personalMode } from "../../../custom/personal";
+import { hasReadingAI } from "../../../custom/ai/reader";
 
 export interface StudyLangDialogState {
   fullTranslationModeValue: string;
@@ -131,7 +133,11 @@ const StudyLangDialog = () => {
         "fullTranslationBooks"
       );
     } else {
-      if (!isAuthed) {
+      if (personalMode && !hasReadingAI("translation")) {
+        mergeState({ fullTranslationModeValue: "no" });
+        toast(t("custom.ai.CUSTOM_AI_NOT_CONFIGURED")); handleSetting(true); handleSettingMode("ai"); return;
+      }
+      if (!personalMode && !isAuthed) {
         mergeState({ fullTranslationModeValue: "no" });
         toast(t("Please upgrade to Pro to use this feature"));
         handleSetting(true);
@@ -144,6 +150,7 @@ const StudyLangDialog = () => {
         "fullTranslationBooks"
       );
     }
+    ConfigService.setReaderConfig("fullTranslationMode", value);
     toast.success(t("Setup successful"));
     renderBookFunc();
   };
@@ -151,7 +158,10 @@ const StudyLangDialog = () => {
   const handleWordDefinitionToggle = async () => {
     const next = !stateRef.current.isWordDefinition;
     if (next) {
-      if (!isAuthed) {
+      if (personalMode && !hasReadingAI("dictionary")) {
+        toast(t("custom.ai.CUSTOM_AI_NOT_CONFIGURED")); handleSetting(true); handleSettingMode("ai"); return;
+      }
+      if (!personalMode && !isAuthed) {
         toast(t("Please upgrade to Pro to use this feature"));
         handleSetting(true);
         handleSettingMode("account");
@@ -290,7 +300,7 @@ const StudyLangDialog = () => {
         <div className="setting-dialog-new-title scale-page-preset-row">
           <span>
             <Trans>Full text translation</Trans>
-            <span style={{ fontSize: "13px", color: "#f16464" }}> (Pro)</span>
+            {!personalMode && <span style={{ fontSize: "13px", color: "#f16464" }}> (Pro)</span>}
           </span>
           <select
             className="lang-setting-dropdown"
@@ -347,10 +357,10 @@ const StudyLangDialog = () => {
           title={
             <>
               <Trans>Enable word definitions</Trans>
-              <span style={{ fontSize: "13px", color: "#f16464" }}>
+              {!personalMode && <span style={{ fontSize: "13px", color: "#f16464" }}>
                 {" "}
                 (Pro)
-              </span>
+              </span>}
             </>
           }
           isEnabled={state.isWordDefinition}
@@ -365,6 +375,7 @@ const StudyLangDialog = () => {
           </Trans>
         </p>
         {renderWordLevelSelect()}
+        {personalMode && <p className="setting-option-subtitle">{t("custom.ai.readingHelp")}</p>}
       </ul>
     </div>
   );

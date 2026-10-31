@@ -46,9 +46,10 @@ const getAudioPath = async (text, speed, dirPath, config) => {
   }
   const voice = catalog?.voices.find((v) => v.name === name) || { name, locale: name.split("-").slice(0, 2).join("-"), styles: ["neutral"] };
   const style = normalizeStyles(voice.styles).includes(requestedStyle) ? requestedStyle : "neutral";
-  const ssml = azureSSML(text, speed, voice, style);
+  const styleDegree = style === "neutral" ? 1 : Number(config.styleDegree ?? 1);
+  const ssml = azureSSML(text, speed, voice, style, styleDegree);
   const outputFormat = "audio-16khz-128kbitrate-mono-mp3";
-  const audioPath = getTTSAudioPath("azure-tts-voice-plugin-v2", text, speed, { region, voiceName: name, locale: voice.locale, style, outputFormat }, dirPath, ".mp3");
+  const audioPath = getTTSAudioPath("azure-tts-voice-plugin-v3", text, speed, { region, voiceName: name, locale: voice.locale, style, styleDegree, outputFormat }, dirPath, ".mp3");
   if (fs.existsSync(audioPath)) return audioPath;
   ensureTTSDir(dirPath);
   let data;

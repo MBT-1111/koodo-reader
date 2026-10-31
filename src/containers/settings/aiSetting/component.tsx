@@ -10,6 +10,7 @@ import {
   KookitConfig,
 } from "../../../assets/lib/kookit-extra-browser.min";
 import { useAppStore } from "../../../store/useAppStore";
+import { personalMode } from "../../../custom/personal";
 
 export interface AIModelConfig {
   endpoint: string;
@@ -567,6 +568,7 @@ const AISetting = () => {
 
   return (
     <>
+      {personalMode && <p className="setting-option-subtitle">{t("custom.ai.readingHelp")} {t("custom.ai.rolesHelp")}</p>}
       {state.isAddNew && renderAddForm()}
 
       <div

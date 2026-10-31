@@ -15,6 +15,8 @@ import {
 } from "../common";
 import { getTempToken } from "./user";
 import TokenService from "../storage/tokenService";
+import { personalMode } from "../../custom/personal";
+import { personalBatchTranslation, personalWordDefinitions, personalSplitSentence } from "../../custom/ai/reader";
 let readerRequest: ReaderRequest | undefined;
 let isShowingQuotaAlert = false;
 let quotaAlertDismissTime = 0;
@@ -89,6 +91,7 @@ export const getDictionary = async (word: string, from: string, to: string) => {
   return response;
 };
 export const getReaderRequest = async () => {
+  if (personalMode) throw new Error("CUSTOM_OFFICIAL_SERVICE_HIDDEN");
   if (readerRequest) {
     return readerRequest;
   }
@@ -273,6 +276,7 @@ export const getBatchTrans = async (
   from: string,
   to: string
 ) => {
+  if (personalMode) return personalBatchTranslation(texts, from, to);
   let readerRequest = await getReaderRequest();
   let response = await readerRequest.getBatchTrans({ texts, from, to });
   if (response.code === 200) {
@@ -290,6 +294,7 @@ export const getWordDefinitions = async (
   level: string,
   lang: string
 ) => {
+  if (personalMode) return personalWordDefinitions(texts, level, lang);
   let readerRequest = await getReaderRequest();
   let response = await readerRequest.analyzeText({ texts, level, lang });
   if (response.code === 200) {
@@ -331,6 +336,7 @@ export const analyzeBookTitle = async (title: string) => {
 export const getSplitSentence = async (
   texts: { text: string; index: number }[]
 ) => {
+  if (personalMode) return personalSplitSentence(texts);
   let readerRequest = await getReaderRequest();
   let response = await readerRequest.getSplitSentence({ texts });
   if (response.code === 200) {
