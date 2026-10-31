@@ -25,7 +25,7 @@
 | `node --check` | main/preload、冒烟脚本、4 个 custom 主进程模块、2 个 Azure 模块通过 |
 | `git diff --check` | 通过；Azure 文件只有 Git 的 LF/CRLF 提示 |
 | electron-builder 配置校验 | 调用本地 `getConfig/validateConfiguration` 通过；未执行打包 |
-| 工作流配置 | YAML 可解析，手动/可复用触发、只读仓库权限、禁止发布及功能分支路由已检查；未触发 Actions |
+| 工作流配置 | YAML 可解析，限定分支的 push、手动/可复用触发、只读仓库权限、禁止发布及功能分支路由已检查；云端运行仍待验证 |
 | 文档与本地化 | 11 份 Markdown、16 个本地链接、89 个中英文 custom key 检查通过 |
 | 本地 Web / Electron 构建及 GUI 启动 | 按用户要求未执行，不能报告通过 |
 | 原生模块 / 真实 MEGA、Azure / 阅读器人工回归 | 尚未验收；保留为正式使用门槛 |
@@ -42,10 +42,12 @@ Azure-MiMo-TTS-Chrome 的参考落实为语音能力元数据 → 情绪选择 �
 
 交付分支为 `feature/windows-custom`，改动基于 `42443d83f9a536a3e1c501991ac8b6f635e69bc1`；交付提交以 Git 历史为准。所有者在本地源码验收后授权单次提交与推送。`dev` 与 `custom/dev` 保持原跟踪关系，upstream push URL 为 `DISABLED`。
 
-提交前确认 Fork 默认分支是 `dev`，专用的新工作流尚未登记在默认分支，因此补充现有 `Build/release` 手动入口：仅在 feature/* 或 custom/* 分支调用自定义 Windows 流程并跳过官方多平台任务。这一接入只随功能分支提交，不修改远端 dev，不自动触发构建或发布。
+首次提交前确认 Fork 默认分支是 `dev`，专用的新工作流尚未登记在默认分支，因此补充现有 `Build/release` 手动入口：仅在 feature/* 或 custom/* 分支调用自定义 Windows 流程并跳过官方多平台任务。首次交付只增加手动入口，没有 push 触发。
+
+首次交付提交 `5ec3765c` 已按授权推送到 origin/feature/windows-custom。随后排查 Actions 空页面时，GitHub API 实测为：enabled=true、allowed_actions=all、0 个工作流、0 个运行；查询 release.yml 工作流返回 404。先前只确认默认分支存在文件，未验证工作流登记，手动入口建议在该 Fork 上未生效。增加只对 feature/windows-custom/custom/dev 生效的 push 触发后，用户另行授权提交推送这次修正；推送会请求 Windows 云端构建，不修改默认分支、合并或删除分支。推送后必须确认实际运行，不能把未登记的具体后台原因写成已查明。
 
 ## 未取得的结论
 
-没有执行本地 yarn build/dev/ele/release、没有修改已安装程序、没有启动真实书库、没有真实 MEGA/Azure 调用、没有云端构建或实际 Windows 阅读窗口手工回归。因而只能报告源码与本地自动化验证完成，不能报告 Windows 产物或真实服务验收通过。
+本地源码验收时没有执行本地 yarn build/dev/ele/release、没有修改已安装程序、没有启动真实书库、没有真实 MEGA/Azure 调用，也没有云端构建结果或实际 Windows 阅读窗口手工回归结果。后续云端结果以交付提交关联的 Actions 记录及产物为准；源码与本地自动化验证完成不能代替 Windows 产物或真实服务验收通过。
 
 统计 v1 是累计语义，不支持把本机减计数当作远端 reset；首次旧历史采用 max 基线，完整历史去重不能凭现有快照推断。合集与通用偏好不在同步白名单。以上边界在 UI/协议/使用说明中明确，移动实现尚未开始。

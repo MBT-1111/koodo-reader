@@ -1,5 +1,9 @@
 name: Custom Windows verification
 on:
+  push:
+    branches:
+      - feature/windows-custom
+      - custom/dev
   workflow_dispatch:
   workflow_call:
 permissions:

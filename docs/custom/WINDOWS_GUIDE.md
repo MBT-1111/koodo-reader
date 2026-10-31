@@ -4,13 +4,15 @@
 
 本次交付使用 `feature/windows-custom` 分支。本机不安装 Windows 编译器、不执行 Web 构建、不生成安装包。新增工作流 **Custom Windows verification** 的流程为：类型/测试 → runner 准备 Electron/native → 编译 Windows 所需 React 资源 → 隔离冒烟 → Windows x64 zip。工作流只上传 artifact，不发布 release。
 
-推送后从 Fork 的 **Actions → Build/release → Run workflow** 进入，选择分支 **feature/windows-custom**，再点击运行。默认分支 `dev` 已登记的 `release.yml` 提供手动入口；所选功能分支会调用 `custom-windows.yml`，并跳过官方多平台构建任务。不要为本次自定义构建选择 `dev`。
+推送到 **feature/windows-custom** 或 **custom/dev** 时，自动运行 **Custom Windows verification**。进入 Fork 的 **Actions**，查看对应提交的构建记录；不需要先点击 New workflow，也不需要把自定义代码合并进 dev。
 
-这个入口避免为登记新工作流而修改干净的默认分支。[GitHub 手动工作流说明](https://docs.github.com/en/actions/how-tos/manage-workflow-runs/manually-run-a-workflow)要求入口文件存在于默认分支；[本仓库可复用工作流](https://docs.github.com/en/actions/how-tos/reuse-automations/reuse-workflows)使用调用者同一提交中的文件。新流程同时保留独立手动入口，未来登记到默认分支后也可直接运行。
+2026-10-31 首次推送后的只读检查确认：仓库 Actions 已启用且允许所有 actions，但工作流列表与运行记录均为 0，`release.yml` 的工作流 API 返回 404。源码文件存在并不代表 Fork 已登记相应工作流；因此此前给出的 Build/release 手动入口在该状态下不可用。这里增加分支 push 触发，下一次推送后需要核实是否出现实际运行，不能仅凭 YAML 校验宣称成功。
+
+保留既有 **Build/release → Run workflow** 路由以供入口登记后使用：选择 feature/* 或 custom/* 分支时调用专用 Windows 流程，跳过官方多平台任务。不要为自定义构建选择 dev。[GitHub 手动工作流说明](https://docs.github.com/en/actions/how-tos/manage-workflow-runs/manually-run-a-workflow)要求入口文件存在于默认分支；[本仓库可复用工作流](https://docs.github.com/en/actions/how-tos/reuse-automations/reuse-workflows)使用调用者同一提交中的文件。仅检查文件存在不能替代工作流登记或实际运行验证。
 
 运行成功后，打开该次运行的 **Artifacts**，下载 `koodo-reader-custom-windows-<提交 SHA>`，解压外层下载包，再解压其中 `*-Win.zip`，运行 `Koodo Reader Custom.exe`。不要运行仓库中其他上传或 Store 发布流程。
 
-本轮没有触发工作流，因此没有已经通过的 Windows 二进制构建结论。`yarn custom:smoke` 仅在已有 build/index.html、Electron 和 native 依赖的环境执行，创建 krc-test-* 临时 profile，阻断外网/更新/TTS/协议注册并验证设置中的文件夹同步，绝不使用现有书库。
+Windows 二进制构建结果以对应提交的 Actions 状态和实际产物为准，本地源码检查不代表云端已通过。`yarn custom:smoke` 仅在已有 build/index.html、Electron 和 native 依赖的环境执行，创建 krc-test-* 临时 profile，阻断外网/更新/TTS/协议注册并验证设置中的文件夹同步，绝不使用现有书库。
 
 ## 数据目录与现有安装
 

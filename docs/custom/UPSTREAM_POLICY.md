@@ -43,8 +43,10 @@
 
 上述风险描述保留为 Phase 0 审计证据。新源码已经更改 appId/productName/profile、清空 publish，Windows 目标收敛为 x64 zip；主进程拒绝 update-win-app，自动更新 UI 提前返回，关于页面提示使用自有构建。旧 NSIS include 由无删除/杀进程逻辑的 Custom include 替代。
 
-新增 `.github/workflows/custom-windows.yml`：支持手动调用和 workflow_call，不随 push 自动运行，contents:read，Node 22.14.0；安装 JS 依赖时跳过脚本，在 runner 准备 Electron/native，执行类型、测试、Windows 渲染资源编译、隔离冒烟，再 `--publish never` 构建 zip 并上传 workflow artifact。没有创建 release、推送 tag 或访问官方发布仓库的步骤。本轮未触发该工作流。
+新增 `.github/workflows/custom-windows.yml`：支持手动调用、workflow_call，以及仅限 feature/windows-custom 和 custom/dev 的 push 触发，contents:read，Node 22.14.0；安装 JS 依赖时跳过脚本，在 runner 准备 Electron/native，执行类型、测试、Windows 渲染资源编译、隔离冒烟，再 `--publish never` 构建 zip 并上传 workflow artifact。没有创建 release、推送 tag 或访问官方发布仓库的步骤。增加 push 触发是为处理首次交付后 Fork 未登记任何工作流的实际状态，运行结果仍须以 Actions 记录为准。
 
 既有 `release.yml` 增加功能分支路由：从 Build/release 手动入口选 feature/* 或 custom/* 时调用上述流程，跳过原多平台任务；这避免为登记新工作流修改默认分支。具体操作见 [Windows 使用说明](WINDOWS_GUIDE.md)。
+
+云端构建与隔离测试通过、必要的 Windows 人工回归完成后，将 feature/windows-custom 合并到 custom/dev，后者作为个人版本长期集成分支。当前仅领先时可采用快进合并，保留原提交；确认合并与远端引用后可删除临时功能分支。合并、远端更新和分支删除分别依据所有者届时授权执行，不在排查 Actions 时自动操作。
 
 upstream 更新检查除了原有位置，还需覆盖 `src/custom/`、`src/utils/main/custom/`、Azure 插件元数据、TTS queue generation、database-command 的 CAS 分支、preload 白名单、profile 初始化时序、关于页及两个 workflow 的路由。不要用原多平台发布任务代替 Custom 验证流程。
