@@ -11,6 +11,7 @@ import {
 } from "../../../assets/lib/kookit-extra-browser.min";
 import { useAppStore } from "../../../store/useAppStore";
 import { personalMode } from "../../../custom/personal";
+import { createAIRequest, geminiModelsRequest, isNativeGemini, readAIText } from "../../../custom/ai/protocol";
 
 export interface AIModelConfig {
   endpoint: string;
@@ -160,7 +161,7 @@ const AISetting = () => {
     const provider = KookitConfig.AiProviderList.find(
       (p) => p.id === stateRef.current.selectedProvider
     );
-    if (!provider || !provider.modelsEndpoint) {
+    if (!provider || (!provider.modelsEndpoint && !["google", "gemini"].includes(provider.id))) {
       toast.error(
         t(
           "This provider does not support fetching model list, please fill in manually"
@@ -179,8 +180,11 @@ const AISetting = () => {
     }
     updateState({ isFetchingModels: true });
     try {
-      const headers: Record<string, string> = {};
-      if (stateRef.current.apiKey) {
+      const connection = { endpoint: stateRef.current.endpoint, modelId: stateRef.current.modelId, apiKey: stateRef.current.apiKey, providerId: stateRef.current.selectedProvider };
+      const nativeGemini = isNativeGemini(connection);
+      const modelRequest = nativeGemini || ["google", "gemini"].includes(connection.providerId) ? geminiModelsRequest(connection) : null;
+      const headers: Record<string, string> = modelRequest ? modelRequest.headers : {};
+      if (!modelRequest && stateRef.current.apiKey) {
         if (provider.authType === "x-api-key") {
           headers["x-api-key"] = stateRef.current.apiKey;
           headers["anthropic-version"] = "2023-06-01";
@@ -188,7 +192,7 @@ const AISetting = () => {
           headers["Authorization"] = `Bearer ${stateRef.current.apiKey}`;
         }
       }
-      const response = await aiRequest(provider.modelsEndpoint, "GET", headers);
+      const response = await aiRequest(modelRequest ? modelRequest.url : provider.modelsEndpoint, "GET", headers);
       if (!response.ok) {
         throw new Error(`HTTP ${response.status}`);
       }
@@ -202,8 +206,8 @@ const AISetting = () => {
         return;
       }
       const models = rawModels.map((m: any) => ({
-        id: m.id || m.model || m.name,
-        name: m.id || m.display_name || m.name || m.model,
+        id: modelRequest ? (m.id || m.name).replace(/^models\//, "") : m.id || m.model || m.name,
+        name: m.displayName || m.id || m.display_name || m.name || m.model,
       }));
       models.sort((a: { name: string }, b: { name: string }) =>
         a.name.localeCompare(b.name)
@@ -229,33 +233,20 @@ const AISetting = () => {
     }
     updateState({ isTesting: true, testResult: "" });
     try {
-      const chatEndpoint = endpoint.endsWith("/")
-        ? endpoint + "chat/completions"
-        : endpoint + "/chat/completions";
+      const query = createAIRequest({ endpoint, modelId, apiKey, providerId: stateRef.current.selectedProvider }, { system: "This is a connection test.", user: "Reply only OK.", maxTokens: 1024 });
       const response = await aiRequest(
-        chatEndpoint,
+        query.url,
         "POST",
-        {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${apiKey}`,
-        },
-        JSON.stringify({
-          model: modelId,
-          messages: [
-            { role: "user", content: "Hi, just testing. Reply with OK." },
-          ],
-          max_tokens: 10,
-        })
+        query.headers,
+        JSON.stringify(query.body)
       );
       if (!response.ok) {
         throw new Error(
-          `HTTP ${response.status}: ${response.body.substring(0, 200)}`
+          `HTTP ${response.status}`
         );
       }
       const data = JSON.parse(response.body);
-      const reply =
-        data.choices?.[0]?.message?.content ||
-        JSON.stringify(data).substring(0, 100);
+      const reply = readAIText(data, query.native).slice(0, 120);
       updateState({ testResult: "success" });
       toast.success(t("Test successful") + ": " + reply);
     } catch (e: any) {

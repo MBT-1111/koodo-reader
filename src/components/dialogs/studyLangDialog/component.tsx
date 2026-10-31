@@ -376,6 +376,7 @@ const StudyLangDialog = () => {
           </Trans>
         </p>
         {renderWordLevelSelect()}
+        {personalMode && state.isWordDefinition && <p className="setting-option-subtitle">{t("custom.ai.wordLevelHelp")}</p>}
         {personalMode && <p className="setting-option-subtitle">{t("custom.ai.readingHelp")}</p>}
       </ul>
     </div>

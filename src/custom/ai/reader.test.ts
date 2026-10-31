@@ -45,6 +45,36 @@ describe("personal reading AI without official services", () => {
     const result = await personalWordDefinitions(["An enigmatic example"], "四级", "en");
     expect(result.data.results).toEqual([{ text: "An enigmatic example", words: [{ word: "enigmatic", meaning: "mysterious", cn_meaning: "神秘的", level: "C1" }] }]);
   });
+  it("maps identified dictionary groups while retaining headings and empty paragraphs", async () => {
+    network.mockResolvedValue(response({ words: { "0": [{ word: "enigmatic", meaning: "mysterious" }], "1": [] } }));
+    const input = ["1", "An enigmatic example", "A simple paragraph."];
+    const result = await personalWordDefinitions(input, "六级", "en");
+    expect(result.data.results).toEqual(input.map((text, index) => ({ text, words: index === 1 ? [{ word: "enigmatic", meaning: "mysterious" }] : [] })));
+    const data = JSON.parse(JSON.parse(String(network.mock.calls[0][1]?.body)).messages[1].content);
+    expect(data.paragraphs).toEqual([{ id: "0", text: input[1] }, { id: "1", text: input[2] }]);
+    expect(data.level).toBe("六级");
+  });
+  it.each([true, false])("reassociates a pooled dictionary by actual word occurrences (nested=%s)", async nested => {
+    const pool = [{ word: "enigmatic", meaning: "mysterious", apiKey: "discard" }, { word: "resilient", cn_meaning: "坚韧的" }, { word: "absent", meaning: "discard" }];
+    network.mockResolvedValue(response({ words: nested ? [pool] : pool }));
+    const result = await personalWordDefinitions(["1", "An enigmatic example", "A resilient character"], "四级", "en");
+    expect(result.data.results.map(item => item.words)).toEqual([[], [{ word: "enigmatic", meaning: "mysterious" }], [{ word: "resilient", cn_meaning: "坚韧的" }]]);
+    expect(network).toHaveBeenCalledTimes(1);
+  });
+  it("keeps missing dictionary groups empty, rejects unknown ids, and limits each paragraph", async () => {
+    network.mockResolvedValue(response({ words: { "1": Array.from({ length: 12 }, (_, id) => ({ word: `term${id}`, meaning: "definition" })) } }));
+    const input = ["A simple paragraph.", Array.from({ length: 12 }, (_, id) => `term${id}`).join(" ")];
+    const result = await personalWordDefinitions(input, "小学", "en");
+    expect(result.data.results[0].words).toEqual([]);
+    expect(result.data.results[1].words).toHaveLength(8);
+    network.mockResolvedValue(response({ words: { "2": [] } }));
+    await expect(personalWordDefinitions(input, "小学", "en")).rejects.toThrow("CUSTOM_AI_INVALID_RESPONSE");
+  });
+  it("accepts an empty word list when no vocabulary exceeds the selected level", async () => {
+    network.mockResolvedValue(response({ words: [] }));
+    const input = ["A simple sentence.", "Another simple sentence."];
+    expect((await personalWordDefinitions(input, "GRE", "en")).data.results).toEqual(input.map(text => ({ text, words: [] })));
+  });
   it("does not contact official endpoints or silently fall back when a personal model is missing", async () => {
     fixture.models.test = { config: { endpoint: "https://api.koodoreader.com/v1", modelId: "blocked" } };
     expect(hasReadingAI("roles")).toBe(false);
@@ -71,6 +101,24 @@ describe("personal reading AI without official services", () => {
     network.mockResolvedValue(response({ roles: ["narrator"] }));
     await personalSplitSentence([{ text: "Text", index: 0 }]);
     expect(JSON.parse(String(network.mock.calls[0][1]?.body))).toMatchObject({ response_format: { type: "json_object" }, thinking: { type: "disabled" }, max_tokens: 8192 });
+  });
+  it("runs all three reading features through the native Gemini response contract", async () => {
+    fixture.models.test = { config: { endpoint: "https://generativelanguage.googleapis.com/v1beta", modelId: "models/gemini-test-flash", apiKey: "synthetic-google-key", providerId: "google" } };
+    network.mockImplementation(async (_url, options) => {
+      const body = JSON.parse(String(options?.body));
+      const input = JSON.parse(body.contents[0].parts[0].text);
+      const output = input.paragraphs ? { words: { "0": [{ word: "enigmatic", meaning: "mysterious" }] } } : input.sentences ? { roles: { "0": "female" } } : { texts: ["译文"] };
+      return new Response(JSON.stringify({ candidates: [{ finishReason: "STOP", content: { parts: [{ text: JSON.stringify(output) }] } }] }));
+    });
+    expect((await personalBatchTranslation(["Original"], "en", "zhCN")).data.texts).toEqual(["译文"]);
+    expect((await personalWordDefinitions(["An enigmatic example"], "四级", "en")).data.results[0].words[0].word).toBe("enigmatic");
+    expect((await personalSplitSentence([{ text: "Original", index: 2 }])).data.sentences[0].role).toBe("female");
+    expect(network).toHaveBeenCalledTimes(3);
+    for (const [url, options] of network.mock.calls) {
+      expect(url).toBe("https://generativelanguage.googleapis.com/v1beta/models/gemini-test-flash:generateContent");
+      expect(options?.headers).toMatchObject({ "x-goog-api-key": "synthetic-google-key" });
+      expect(String(options?.body)).not.toContain("synthetic-google-key");
+    }
   });
   it("keeps a chapter number locally when the model would otherwise omit it", async () => {
     network.mockResolvedValue(response({ roles: { "0": "narrator", "1": "female" } }));
@@ -107,6 +155,11 @@ describe("personal reading AI without official services", () => {
   ])("reports incomplete answers without spending tokens on automatic retries", async choice => {
     network.mockResolvedValue(new Response(JSON.stringify({ choices: [choice] })));
     await expect(personalSplitSentence([{ text: "text", index: 0 }])).rejects.toThrow("CUSTOM_AI_INCOMPLETE_RESPONSE");
+    expect(network).toHaveBeenCalledTimes(1);
+  });
+  it.each([429, 503])("reports service status %s without retrying or claiming a format error", async status => {
+    network.mockResolvedValue(new Response("service unavailable", { status }));
+    await expect(personalBatchTranslation(["text"], "en", "zhCN")).rejects.toThrow("CUSTOM_AI_SERVICE_BUSY");
     expect(network).toHaveBeenCalledTimes(1);
   });
   it("cancels subsequent batches when the reader leaves or stops", async () => {

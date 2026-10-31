@@ -1272,6 +1272,7 @@
   "custom.tts.degreeHelp": "Choose a non-neutral style first. Some voices may ignore intensity.",
   "custom.ai.CUSTOM_AI_NOT_CONFIGURED": "Configure the corresponding personal model in Settings → AI service first.",
   "custom.ai.CUSTOM_AI_REQUEST_FAILED": "The personal AI request failed. Check your model configuration and connection.",
+  "custom.ai.CUSTOM_AI_SERVICE_BUSY": "The model service is busy or requests are limited. Try again later.",
   "custom.ai.CUSTOM_AI_INVALID_RESPONSE": "The model returned an unsupported response. Retry or select another model.",
   "custom.ai.CUSTOM_AI_INCOMPLETE_RESPONSE": "The model returned an empty or truncated answer. Try a non-thinking model or reduce the text.",
   "custom.ai.CUSTOM_AI_TEXT_TOO_LONG": "The current text exceeds the request limit. Reduce the text or use selection translation for long paragraphs.",
@@ -1280,7 +1281,8 @@
   "custom.ai.translatingPage": "Translating the current page…",
   "custom.ai.rolesHelp": "Role analysis uses your AI assistance model. Narration uses the system or personal voices you select. The current reading text is sent to your model.",
   "custom.ai.roleFallback": "The model omitted {{count}} role assignments. Those texts will use the narrator voice; no extra request was made.",
-  "custom.ai.readingHelp": "Current page translation uses your translation model; word definitions use your dictionary model. Configure an OpenAI-compatible endpoint with JSON output in AI service.",
+  "custom.ai.wordLevelHelp": "Choose your vocabulary level. The dictionary model selects harder words and adds definitions; lower levels usually mark more words. This is an AI estimate, not a fixed exam word list.",
+  "custom.ai.readingHelp": "Current page translation uses your translation model; word definitions use your dictionary model. Configure an OpenAI-compatible or native Gemini endpoint with JSON output in AI service.",
   "custom.sync.unchanged": "Everything is up to date",
   "custom.sync.identityHelp": "Books are matched by their complete file SHA-256. Names and paths may differ; file contents must be identical. Editing or repackaging a book changes its identity.",
   "custom.sync.snapshotHelp": "The cloud keeps the latest three snapshots per device for concurrent merging and recovery. Syncing unchanged data does not upload a new file."

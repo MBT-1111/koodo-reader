@@ -24,7 +24,7 @@
 
 复用「设置 → AI 服务」中的 aiModelConfig 与三个模型选择：aiTranslateModel 用于全文翻译，aiDictModel 用于生词释义，aiAssistanceModel 用于问书和多角色分析。角色分析在朗读面板选择音色，不要求官方 Pro。
 
-本轮请求适配使用兼容 OpenAI 的 chat/completions、Bearer API Key 和非流式 JSON 响应，配置沿用现有 AI 服务表单。服务须支持 response_format=json_object；提示中给出 texts / words / roles 对象示例，角色优先使用输入 id 到角色的映射，兼容旧数组及 sentences 角色对象，并始终从本机原文生成朗读内容。在官方 DeepSeek 域名关闭思考模式；其他服务不附加该专有参数。配置缺失、请求失败或模型格式错误时提示配置/重试，不回退到官方付费接口。API Key 仅随用户端点请求头发送；不进入提示文本、同步数据或缓存身份。端点设置不得指向官方 Koodo 服务。
+本轮请求适配支持 OpenAI 兼容 chat/completions 与 Gemini 原生 generateContent，配置沿用现有 AI 服务表单。兼容接口使用 Bearer API Key / response_format=json_object；Gemini 原生使用 x-goog-api-key / generationConfig.responseMimeType=application/json。提示中给出 texts / words / roles 对象示例，角色优先使用输入 id 到角色的映射，兼容旧数组及 sentences 角色对象，并始终从本机原文生成朗读内容。在官方 DeepSeek 域名关闭思考模式；其他服务不附加该专有参数。配置缺失、请求失败或模型格式错误时提示配置/重试，不回退到官方付费接口。API Key 仅随用户端点请求头发送；不进入提示文本、同步数据或缓存身份。端点设置不得指向官方 Koodo 服务。
 
 原文会发送至用户选定模型。模型不得重写角色朗读原文，批量翻译不得漏项；响应格式不符则停止该操作。生词释义只保留公开渲染所需字段，忽略不在原文中的词。全文翻译/生词标注仍需要在 EPUB、TXT 和文本 PDF 的实际阅读窗口验证；扫描书籍受 OCR 能力限制。
 
@@ -59,5 +59,19 @@ DeepSeek 格式依据为官方 [JSON Output](https://api-docs.deepseek.com/guide
 真实验证使用相同失败输入：仅向模型发送 7 条正文，得到完整 id 映射，最终保留 8 条原始文本，回退数为 0。将实际修复函数转译后临时接入当前阅读窗口的请求边界，继续验证 DeepSeek + MiMo 链路：350 条文本 / 44 批全部对齐，回退 0、格式错误 0，播放进度到第 4 条文本后主动停止。这个测试没有替换安装文件，也没有执行本机生产构建；测试适配和调试启动随后清理，软件正常重开。永久修复需要新的云端包。
 
 本次补充回归后 TypeScript 检查与 9 个文件 / 60 项测试通过，中英文 custom 文案键 106 个一致。该实测证明当前书籍和配置的多角色链路通过，不代表其他服务、书籍格式、翻译分页及全部角色声音均已人工覆盖。接口诊断日志仅保留数量和状态，没有保存认证头、API Key 或请求/响应正文；操作定位截图和诊断脚本留在本机忽略目录，不纳入 Git 提交。
+
+### 生词水平与 Gemini 补充
+
+三个模型选择相互独立：aiTranslateModel 负责当前页翻译，aiDictModel 负责生词释义，aiAssistanceModel 负责多角色分析与已有辅助用途；真正发声继续使用朗读面板选择的 MiMo、Azure 等 Provider。换模型配置无需重新编译，但服务须符合对应协议并能生成所需 JSON 结构。
+
+英语生词水平作为基础水平发送给词典模型，挑选高于该水平的词，通常低水平标注更多、高水平标注更少；这是 AI 估计，不是固定考试词表。2026-11-01 在用户 ba9bab4d 软件、现有 deepseek-flash 词典及六级设置中复现：8 段输入被合并成 1 组 20 个词，旧代码按逐段数量验证失败。修复优先要求段落 id 映射；兼容实际出现的合并/扁平词表，按词项在原文中的出现重新分配，只保留已知纯文本字段；空词表、缺失组保留原文及空释义。每段最多 8 个词，减少输出截断与请求量，不额外请求来修补分组。
+
+真实回放与新请求均保留了 8 段原文。临时接入修复函数的阅读界面实测：100 段 / 13 批全部对齐，生成 195 处非空释义标注，格式错误 0；这验证了词典模型到阅读引擎的实际显示链路。词义准确性及词汇难度仍由模型决定。
+
+Gemini 地址支持两种：兼容地址 https://generativelanguage.googleapis.com/v1beta/openai，以及 Google/Gemini Provider 的原生根地址 https://generativelanguage.googleapis.com/v1beta。带 models/ 的模型名会规范化，配置页测试和获取模型列表共用协议适配。第三方代理的自定义 OpenAI 模型不会仅因名字含 Gemini 就被强制切换协议。接口依据为官方 [generateContent 文本生成](https://ai.google.dev/gemini-api/docs/generate-content/text-generation)、[结构化输出](https://ai.google.dev/gemini-api/docs/generate-content/structured-output) 与 [API 鉴权](https://ai.google.dev/api)。
+
+使用用户已保存的 models/gemini-3.5-flash，在不修改保存配置的前提下以短合成文本实测：兼容模式的多角色、翻译、生词三项通过；原生及兼容模型列表分别返回 HTTP 200，原生短 JSON 调用也通过。完整原生阅读调用遇到服务方 HTTP 503“high demand”，未取得原生三个阅读功能全部成功的结论。429/503 单独提示服务繁忙或受限，不再混作格式错误，也不自动重试。此轮 Gemini 验证范围为上述阅读工具及配置协议，未覆盖其他 AI 面板的原生接口行为。
+
+本轮 TypeScript 检查及 10 个文件 / 75 项测试通过，中英文 custom 文案键 108 个一致。临时适配和模型覆盖值已清除，软件以无调试参数正常重开；没有替换安装文件或执行本机生产构建。需要新云端包使修复持久生效。
 
 这些 React/TypeScript 与主进程资源需要重新构建。已打包 ZIP 不会自动热更新；本轮通过推送源码后云端产出新 ZIP 交付，建议独立目录测试。新的 ZIP 使用同一个 Custom profile；不要通过覆盖书库或卸载来更新程序。

@@ -1274,6 +1274,7 @@
   "custom.tts.degreeHelp": "先选择非中性风格；部分语音可能忽略强度参数。",
   "custom.ai.CUSTOM_AI_NOT_CONFIGURED": "请先在设置 → AI 服务中配置对应的自有模型。",
   "custom.ai.CUSTOM_AI_REQUEST_FAILED": "自有 AI 请求失败，请检查模型配置和网络连接。",
+  "custom.ai.CUSTOM_AI_SERVICE_BUSY": "模型服务繁忙或请求受到限制，请稍后重试。",
   "custom.ai.CUSTOM_AI_INVALID_RESPONSE": "模型返回格式不符合要求，请重试或更换模型。",
   "custom.ai.CUSTOM_AI_INCOMPLETE_RESPONSE": "模型返回了空白或被截断的答案，请尝试非思考模型或缩小文本范围。",
   "custom.ai.CUSTOM_AI_TEXT_TOO_LONG": "当前文本超过处理上限，请缩小范围；过长段落可使用划词翻译。",
@@ -1282,7 +1283,8 @@
   "custom.ai.translatingPage": "正在翻译当前页…",
   "custom.ai.rolesHelp": "角色分析使用你配置的 AI 辅助模型，朗读使用所选系统或自有语音。当前阅读文本会发送到该模型。",
   "custom.ai.roleFallback": "模型漏判了 {{count}} 条文本，这些内容使用旁白音色朗读，没有追加模型请求。",
-  "custom.ai.readingHelp": "当前页翻译使用翻译模型，生词释义使用词典模型。请在 AI 服务中配置兼容 OpenAI 且支持 JSON 输出的接口。",
+  "custom.ai.wordLevelHelp": "选择你的词汇水平，词典模型会挑出更难的词并添加释义；水平越低通常标注越多。这是 AI 判断，不是固定考试词表。",
+  "custom.ai.readingHelp": "当前页翻译使用翻译模型，生词释义使用词典模型。请在 AI 服务中配置支持 JSON 输出的 OpenAI 兼容接口或 Gemini 原生接口。",
   "custom.sync.unchanged": "没有需要更新的数据",
   "custom.sync.identityHelp": "书籍按完整文件的 SHA-256 匹配。文件名和路径可以不同，文件内容必须一致；修改内容或重新打包会改变书籍标识。",
   "custom.sync.snapshotHelp": "云端保留每台设备最近 3 代快照，用于并发合并与恢复。没有变化的同步不上传新文件。"

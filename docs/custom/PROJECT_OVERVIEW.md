@@ -6,7 +6,7 @@
 
 - 项目所有者决定产品方向、重要架构选择、提交、推送和发布。
 - Codex 承担审计、方案、授权范围内的开发、验证和文档维护。
-- 交接时仅授权 Phase 0；随后用户于 2026-10-31 授权“不用询问，先推进完 Windows 端修改”。现授权覆盖 Windows 所需的数据契约、同步、TTS、隔离与构建准备。移动端仍未开始，真实数据修改、Git 提交/推送及发布仍不在本轮执行范围。
+- 交接时仅授权 Phase 0；随后用户于 2026-10-31 授权“不用询问，先推进完 Windows 端修改”，并授权 Windows 修复的提交推送。2026-11-01 又授权本轮推送后合入 custom/dev、收尾当前 Windows 阶段。移动端、发布、分支删除和真实书库迁移仍未授权。
 - 不主动 commit、push、发布、运行安装程序、清理或迁移真实书库。
 
 ## 产品目标
@@ -30,6 +30,10 @@
 - 不触发云端构建或发布工作流，相关配置本轮只静态检查。
 - Windows 实施在 `feature/windows-custom` 分支；目前已有自有同步、Azure 情绪与更新隔离实现，以及无发布云端工作流。所有者已授权本次单独提交、推送该功能分支。详见 [Windows 实施记录](WINDOWS_IMPLEMENTATION.md) 和 [使用说明](WINDOWS_GUIDE.md)。
 
+## 当前 Windows 阶段状态
+
+2026-11-01：所有者接受当前迭代范围，授权将本轮最终源码快进集成到 custom/dev 并收尾。功能、75 项测试、本机模型/朗读/生词实测及 Gemini 原生 503 等待验证限制见 [Windows 收尾记录](WINDOWS_HANDOFF.md)。最新云端包仍由所有者构建与回归，移动端没有启动。
+
 ## 源码基线
 
 | 项目 | 核验结果 |
@@ -37,9 +41,9 @@
 | 工作目录 | `D:\MyProjects\Web_Apps\koodo_reader` |
 | 官方仓库 | <https://github.com/koodo-reader/koodo-reader> |
 | Fork | <https://github.com/MBT-1111/koodo-reader> |
-| HEAD | `42443d83f9a536a3e1c501991ac8b6f635e69bc1` |
+| 官方审计基线 | `42443d83f9a536a3e1c501991ac8b6f635e69bc1` |
 | 应用版本 | `package.json`: 2.4.6 |
-| 当前分支 | `custom/dev`，跟踪 `origin/custom/dev` |
+| 个人集成分支 | `custom/dev`，跟踪 `origin/custom/dev`；最新源码以分支 HEAD 为准 |
 | 主仓许可证 | 根目录 `LICENSE`：AGPL v3；组件许可须分别核实 |
 
 审计入口：[验收记录](PHASE0_ACCEPTANCE.md)、[待验证事项](AUDIT_STATUS.md)、[架构决定](ARCHITECTURE_DECISIONS.md)、[上游维护](UPSTREAM_POLICY.md)、[阶段计划](PHASE_PLAN.md)。

@@ -1,6 +1,6 @@
 # 上游维护策略
 
-## 已核验的关系
+## Phase 0 核验关系（历史）
 
 2026-10-31，`dev`、`custom/dev`、`origin/dev`、`origin/custom/dev`、本地缓存的 `upstream/dev` 均指向 `42443d83f9a536a3e1c501991ac8b6f635e69bc1`。`dev...custom/dev` 和 `custom/dev...upstream/dev` 的左右提交数均为 `0 0`。本轮未 fetch，不能据此断言远端实时没有新提交。
 
@@ -50,3 +50,9 @@
 云端构建与隔离测试通过、必要的 Windows 人工回归完成后，将 feature/windows-custom 合并到 custom/dev，后者作为个人版本长期集成分支。当前仅领先时可采用快进合并，保留原提交；确认合并与远端引用后可删除临时功能分支。合并、远端更新和分支删除分别依据所有者届时授权执行，不在排查 Actions 时自动操作。
 
 upstream 更新检查除了原有位置，还需覆盖 `src/custom/`、`src/utils/main/custom/`、Azure 插件元数据、TTS queue generation、database-command 的 CAS 分支、preload 白名单、profile 初始化时序、关于页及两个 workflow 的路由。不要用原多平台发布任务代替 Custom 验证流程。
+
+## 当前 Windows 阶段集成授权
+
+2026-11-01 所有者明确同意本轮提交推送后合并并收尾 Windows。按最新授权，在本地类型/75 项测试和所记录的本机实测后，将 feature/windows-custom 快进集成到 custom/dev，并更新对应 origin 分支；dev 继续保留官方基线，功能分支不删除。这是本次集成授权，不是今后自动合并、删除分支或发布的长期授权。
+
+本次最终源码的云端构建仍由所有者查看和执行，不把本地验证或源码集成写作新包已通过构建。推送两个分支可能分别触发现有 Actions；同一快进提交对应相同源码。阶段状态与遗留限制见 [Windows 收尾记录](WINDOWS_HANDOFF.md)。
