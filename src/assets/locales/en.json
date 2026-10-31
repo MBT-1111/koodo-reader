@@ -1279,6 +1279,7 @@
   "custom.ai.pageTranslationHelp": "Only visible paragraphs are translated. Crossing paragraphs stay complete. Completed translations are cached; turning pages cancels unfinished requests.",
   "custom.ai.translatingPage": "Translating the current page…",
   "custom.ai.rolesHelp": "Role analysis uses your AI assistance model. Narration uses the system or personal voices you select. The current reading text is sent to your model.",
+  "custom.ai.roleFallback": "The model omitted {{count}} role assignments. Those texts will use the narrator voice; no extra request was made.",
   "custom.ai.readingHelp": "Current page translation uses your translation model; word definitions use your dictionary model. Configure an OpenAI-compatible endpoint with JSON output in AI service.",
   "custom.sync.unchanged": "Everything is up to date",
   "custom.sync.identityHelp": "Books are matched by their complete file SHA-256. Names and paths may differ; file contents must be identical. Editing or repackaging a book changes its identity.",

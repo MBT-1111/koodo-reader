@@ -1281,6 +1281,7 @@
   "custom.ai.pageTranslationHelp": "只翻译当前可见段落，跨页段落保留完整。已完成译文会缓存；翻页会取消未完成的请求。",
   "custom.ai.translatingPage": "正在翻译当前页…",
   "custom.ai.rolesHelp": "角色分析使用你配置的 AI 辅助模型，朗读使用所选系统或自有语音。当前阅读文本会发送到该模型。",
+  "custom.ai.roleFallback": "模型漏判了 {{count}} 条文本，这些内容使用旁白音色朗读，没有追加模型请求。",
   "custom.ai.readingHelp": "当前页翻译使用翻译模型，生词释义使用词典模型。请在 AI 服务中配置兼容 OpenAI 且支持 JSON 输出的接口。",
   "custom.sync.unchanged": "没有需要更新的数据",
   "custom.sync.identityHelp": "书籍按完整文件的 SHA-256 匹配。文件名和路径可以不同，文件内容必须一致；修改内容或重新打包会改变书籍标识。",

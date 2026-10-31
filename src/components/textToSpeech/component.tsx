@@ -768,6 +768,7 @@ const TextToSpeech = () => {
           stateRef.current.multiRoleChildEngine || "system"
         ) || narratorVoice;
       if (res && res.data && res.data.sentences) {
+        if (personalMode && res.data.fallbackCount) toast(t("custom.ai.roleFallback", { count: res.data.fallbackCount }));
         nodeList = res.data.sentences.map((item: any) => {
           let voice = narratorVoice;
           if (item.role === "male") {

@@ -49,8 +49,12 @@ async function request(kind: ReadingAI, instructions: string, data: unknown, sig
   catch { throw new Error("CUSTOM_AI_INVALID_RESPONSE"); }
 }
 
-async function batches<T>(texts: string[], task: (chunk: string[]) => Promise<T[]>, signal?: AbortSignal): Promise<T[]> {
+function validateTexts(texts: string[]): void {
   if (texts.some(text => typeof text !== "string") || texts.length > 2000 || texts.reduce((sum, text) => sum + text.length, 0) > 50000) throw new Error("CUSTOM_AI_TEXT_TOO_LONG");
+}
+
+async function batches<T>(texts: string[], task: (chunk: string[]) => Promise<T[]>, signal?: AbortSignal): Promise<T[]> {
+  validateTexts(texts);
   const output: T[] = [];
   for (let offset = 0; offset < texts.length;) {
     signal?.throwIfAborted();
@@ -92,16 +96,34 @@ export async function personalWordDefinitions(texts: string[], level: string, la
 }
 
 export async function personalSplitSentence(texts: { text: string; index: number }[], signal?: AbortSignal) {
-  const roles = await batches<string>(texts.map(item => item.text), async chunk => {
-    const result = await request("roles", 'Classify each sentence\'s speaker. Return {"roles":["narrator","female"]}, with exactly one role per input sentence, in the input order. Allowed roles: narrator, male, female, child. Use narrator when uncertain. Do not return or modify the original text.', { texts: chunk }, signal);
+  signal?.throwIfAborted();
+  validateTexts(texts.map(item => item.text));
+  // Models may omit chapter numbers and punctuation when asked for sentences.
+  // Keep these locally as narration, and identify every remaining input explicitly.
+  const pending = texts.map((item, index) => ({ ...item, position: index })).filter(item => /\p{L}/u.test(item.text));
+  let fallbackCount = 0;
+  const analyzed = await batches<string>(pending.map(item => item.text), async chunk => {
+    const example = JSON.stringify({ roles: Object.fromEntries(chunk.map((_, id) => [String(id), "narrator"])) });
+    const result = await request("roles", `Classify each sentence's speaker. Return a JSON object mapping every supplied id to its role. Include every id exactly once, even for headings, fragments and short utterances. Do not merge inputs. Allowed roles: narrator, male, female, child. Use narrator when uncertain. Do not return or modify the original text. Required output structure: ${example}`, { sentences: chunk.map((text, id) => ({ id: String(id), text })) }, signal);
     const output = arrayResult(result, record(result) && Array.isArray(result.sentences) ? "sentences" : "roles");
-    if (!Array.isArray(output)) throw new Error("CUSTOM_AI_INVALID_RESPONSE");
-    return output.map(item => {
+    let values: unknown[];
+    if (record(output)) {
+      if (Object.keys(output).some(key => !chunk.some((_, id) => String(id) === key))) throw new Error("CUSTOM_AI_INVALID_RESPONSE");
+      values = chunk.map((_, id) => {
+        if (Object.hasOwn(output, String(id))) return output[String(id)];
+        fallbackCount++;
+        return "narrator";
+      });
+    } else if (Array.isArray(output)) values = output;
+    else throw new Error("CUSTOM_AI_INVALID_RESPONSE");
+    return values.map(item => {
       const value = record(item) ? item.role : item;
       const role = typeof value === "string" ? value.trim().toLowerCase() : "";
       if (!["narrator", "male", "female", "child"].includes(role)) throw new Error("CUSTOM_AI_INVALID_RESPONSE");
       return role;
     });
   }, signal);
-  return { code: 200, data: { sentences: texts.map((item, index) => ({ ...item, role: roles[index] })) } };
+  const roles = texts.map(() => "narrator");
+  pending.forEach((item, index) => { roles[item.position] = analyzed[index]; });
+  return { code: 200, data: { sentences: texts.map((item, index) => ({ ...item, role: roles[index] })), fallbackCount } };
 }

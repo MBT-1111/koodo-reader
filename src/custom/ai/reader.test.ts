@@ -72,6 +72,35 @@ describe("personal reading AI without official services", () => {
     await personalSplitSentence([{ text: "Text", index: 0 }]);
     expect(JSON.parse(String(network.mock.calls[0][1]?.body))).toMatchObject({ response_format: { type: "json_object" }, thinking: { type: "disabled" }, max_tokens: 8192 });
   });
+  it("keeps a chapter number locally when the model would otherwise omit it", async () => {
+    network.mockResolvedValue(response({ roles: { "0": "narrator", "1": "female" } }));
+    const input = [{ text: "1", index: 0 }, { text: "Original narration.", index: 1 }, { text: "Original dialogue!", index: 1 }];
+    const result = await personalSplitSentence(input);
+    expect(result.data.sentences).toEqual(input.map((item, index) => ({ ...item, role: index === 2 ? "female" : "narrator" })));
+    const body = JSON.parse(String(network.mock.calls[0][1]?.body));
+    expect(JSON.parse(body.messages[1].content)).toEqual({ sentences: [{ id: "0", text: input[1].text }, { id: "1", text: input[2].text }] });
+  });
+  it("assigns numeric and punctuation-only inputs without spending model tokens", async () => {
+    const input = [{ text: "123", index: 0 }, { text: "—", index: 1 }];
+    expect((await personalSplitSentence(input)).data.sentences).toEqual(input.map(item => ({ ...item, role: "narrator" })));
+    expect(network).not.toHaveBeenCalled();
+  });
+  it("retains cancellation and size limits even when every input is a heading", async () => {
+    await expect(personalSplitSentence([{ text: "1".repeat(50001), index: 0 }])).rejects.toThrow("CUSTOM_AI_TEXT_TOO_LONG");
+    const controller = new AbortController(); controller.abort();
+    await expect(personalSplitSentence([{ text: "1", index: 0 }], controller.signal)).rejects.toThrow();
+    expect(network).not.toHaveBeenCalled();
+  });
+  it("fills missing identified roles with narration without dropping or shifting text", async () => {
+    network.mockResolvedValue(response({ roles: { "1": "female" } }));
+    const input = [{ text: "First original.", index: 4 }, { text: "Second original.", index: 5 }];
+    const result = await personalSplitSentence(input);
+    expect(result.data.fallbackCount).toBe(1);
+    expect(result.data.sentences).toEqual(input.map((item, index) => ({ ...item, role: index ? "female" : "narrator" })));
+    expect(network).toHaveBeenCalledTimes(1);
+    network.mockResolvedValue(response({ roles: { "2": "male" } }));
+    await expect(personalSplitSentence(input)).rejects.toThrow("CUSTOM_AI_INVALID_RESPONSE");
+  });
   it.each([
     { finish_reason: "stop", message: { content: "   ", reasoning_content: "not an answer" } },
     { finish_reason: "length", message: { content: '{"roles":[' } },
