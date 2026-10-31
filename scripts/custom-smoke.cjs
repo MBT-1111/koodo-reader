@@ -38,7 +38,7 @@ const { isInside } = require("../src/utils/main/custom/runtime");
       localStorage.setItem("recordLocation", JSON.stringify({ "synthetic-book": { percentage: "0.5", cfi: "fixture" } }));
     });
     await invoke("custom-sync", { action: "configure", provider: "folder", namespace: "smoke", autoMinutes: 0, folder: remote });
-    await page.locator(".setting-icon").click();
+    await page.locator(".icon-setting.setting-icon").click();
     await page.locator(".setting-dialog-sidebar-item").filter({ hasText: /Sync and backup|同步与备份|同步和备份/ }).click();
     const button = page.locator(".custom-sync").getByRole("button", { name: /^(Sync now|立即同步)$/ });
     await button.click();
