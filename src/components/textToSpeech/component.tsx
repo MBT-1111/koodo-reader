@@ -26,6 +26,8 @@ import { fetchUserInfo } from "../../utils/request/user";
 import { getSplitSentence } from "../../utils/request/reader";
 import { Howl } from "howler";
 import { useAppStore } from "../../store/useAppStore";
+import EmotionSelect from "../../custom/tts/EmotionSelect";
+import type { PluginVoice } from "../../utils/plugins/types";
 
 export interface TextToSpeechState {
   isAudioOn: boolean;
@@ -348,6 +350,11 @@ const TextToSpeech = () => {
       (item: any) => item.name === voiceName && item.plugin === voiceEngine
     );
   };
+  const handleEmotionChange = () => {
+    stopPreviewAudio();
+    TTSUtil.setAudioPaths();
+    forceUpdate();
+  };
   const handlePreviewVoice = async (voiceName: string, voiceEngine: string) => {
     if (!voiceName) {
       toast(t("Please select"));
@@ -405,7 +412,7 @@ const TextToSpeech = () => {
       plugin,
       pluginVoice,
       true
-    );
+    ).catch(() => "");
     if (!audioPath) {
       toast.error(t("Audio loading failed, stopped playback"));
       return;
@@ -796,6 +803,7 @@ const TextToSpeech = () => {
           true,
           node.voiceEngine === "official-ai-voice-plugin"
         );
+        if (result === "cancelled") return;
         toast.dismiss("tts-load");
         if (result === "error") {
           toast.error(t("Audio loading failed, stopped playback"));
@@ -1284,6 +1292,11 @@ const TextToSpeech = () => {
           </select>
         </div>
 
+        <EmotionSelect
+          voice={getVoiceByNameAndEngine(ConfigService.getReaderConfig("voiceName"), ConfigService.getReaderConfig("voiceEngine")) as PluginVoice | undefined}
+          disabled={state.isAudioOn}
+          onChange={handleEmotionChange}
+        />
         <div
           className="setting-dialog-new-title"
           style={{ marginLeft: "20px", width: "88%", fontWeight: 500 }}
@@ -1362,6 +1375,13 @@ const TextToSpeech = () => {
         </p>
         {stateRef.current.multiRoleEnabled && (
           <>
+            {[
+              ["Narrator voice", state.multiRoleNarratorVoice, state.multiRoleNarratorEngine],
+              ["Male voice", state.multiRoleMaleVoice, state.multiRoleMaleEngine],
+              ["Female voice", state.multiRoleFemaleVoice, state.multiRoleFemaleEngine],
+              ["Child voice", state.multiRoleChildVoice, state.multiRoleChildEngine],
+            ].map(([label, name, engine]) => <EmotionSelect key={label} label={`${t(label)} · ${t("custom.tts.emotion")}`} voice={getVoiceByNameAndEngine(name, engine) as PluginVoice | undefined} disabled={state.isAudioOn} onChange={handleEmotionChange} />)}
+            <p className="setting-option-subtitle" style={{ margin: "12px 20px" }}>{t("custom.tts.sharedStyle")}</p>
             {/* Voice Type Selection */}
             <div
               className="setting-dialog-new-title"

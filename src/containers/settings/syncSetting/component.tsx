@@ -48,6 +48,7 @@ import Book from "../../../models/Book";
 import ConfigUtil from "../../../utils/file/configUtil";
 import TokenService from "../../../utils/storage/tokenService";
 import { useAppStore } from "../../../store/useAppStore";
+import CustomSyncSettings from "../../../custom/sync/Settings";
 
 export interface SettingInfoState {
   isKeepLocal: boolean;
@@ -648,6 +649,7 @@ const SyncSetting = () => {
   const { showDefaultSyncAddGrid } = state;
   return (
     <>
+      {isElectron && <CustomSyncSettings />}
       <div
         className="add-source-card"
         onClick={() => {

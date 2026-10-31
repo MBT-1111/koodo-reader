@@ -1,0 +1,28 @@
+import { useState } from "react";
+import { useTranslation } from "react-i18next";
+import { ConfigService } from "../../assets/lib/kookit-extra-browser.min";
+import type { PluginVoice } from "../../utils/plugins/types";
+import { AZURE_PLUGIN, azureStyles, selectedAzureStyle } from "./emotion";
+import "./emotion.css";
+
+interface Props { voice?: PluginVoice; disabled: boolean; label?: string; onChange: () => void }
+export default function EmotionSelect({ voice, disabled, label, onChange }: Props) {
+  const { t } = useTranslation();
+  const [, render] = useState(0);
+  if (!voice || voice.plugin !== AZURE_PLUGIN) return null;
+  const saved = ConfigService.getItem("customAzureStyles") || "{}";
+  const styles = azureStyles(voice);
+  return <label className="custom-emotion">
+    <span>{label || t("custom.tts.emotion")}</span>
+    <select value={selectedAzureStyle(voice, saved)} disabled={disabled} title={disabled ? t("custom.tts.stopToChange") : undefined} onChange={(event) => {
+      let preferences: Record<string, string> = {};
+      try { const data: unknown = JSON.parse(saved); if (data && typeof data === "object" && !Array.isArray(data)) preferences = data as Record<string, string>; } catch { /* Reset corrupt preferences. */ }
+      ConfigService.setItem("customAzureStyles", JSON.stringify({ ...preferences, [voice.name]: event.target.value }));
+      render((value) => value + 1);
+      onChange();
+    }}>
+      {styles.map((style) => <option key={style} value={style}>{t(`custom.tts.style.${style}`, { defaultValue: style })}</option>)}
+    </select>
+    {styles.length === 1 && <small>{t("custom.tts.refreshVoices")}</small>}
+  </label>;
+}

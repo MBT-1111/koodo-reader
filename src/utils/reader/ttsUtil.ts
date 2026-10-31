@@ -4,6 +4,9 @@ import { getAllVoices, getFormatFromAudioPath } from "../common";
 import { getTTSAudio } from "../request/reader";
 import { isElectron } from "react-device-detect";
 import { TextRule } from "../common";
+import { AZURE_PLUGIN, azureParameters } from "../../custom/tts/emotion";
+import type { PluginVoice } from "../plugins/types";
+import { ConfigService } from "../../assets/lib/kookit-extra-browser.min";
 
 const escapeRegExp = (pattern: string) =>
   pattern.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -16,6 +19,7 @@ class TTSUtil {
   static isPaused: boolean = false;
   static pausedMidSentence: boolean = false;
   static processingIndexes: Set<number> = new Set();
+  static cacheGeneration = 0;
   static async readAloud(currentIndex: number) {
     // 清理比当前 index 小 10 的已朗读缓存
     this.audioPaths = this.audioPaths.filter(
@@ -56,6 +60,7 @@ class TTSUtil {
     isFirst: boolean,
     isOfficialAIVoice: boolean
   ) {
+    const generation = this.cacheGeneration;
     this.isPaused = false;
 
     if (isOfficialAIVoice) {
@@ -111,6 +116,7 @@ class TTSUtil {
             isFirst
           )
             .then(async (res) => {
+              if (generation !== this.cacheGeneration) return null;
               // 处理完成后，从处理集合中移除
               this.processingIndexes.delete(index);
               if (res) {
@@ -121,6 +127,7 @@ class TTSUtil {
               }
             })
             .catch((error) => {
+              if (generation !== this.cacheGeneration) return null;
               // 出错时也要从处理集合中移除
               this.processingIndexes.delete(index);
               console.error(`Error caching audio for index ${index}:`, error);
@@ -131,6 +138,7 @@ class TTSUtil {
 
         // 等待当前批次完成
         const batchResults = await Promise.all(batch);
+        if (generation !== this.cacheGeneration) return "cancelled";
 
         // 将结果存储到 Map 中
         for (const result of batchResults) {
@@ -181,14 +189,25 @@ class TTSUtil {
         if (!voice) {
           return "error";
         }
-        let audioPath = await this.getAudioPath(
-          audioNode.text,
-          speed,
-          audioNode.voiceEngine,
-          plugin,
-          voice,
-          isFirst
-        );
+        let audioPath: string;
+        try {
+          audioPath = await this.getAudioPath(
+            audioNode.text,
+            speed,
+            audioNode.voiceEngine,
+            plugin,
+            voice,
+            isFirst
+          );
+        } catch {
+          if (generation !== this.cacheGeneration) return "cancelled";
+          if (generation === this.cacheGeneration) {
+            this.processingIndexes.delete(index);
+            this.isPaused = true;
+          }
+          return "error";
+        }
+        if (generation !== this.cacheGeneration) return "cancelled";
         // 处理完成后，从处理集合中移除
         this.processingIndexes.delete(index);
         if (audioPath) {
@@ -219,14 +238,10 @@ class TTSUtil {
   static async stopAudio() {
     if (this.player && this.player.stop) {
       this.player.stop();
-      this.isPaused = true;
-      this.pausedMidSentence = false;
-      // 仅清理内存缓存，磁盘上的 tts 目录保留供跨会话复用
-      setTimeout(() => {
-        this.audioPaths = [];
-        this.processingIndexes.clear();
-      }, 1000);
     }
+    this.isPaused = true;
+    // Invalidate in-flight work immediately; retain the persistent disk cache.
+    this.setAudioPaths();
   }
   static getAudioPaths() {
     return this.audioPaths;
@@ -293,6 +308,11 @@ class TTSUtil {
         pluginKey: plugin.key,
         config: voice.config,
       };
+      if (voiceEngine === AZURE_PLUGIN) {
+        const azure = azureParameters(voice as PluginVoice, ConfigService.getItem("customAzureStyles") || "{}", speed);
+        payload.speed = azure.speed;
+        payload.config = azure.config;
+      }
       if (plugin.script) {
         payload.script = plugin.script;
         if (plugin.scriptSHA256) {
@@ -304,6 +324,7 @@ class TTSUtil {
     }
   }
   static setAudioPaths() {
+    this.cacheGeneration++;
     this.audioPaths = [];
     this.processingIndexes.clear();
     this.pausedMidSentence = false;

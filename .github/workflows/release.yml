@@ -3,7 +3,14 @@ name: Build/release
 on: workflow_dispatch
 
 jobs:
+  custom-windows:
+    if: startsWith(github.ref, 'refs/heads/feature/') || startsWith(github.ref, 'refs/heads/custom/')
+    uses: ./.github/workflows/custom-windows.yml
+    permissions:
+      contents: read
+
   release:
+    if: ${{ !startsWith(github.ref, 'refs/heads/feature/') && !startsWith(github.ref, 'refs/heads/custom/') }}
     runs-on: ${{ matrix.os }}
 
     env:

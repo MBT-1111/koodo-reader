@@ -1,0 +1,11 @@
+.custom-sync { margin: 20px 25px 30px; padding: 16px; border: 1px solid rgba(128,128,128,.3); border-radius: 8px; }
+.custom-sync h3 { margin: 0 0 12px; font-size: 17px; }
+.custom-sync p, .custom-sync small { font-size: 13px; line-height: 1.6; opacity: .8; }
+.custom-sync fieldset { padding: 0; margin: 0; border: 0; display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+.custom-sync label { display: flex; flex-direction: column; gap: 6px; font-size: 14px; }
+.custom-sync input, .custom-sync select, .custom-sync button { min-height: 32px; padding: 6px 10px; border: 1px solid rgba(128,128,128,.45); border-radius: 5px; color: inherit; background: transparent; font: inherit; overflow-wrap: anywhere; }
+.custom-sync button { cursor: pointer; }
+.custom-sync button:disabled, .custom-sync fieldset:disabled { opacity: .6; cursor: default; }
+.custom-sync-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.custom-sync-conflict { margin: 16px 0; padding: 12px; border: 1px solid rgba(128,128,128,.3); border-radius: 6px; overflow-wrap: anywhere; }
+.custom-sync-conflict > div { margin-top: 12px; }

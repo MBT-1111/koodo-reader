@@ -13,6 +13,7 @@ import {
 import copyTextToClipboard from "copy-text-to-clipboard";
 import { isElectron } from "react-device-detect";
 import { checkDeveloperUpdate } from "../../../utils/request/common";
+import customBuild from "../../../custom/build.json";
 
 declare var window: any;
 
@@ -34,6 +35,10 @@ const AboutSetting = () => {
               className="change-location-button"
               style={{ marginLeft: "10px", cursor: "pointer" }}
               onClick={async () => {
+                if (!customBuild.allowOfficialUpdates) {
+                  toast(t("custom.updatesManaged"));
+                  return;
+                }
                 toast.loading(t("Checking for update") + "...", {
                   id: "checking_update",
                 });

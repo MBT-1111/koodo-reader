@@ -1,0 +1,46 @@
+name: Custom Windows verification
+on:
+  workflow_dispatch:
+  workflow_call:
+permissions:
+  contents: read
+jobs:
+  windows:
+    runs-on: windows-2022
+    timeout-minutes: 45
+    env:
+      CSC_IDENTITY_AUTO_DISCOVERY: "false"
+      ELECTRON_BUILDER_ALLOW_UNRESOLVED_DEPENDENCIES: "false"
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "22.14.0"
+      - name: Install JavaScript dependencies without native lifecycle scripts
+        run: yarn install --frozen-lockfile --ignore-scripts --non-interactive
+      - name: Check types and contracts
+        run: |
+          yarn typecheck
+          yarn test
+      - name: Prepare Electron and native modules on the hosted runner
+        run: |
+          node node_modules/electron/install.js
+          node scripts/patch-nan.js
+          yarn electron-builder install-app-deps --arch x64
+      - name: Compile Windows renderer resources
+        run: yarn build
+      - name: Smoke test with synthetic isolated data and blocked external network
+        run: yarn custom:smoke
+      - name: Build unsigned Windows x64 archive without publishing
+        run: yarn electron-builder --win zip --x64 --publish never -c.win.signAndEditExecutable=false
+      - name: Upload reviewable build and provenance
+        uses: actions/upload-artifact@v4
+        with:
+          name: koodo-reader-custom-windows-${{ github.sha }}
+          path: |
+            dist/*-Win.zip
+            dist/custom-smoke.json
+            package.json
+            yarn.lock
+          if-no-files-found: error
+          retention-days: 14

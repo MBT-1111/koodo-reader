@@ -35,6 +35,7 @@ import {
 import Footer from "../../components/footer";
 import ProtectionOverlay from "../../components/protection";
 import { useAppStore } from "../../store/useAppStore";
+import { scheduleCustomSync } from "../../custom/sync/service";
 
 export interface ManagerState {
   totalBooks: number;
@@ -112,6 +113,12 @@ const Manager = () => {
     (s) => s.handleAddCollectionDialog
   );
   const { t } = useTranslation();
+  useEffect(() => {
+    if (!window.electronAPI) return;
+    return scheduleCustomSync((result) => {
+      if (result.conflicts.length) toast(t("custom.sync.conflictsPending"));
+    }, (key) => toast.error(t(key)));
+  }, [t]);
   const navigate = useNavigate();
   const [state, setState] = useState<ManagerState>({
     totalBooks: parseInt(ConfigService.getReaderConfig("totalBooks")) || 0,

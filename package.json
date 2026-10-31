@@ -110,6 +110,7 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
+    "custom:smoke": "node scripts/custom-smoke.cjs",
     "pretest:e2e": "yarn build",
     "test:e2e": "playwright test",
     "ele": "electron .",
@@ -120,14 +121,15 @@
     "rebuild": "electron-rebuild -f -w better-sqlite3"
   },
   "build": {
-    "appId": "xyz.960960.koodo",
-    "productName": "Koodo Reader",
+    "appId": "xyz.960960.koodo.custom",
+    "productName": "Koodo Reader Custom",
     "copyright": "Copyright (c) 2020-2025 ${author}",
     "files": [
       "build/**/*",
       "node_modules/**/*",
       "!node_modules/liteofd/dist/assets/fonts/**",
       "package.json",
+      "src/custom/build.json",
       "src/assets/lib/kookit-extra.min.mjs",
       "src/utils/plugins/main/**/*.js",
       "main.js",
@@ -145,7 +147,7 @@
       }
     ],
     "protocols": {
-      "name": "KoodoReader",
+      "name": "KoodoReaderCustom",
       "schemes": [
         "koodo-reader"
       ]
@@ -153,11 +155,7 @@
     "directories": {
       "buildResources": "assets"
     },
-    "publish": {
-      "provider": "github",
-      "repo": "koodo-reader",
-      "owner": "koodo-reader"
-    },
+    "publish": null,
     "buildDependenciesFromSource": false,
     "nodeGypRebuild": false,
     "fileAssociations": [
@@ -273,21 +271,7 @@
     "win": {
       "target": [
         {
-          "target": "nsis",
-          "arch": [
-            "x64",
-            "ia32",
-            "arm64"
-          ]
-        },
-        {
           "target": "zip",
-          "arch": [
-            "x64"
-          ]
-        },
-        {
-          "target": "portable",
           "arch": [
             "x64"
           ]
@@ -344,7 +328,7 @@
       "oneClick": true,
       "allowToChangeInstallationDirectory": false,
       "buildUniversalInstaller": false,
-      "include": "assets/windows/installer.nsh"
+      "include": "assets/windows/custom-installer.nsh"
     },
     "snap": {
       "base": "core22",

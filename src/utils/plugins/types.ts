@@ -88,6 +88,7 @@ export interface PluginVoice {
   gender?: string;
   locale?: string;
   language?: string;
+  styles?: string[];
   [key: string]: unknown;
 }
 

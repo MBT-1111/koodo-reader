@@ -14,8 +14,14 @@ const {
   clipboard,
   net,
   session,
+  safeStorage,
 } = require("electron");
 const path = require("path");
+const customBuild = require("./src/custom/build.json");
+const { configureRuntime, assertOfficialUpdateAllowed, assertTestPath } = require("./src/utils/main/custom/runtime");
+const customRuntime = configureRuntime(app, customBuild);
+const { createCustomSync } = require("./src/utils/main/custom/sync");
+const { applyBatch: applyCustomSyncBatch } = require("./src/utils/main/custom/database");
 const { pathToFileURL } = require("url");
 const isDev = require("electron-is-dev");
 const Store = require("electron-store");
@@ -151,6 +157,9 @@ let dbConnection = {};
 let syncUtilCache = {};
 let pickerUtilCache = {};
 let downloadRequest = null;
+const customSync = createCustomSync({ app, safeStorage, dialog, shell, runtime: customRuntime,
+  hasReaders: () => !!(mainView && mainWin && !mainWin.isDestroyed() && mainWin.contentView.children.includes(mainView) && !mainView.webContents.isDestroyed()) || !!(readerWindow && !readerWindow.isDestroyed()) || readerWindowList.some((win) => !win.isDestroyed()),
+});
 
 const RESIZE_THROTTLE_MS = 300;
 
@@ -244,7 +253,7 @@ if (process.platform != "darwin" && process.argv.length >= 2) {
   filePath = process.argv[1];
   // Check argv for a deep link URL (cold start)
   for (const arg of process.argv) {
-    if (arg.startsWith("koodo-reader://")) {
+    if (arg.startsWith(`${customBuild.protocol}://`)) {
       pendingDeepLink = arg;
       break;
     }
@@ -322,7 +331,7 @@ if (!singleInstance) {
       mainWin.focus();
     }
     // Handle deep link passed via second-instance argv
-    const deepLink = argv.find((arg) => arg.startsWith("koodo-reader://"));
+    const deepLink = argv.find((arg) => arg.startsWith(`${customBuild.protocol}://`));
     if (deepLink) {
       if (deepLink === pendingDeepLink) {
         pendingDeepLink = null;
@@ -343,28 +352,31 @@ if (filePath && fs.existsSync(filePath) && fs.statSync(filePath).isFile()) {
   );
 }
 const getDBConnection = (dbName, storagePath, sqlStatement) => {
-  if (!dbConnection[dbName]) {
+  assertTestPath(customRuntime, storagePath);
+  const connectionKey = JSON.stringify([path.resolve(storagePath), dbName]);
+  if (!dbConnection[connectionKey]) {
     if (!fs.existsSync(path.join(storagePath, "config"))) {
       fs.mkdirSync(path.join(storagePath, "config"), { recursive: true });
     }
-    dbConnection[dbName] = new Database(
+    dbConnection[connectionKey] = new Database(
       path.join(storagePath, "config", `${dbName}.db`),
       {}
     );
-    dbConnection[dbName].pragma("journal_mode = WAL");
-    dbConnection[dbName].exec(sqlStatement["createTableStatement"][dbName]);
+    dbConnection[connectionKey].pragma("journal_mode = WAL");
+    dbConnection[connectionKey].exec(sqlStatement["createTableStatement"][dbName]);
     if (sqlStatement["migrateStatement"][dbName]) {
       let sqlList = sqlStatement["migrateStatement"][dbName];
       for (let sql of sqlList) {
         try {
-          dbConnection[dbName].exec(sql);
+          dbConnection[connectionKey].exec(sql);
         } catch (error) {}
       }
     }
   }
-  return dbConnection[dbName];
+  return dbConnection[connectionKey];
 };
 const getSyncUtil = async (config, isUseCache = true) => {
+  if (customRuntime.testing) throw new Error("CUSTOM_TEST_NETWORK_BLOCKED");
   if (!isUseCache || !syncUtilCache[config.service]) {
     const { SyncUtil } = await import("./src/assets/lib/kookit-extra.min.mjs");
     syncUtilCache[config.service] = new SyncUtil(config.service, config);
@@ -378,6 +390,7 @@ const removeSyncUtil = (config) => {
   }
 };
 const getPickerUtil = async (config, isUseCache = true) => {
+  if (customRuntime.testing) throw new Error("CUSTOM_TEST_NETWORK_BLOCKED");
   if (!isUseCache || !pickerUtilCache[config.service]) {
     const { SyncUtil } = await import("./src/assets/lib/kookit-extra.min.mjs");
     pickerUtilCache[config.service] = new SyncUtil(config.service, config);
@@ -648,6 +661,13 @@ const createMainWin = () => {
     }
     const operation = args.operation;
     const filePath = args.path === undefined ? undefined : args.path;
+    if (customRuntime.testing) {
+      const readRoots = ["assets", "build", "public", "src/assets"].map((name) => path.join(__dirname, name));
+      const reading = ["exists", "read", "readdir", "stat"].includes(operation);
+      if (filePath !== undefined) assertTestPath(customRuntime, filePath, reading ? readRoots : []);
+      if (args.source !== undefined) assertTestPath(customRuntime, args.source, readRoots);
+      if (args.destination !== undefined) assertTestPath(customRuntime, args.destination);
+    }
     switch (operation) {
       case "exists":
         return fs.existsSync(filePath);
@@ -852,6 +872,7 @@ const createMainWin = () => {
     await clearDiscordActivity();
   });
   ipcMain.handle("update-win-app", (event, config) => {
+    assertOfficialUpdateAllowed(customBuild);
     let fileName = `koodo-reader-installer.exe`;
     let supportedArchs = ["x64", "ia32", "arm64"];
     //get system arch
@@ -916,6 +937,7 @@ const createMainWin = () => {
     });
   });
   ipcMain.handle("open-book", (event, config) => {
+    if (customSync.busy()) throw new Error("CUSTOM_SYNC_BUSY");
     let { url, isMergeWord, isAutoFullscreen, isAutoMaximize, isPreventSleep } =
       config;
     if (isMergeWord) {
@@ -1045,6 +1067,7 @@ const createMainWin = () => {
     event.returnValue = "success";
   });
   ipcMain.handle("generate-tts", async (event, voiceConfig) => {
+    if (customRuntime.testing) throw new Error("CUSTOM_TEST_NETWORK_BLOCKED");
     const { text, speed, pluginKey, config } = voiceConfig || {};
     const plugin =
       getVoicePlugin(pluginKey) || resolveCustomVoicePlugin(voiceConfig || {});
@@ -1070,6 +1093,7 @@ const createMainWin = () => {
     return audioPath;
   });
   ipcMain.handle("get-tts-voices", async (event, request) => {
+    if (customRuntime.testing) throw new Error("CUSTOM_TEST_NETWORK_BLOCKED");
     const { pluginKey, config } = request || {};
     const plugin =
       getVoicePlugin(pluginKey) || resolveCustomVoicePlugin(request || {});
@@ -1468,6 +1492,14 @@ const createMainWin = () => {
     return result;
   });
   ipcMain.handle("database-command", async (event, config) => {
+    if (config?.statement === "customSyncBatch") {
+      customSync.authorize(event, config.customSyncToken, config.storagePath);
+      if (!["books", "notes", "bookmarks"].includes(config.dbName)) throw new Error("CUSTOM_INVALID_DATABASE_REQUEST");
+      const { SqlStatement } = await import("./src/assets/lib/kookit-extra.min.mjs");
+      customSync.authorize(event, config.customSyncToken, config.storagePath);
+      const db = getDBConnection(config.dbName, config.storagePath, SqlStatement.sqlStatement);
+      return applyCustomSyncBatch(db, SqlStatement, config.dbName, config.data);
+    }
     const { SqlStatement } =
       await import("./src/assets/lib/kookit-extra.min.mjs");
     let { statement, statementType, executeType, dbName, data, storagePath } =
@@ -1502,7 +1534,7 @@ const createMainWin = () => {
       await import("./src/assets/lib/kookit-extra.min.mjs");
     let { dbName, storagePath } = config;
     let db = getDBConnection(dbName, storagePath, SqlStatement.sqlStatement);
-    delete dbConnection[dbName];
+    delete dbConnection[JSON.stringify([path.resolve(storagePath), dbName])];
     // Flush WAL into the main .db file and flip to rollback journal mode so the
     // on-disk file is self-contained (header read/write version = 1, no -wal
     // dependency). Other consumers — e.g. the Expo app's expo-sqlite
@@ -1939,6 +1971,7 @@ const createMainWin = () => {
     store.clear();
   });
   ipcMain.handle("new-tab", (event, config) => {
+    if (customSync.busy()) throw new Error("CUSTOM_SYNC_BUSY");
     if (mainWin) {
       mainView = new WebContentsView(options);
       mainWin.contentView.addChildView(mainView);
@@ -2268,6 +2301,13 @@ const applyCorsToRendererRequests = () => {
 };
 
 app.on("ready", async () => {
+  ipcMain.handle("custom-sync", (event, request) => customSync.handle(event, request));
+  if (customRuntime.testing) {
+    session.defaultSession.webRequest.onBeforeRequest({ urls: ["http://*/*", "https://*/*"] }, (details, callback) => {
+      const hostname = new URL(details.url).hostname;
+      callback({ cancel: !["127.0.0.1", "localhost", "[::1]"].includes(hostname) });
+    });
+  }
   applyCorsToRendererRequests();
   await applyProxyToSession();
   createMainWin();
@@ -2283,7 +2323,7 @@ app.on("open-file", (e, pathToFile) => {
   filePath = pathToFile;
 });
 // Register protocol handler
-app.setAsDefaultProtocolClient("koodo-reader");
+if (!customRuntime.testing) app.setAsDefaultProtocolClient(customBuild.protocol);
 const serializeArg = (arg) => {
   if (arg === null) return "null";
   if (arg === undefined) return "undefined";
@@ -2326,7 +2366,7 @@ var lastDeepLinkAt = 0;
 const handleCallback = (url) => {
   try {
     // 检查 URL 是否有效
-    if (!url.startsWith("koodo-reader://")) {
+    if (!url.startsWith(`${customBuild.protocol}://`)) {
       console.error("Invalid URL format:", url);
       return;
     }

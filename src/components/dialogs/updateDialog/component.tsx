@@ -21,6 +21,7 @@ import {
 import { ConfigService } from "../../../assets/lib/kookit-extra-browser.min";
 import toast from "react-hot-toast";
 import { isWindows } from "react-device-detect";
+import customBuild from "../../../custom/build.json";
 
 const UpdateInfo = () => {
   const currentBook = useAppStore((s) => s.book.currentBook);
@@ -42,6 +43,7 @@ const UpdateInfo = () => {
 
   useEffect(() => {
     (async () => {
+      if (!customBuild.allowOfficialUpdates) return;
       if (!currentBook.key) {
         if (!isElectron) {
           return;
