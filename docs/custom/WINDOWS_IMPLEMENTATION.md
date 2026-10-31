@@ -36,7 +36,7 @@
 
 曾发现并修复：新设备相同初始书籍 metadata 引入伪冲突；上传后的未应用数据被提前确认因果；恢复空配置写成字符串 null；MEGA 恢复会话缺少文件树加载/ready 状态问题；旧 TTS 异步任务与延迟清理污染新会话缓存。测试是为这些可观察行为与失败模式设计，而非仅镜像函数实现。
 
-Windows 实施阶段没有重新安装依赖、改动 yarn.lock 或安装系统编译组件；Phase 0 的依赖安装与原生编译失败仍见原验收报告。本地 Node 为 24.13.0；CI 指定 Node 22.14.0，跨版本与 Electron ABI 结果由尚未运行的 workflow 验证。
+Windows 实施阶段没有重新安装依赖、改动 yarn.lock 或安装系统编译组件；Phase 0 的依赖安装与原生编译失败仍见原验收报告。本地 Node 为 24.13.0；CI 指定 Node 22.14.0，首次云端运行的类型与测试步骤通过，Electron ABI 和完整产物验证仍未完成，见下文失败记录。
 
 Azure-MiMo-TTS-Chrome 的参考落实为语音能力元数据 → 情绪选择 → SSML → 缓存参数的一致传递，按 Koodo 的 IPC、队列、文件缓存和 i18n 重新实现，未复制扩展文件或修改参考项目。没有引入 MiMo Provider 或自动情绪分析。
 
@@ -45,6 +45,18 @@ Azure-MiMo-TTS-Chrome 的参考落实为语音能力元数据 → 情绪选择 �
 首次提交前确认 Fork 默认分支是 `dev`，专用的新工作流尚未登记在默认分支，因此补充现有 `Build/release` 手动入口：仅在 feature/* 或 custom/* 分支调用自定义 Windows 流程并跳过官方多平台任务。首次交付只增加手动入口，没有 push 触发。
 
 首次交付提交 `5ec3765c` 已按授权推送到 origin/feature/windows-custom。随后排查 Actions 空页面时，GitHub API 实测为：enabled=true、allowed_actions=all、0 个工作流、0 个运行；查询 release.yml 工作流返回 404。先前只确认默认分支存在文件，未验证工作流登记，手动入口建议在该 Fork 上未生效。增加只对 feature/windows-custom/custom/dev 生效的 push 触发后，用户另行授权提交推送这次修正；推送会请求 Windows 云端构建，不修改默认分支、合并或删除分支。推送后必须确认实际运行，不能把未登记的具体后台原因写成已查明。
+
+## 首次云端构建的依赖初始化修复
+
+提交 `ae82f6d7` 的 [Windows 运行](https://github.com/MBT-1111/koodo-reader/actions/runs/41192544167) 已实际创建。依赖安装、类型检查及测试步骤通过；原生准备中 better-sqlite3 完成，但 cpu-features 因缺少 buildcheck.gypi 失败，后续资源编译、冒烟和打包均未运行。
+
+根因为工作流安装依赖时使用 `--ignore-scripts`，没有生成该配置。[cpu-features 0.0.10 的安装脚本](https://github.com/mscdex/cpu-features/blob/v0.0.10/package.json)明确先运行 buildcheck.js 再 node-gyp；其 [GYP 文件](https://github.com/mscdex/cpu-features/blob/v0.0.10/deps/cpu_features/cpu_features.gyp)包含这份生成文件。Electron 重建直接进入 node-gyp，不会补做此前跳过的生成步骤。
+
+修复为在原生重建前增加独立 Bash 步骤，CPU 可选依赖存在时运行原有生成脚本。Bash 失败退出阻止后续步骤；可选依赖未安装时跳过。原依赖版本、锁文件、原生重建和禁止发布约束不变。不执行本机编译；修复后的真实构建结果仍须等待新提交的云端运行。
+
+本地使用 Git Bash 按 Actions 相同的 `-e -o pipefail` 参数，在合成目录验证：可选依赖缺失时正常跳过；从正确工作目录生成无 BOM 的 UTF-8 配置；生成命令退出 23 时不执行后续标记命令。三种情况通过，构建步骤顺序及原有流程保持检查通过，日志位于 dist/windows-validation/cpu-features-preparation.log。没有执行真实 buildcheck、原生编译或 Electron 构建。这次仅修改 CI 与说明文档，沿用现有业务代码的测试结果。
+
+所有者已授权提交推送本次修复，并继续提交本轮 CI 排错所需的必要修复；范围为 Windows 构建与验证。分支合并、删除及发布仍按原授权边界执行。
 
 ## 未取得的结论
 

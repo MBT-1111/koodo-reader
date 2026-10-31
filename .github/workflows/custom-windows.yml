@@ -26,6 +26,13 @@ jobs:
         run: |
           yarn typecheck
           yarn test
+      - name: Generate cpu-features configuration before native rebuild
+        shell: bash
+        run: |
+          if [ -d node_modules/cpu-features ]; then
+            cd node_modules/cpu-features
+            node buildcheck.js > buildcheck.gypi
+          fi
       - name: Prepare Electron and native modules on the hosted runner
         run: |
           node node_modules/electron/install.js

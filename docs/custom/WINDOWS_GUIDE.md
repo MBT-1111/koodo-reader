@@ -14,6 +14,8 @@
 
 Windows 二进制构建结果以对应提交的 Actions 状态和实际产物为准，本地源码检查不代表云端已通过。`yarn custom:smoke` 仅在已有 build/index.html、Electron 和 native 依赖的环境执行，创建 krc-test-* 临时 profile，阻断外网/更新/TTS/协议注册并验证设置中的文件夹同步，绝不使用现有书库。
 
+依赖安装保留 `--ignore-scripts`，在 runner 上显式补齐必要的初始化。`cpu-features` 存在时，先在其目录运行自带的 `node buildcheck.js > buildcheck.gypi`，再执行 Electron 原生重建；独立 Bash 步骤的生成命令失败会阻止后续重建。不会用空占位文件代替配置，也不需要在本机安装编译组件。首次构建的缺文件修复需提交推送后才会进入新的运行。
+
 ## 数据目录与现有安装
 
 Custom 默认数据目录为 `%APPDATA%\koodo-reader-custom`，默认书库在其中 uploads/data。官方 `%APPDATA%\koodo-reader` 不自动读取、复制或迁移。首次启动 Custom 显示空书库是预期行为。
