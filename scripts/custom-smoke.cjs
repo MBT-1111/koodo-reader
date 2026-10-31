@@ -21,7 +21,11 @@ const { isInside } = require("../src/utils/main/custom/runtime");
     await page.waitForFunction(() => !!window.electronAPI);
     await page.locator(".header").waitFor();
     assert.equal(await page.locator(".header .icon-account").count(), 0, "Personal build should hide the account entry");
-    assert.equal(await page.locator(".header-report-container").count(), 0, "Personal build should hide Pro promotions");
+    // The TEST environment indicator shares this container class with Pro promotions.
+    const proPromotions = page.locator(".header-report-container").filter({
+      hasText: /^\s*(Pro version|Renew Pro|In trial|升级专业版|续费专业版|试用中)\s*$/,
+    });
+    assert.equal(await proPromotions.count(), 0, "Personal build should hide Pro promotions");
     const invoke = (channel, data) => page.evaluate(({ channel, data }) => window.electronAPI.invoke(channel, data), { channel, data });
     const update = await page.evaluate(async () => {
       try { await window.electronAPI.invoke("update-win-app", { version: "0.0.0" }); return "ALLOWED"; }
