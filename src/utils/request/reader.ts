@@ -274,9 +274,10 @@ export const getTTSAudio = async (
 export const getBatchTrans = async (
   texts: string[],
   from: string,
-  to: string
+  to: string,
+  signal?: AbortSignal
 ) => {
-  if (personalMode) return personalBatchTranslation(texts, from, to);
+  if (personalMode) return personalBatchTranslation(texts, from, to, signal);
   let readerRequest = await getReaderRequest();
   let response = await readerRequest.getBatchTrans({ texts, from, to });
   if (response.code === 200) {
@@ -334,9 +335,10 @@ export const analyzeBookTitle = async (title: string) => {
   return response;
 };
 export const getSplitSentence = async (
-  texts: { text: string; index: number }[]
+  texts: { text: string; index: number }[],
+  signal?: AbortSignal
 ) => {
-  if (personalMode) return personalSplitSentence(texts);
+  if (personalMode) return personalSplitSentence(texts, signal);
   let readerRequest = await getReaderRequest();
   let response = await readerRequest.getSplitSentence({ texts });
   if (response.code === 200) {

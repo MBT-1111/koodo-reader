@@ -134,6 +134,7 @@ const TextToSpeech = () => {
   const nativeVoicesRef = useRef<any>([]);
   const previewPlayerRef = useRef<Howl | null>(null);
   const speechGenerationRef = useRef(0);
+  const roleRequestRef = useRef<AbortController | null>(null);
   const highlightUtilRef = useRef<any>(null);
   if (!highlightUtilRef.current) {
     highlightUtilRef.current = new HighlightUtil(ConfigService);
@@ -242,6 +243,8 @@ const TextToSpeech = () => {
     init();
     return () => {
       isMounted = false;
+      speechGenerationRef.current++;
+      roleRequestRef.current?.abort();
       if (speechIntervalRef.current !== undefined) {
         clearInterval(speechIntervalRef.current);
         speechIntervalRef.current = undefined;
@@ -509,6 +512,8 @@ const TextToSpeech = () => {
   };
   const handleStop = async () => {
     speechGenerationRef.current++;
+    roleRequestRef.current?.abort();
+    toast.dismiss("tts-load");
     window.speechSynthesis && window.speechSynthesis.cancel();
     await TTSUtil.stopAudio();
     setState({ isAudioOn: false, isPaused: false, currentIndex: 0 });
@@ -624,6 +629,7 @@ const TextToSpeech = () => {
   };
   const handleStartSpeech = () => {
     speechGenerationRef.current++;
+    roleRequestRef.current?.abort();
     setState({ isAudioOn: true, isPaused: false, currentIndex: 0 });
     handleAudio();
   };
@@ -732,10 +738,13 @@ const TextToSpeech = () => {
       );
       if (generation !== speechGenerationRef.current || !stateRef.current.isAudioOn) return [];
       let analysisError = "";
-      let res = await getSplitSentence(splitTextList).catch((error: unknown) => {
+      const controller = new AbortController();
+      roleRequestRef.current = controller;
+      let res = await getSplitSentence(splitTextList, controller.signal).catch((error: unknown) => {
         analysisError = personalMode ? readingAIErrorKey(error) : "Analysis failed";
         return null;
       });
+      if (roleRequestRef.current === controller) roleRequestRef.current = null;
       if (generation !== speechGenerationRef.current || !stateRef.current.isAudioOn) return [];
       toast.dismiss("tts-load");
 
@@ -1076,25 +1085,6 @@ const TextToSpeech = () => {
       <>
         <div className="tts-player-container">
           <div className="tts-player-controls">
-            <span
-              className="tts-player-btn"
-              title={t("Stop")}
-              onClick={() => handleStop()}
-              style={
-                !stateRef.current.isAudioOn
-                  ? { opacity: 0.3, cursor: "not-allowed" }
-                  : {}
-              }
-            >
-              <svg
-                viewBox="0 0 24 24"
-                width="20"
-                height="20"
-                fill="currentColor"
-              >
-                <path d="M6 6h12v12H6z" />
-              </svg>
-            </span>
             <span
               className="tts-player-btn"
               title={t("Previous")}

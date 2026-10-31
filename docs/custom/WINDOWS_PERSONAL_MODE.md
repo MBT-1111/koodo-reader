@@ -15,7 +15,7 @@
 | 顶部同步 | 已配置则直接执行自有同步；未配置则打开自有同步设置；错误不转到官方登录 |
 | 其他登录入口 | login 路由转回书库；隐藏仍依赖官方服务的元数据、官方 OCR、付费云导入和词形还原入口；原授权判定留在上游分支代码路径 |
 | 同书识别 | 完整文件 SHA-256，不用文件名、路径或上游时间戳 key；内容必须字节一致，改内容或重新打包会改变身份 |
-| 全文翻译 | 使用 AI 服务中选定的翻译模型，分批发送当前文本；校验结果数量和顺序；缓存按目标语言、端点及模型隔离，不使用官方账号 |
+| 当前页翻译 | 使用 AI 服务中选定的翻译模型，仅请求当前视口内可见段落；跨页段落保留完整以兼容段落替换；每次最多 6000 字符 / 64 段，翻页取消旧请求，已完成译文按语言、端点及模型缓存 |
 | 生词释义 | 使用词典模型，返回受校验的纯文本释义；匹配原文后交给公开阅读引擎的现有标注接口 |
 | AI 多角色 | 使用 AI 辅助模型，只允许返回 narrator/male/female/child；原文由宿主保留，继续复用现有角色音色、朗读和缓存流程 |
 | AI 问书 | 隐藏官方 AI 辅助选项，保留用户配置的自有模型；旧官方默认选择重新定位到可用的自有服务 |
@@ -24,7 +24,7 @@
 
 复用「设置 → AI 服务」中的 aiModelConfig 与三个模型选择：aiTranslateModel 用于全文翻译，aiDictModel 用于生词释义，aiAssistanceModel 用于问书和多角色分析。角色分析在朗读面板选择音色，不要求官方 Pro。
 
-本轮请求适配使用兼容 OpenAI 的 chat/completions、Bearer API Key 和非流式 JSON 响应，配置沿用现有 AI 服务表单。配置缺失、请求失败或模型格式错误时提示配置/重试，不回退到官方付费接口。API Key 仅随用户端点请求头发送；不进入提示文本、同步数据或缓存身份。端点设置不得指向官方 Koodo 服务。
+本轮请求适配使用兼容 OpenAI 的 chat/completions、Bearer API Key 和非流式 JSON 响应，配置沿用现有 AI 服务表单。服务须支持 response_format=json_object；提示中给出 texts / words / roles 对象示例，兼容旧数组及 sentences 角色对象，并始终从本机原文生成朗读内容。在官方 DeepSeek 域名关闭思考模式；其他服务不附加该专有参数。配置缺失、请求失败或模型格式错误时提示配置/重试，不回退到官方付费接口。API Key 仅随用户端点请求头发送；不进入提示文本、同步数据或缓存身份。端点设置不得指向官方 Koodo 服务。
 
 原文会发送至用户选定模型。模型不得重写角色朗读原文，批量翻译不得漏项；响应格式不符则停止该操作。生词释义只保留公开渲染所需字段，忽略不在原文中的词。全文翻译/生词标注仍需要在 EPUB、TXT 和文本 PDF 的实际阅读窗口验证；扫描书籍受 OCR 能力限制。
 
@@ -36,6 +36,8 @@
 
 情绪强度范围、默认值和不支持时忽略的行为见 [Azure SSML 文档](https://learn.microsoft.com/en-us/azure/ai-services/speech-service/speech-synthesis-markup-voice)。
 
+DeepSeek 格式依据为官方 [JSON Output](https://api-docs.deepseek.com/guides/json_mode/) 和 [Thinking Mode](https://api-docs.deepseek.com/guides/thinking_mode/)。空白或被截断的答案单独提示，不自动重复付费请求。上述 kookit 提交的 [navigationUtil](https://github.com/koodo-reader/kookit/blob/c4bfefaa4e601c3eab7c97183a98debe193c2805/src/utils/navigationUtil.ts) 中，audioText 从可见处取到章节后文，visibleText 仅取视口内容；原 getBatchTransTexts 对章节后文截取约 10000 字符。新的适配以 visibleText 选择段落，使用完整原段落作为渲染键，避免仅翻片段却隐藏整段原文。
+
 ## 更新与测试
 
 个人模式以 src/custom/build.json 的 personalServicesOnly 为开关，新增适配集中在 src/custom。上游授权校验保留；没有将 isAuthed 伪装为 true，也不请求被隐藏的官方阅读服务。隐藏优先于移除官方实现。
@@ -45,5 +47,7 @@
 提交前本地验证：TypeScript 检查通过，Vitest 8 个文件 / 47 项测试全部通过，新增 JavaScript 语法与变更空白检查通过，101 个中英文 custom 文案键一致。本轮没有执行本机生产构建；新的云端构建与界面冒烟结果以交付提交的 Actions 记录为准。
 
 云端冒烟后续修复：header-report-container 同时用于 TEST 环境标识和 Pro 推广，按该样式类计数会误报。改为精确匹配升级、续费、试用的英文/简中文案并允许首尾空白，保留原推广隐藏断言。已在本地隔离的无头浏览器中复现原误报，并验证 TEST 排除及六种推广文案识别；脚本语法检查通过。此次不修改产品代码，完整 Electron 冒烟由所有者在后续云端构建验证。
+
+2026-11-01 阅读反馈修复：上述 JSON 模式和当前页范围已接入；翻译整个操作最多等待 60 秒，失败/结束后清理转圈标识；停止朗读、退出面板会取消角色分析并停止后续批次。网络取消不能保证服务端撤回已经处理的计费。朗读控制栏去掉左侧重复的停止键，保留上一句、播放/暂停、下一句、停止。本地类型检查通过，9 个测试文件 / 56 项测试通过，包括包装角色、原文保留、空白/截断输出、取消后不再请求、视口外文本排除、跨页段落和请求量上限；105 个中英文 custom 文案键一致。真实 DeepSeek 返回、翻页缓存和 EPUB/TXT/PDF 界面仍需新云端包人工验证，不声称已完成账户实测。
 
 这些 React/TypeScript 与主进程资源需要重新构建。已打包 ZIP 不会自动热更新；本轮通过推送源码后云端产出新 ZIP 交付，建议独立目录测试。新的 ZIP 使用同一个 Custom profile；不要通过覆盖书库或卸载来更新程序。

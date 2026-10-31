@@ -19,6 +19,7 @@ import ConfigUtil from "../../utils/file/configUtil";
 import { useAppStore } from "../../store/useAppStore";
 import { personalMode } from "../../custom/personal";
 import { hasReadingAI, readingAIIdentity, readingAIErrorKey } from "../../custom/ai/reader";
+import { clearTranslationLoading, getPageTranslationTexts } from "../../custom/ai/pageTranslation";
 
 export interface PageWidgetState {
   isSingle: boolean;
@@ -74,6 +75,7 @@ const PageWidget = () => {
   const timeInterval = useRef<any>(null);
   const lastBatchTranslationTriggerAt = useRef<number>(0);
   const batchTranslationLock = useRef<Promise<any>>(Promise.resolve());
+  const translationRequest = useRef<AbortController | null>(null);
   const transCacheMap = useRef<Map<string, TransCache>>(new Map());
   const transCacheDirPath = useRef<string>("");
   const ignoreNextPageChange = useRef<boolean>(false);
@@ -135,7 +137,16 @@ const PageWidget = () => {
   };
 
   const handleBatchTranslation = async (rendition) => {
-    const prev = batchTranslationLock.current;
+    if (personalMode && useAppStore.getState().reader.htmlBook?.rendition !== rendition) return;
+    const controller = personalMode ? new AbortController() : null;
+    if (controller) {
+      translationRequest.current?.abort();
+      translationRequest.current = controller;
+    }
+    const isCurrent = () => !controller || (!controller.signal.aborted && useAppStore.getState().reader.htmlBook?.rendition === rendition);
+    // Personal translation follows the latest visible page instead of queuing
+    // requests for pages the reader has already left.
+    const prev = personalMode ? Promise.resolve() : batchTranslationLock.current;
     const next = prev.then(async () => {
       if (
         !ConfigService.getAllListConfig("fullTranslationBooks").includes(
@@ -147,7 +158,9 @@ const PageWidget = () => {
         return;
       }
 
-      let batchTransTexts: string[] = await rendition.getBatchTransTexts();
+      const page = personalMode ? await getPageTranslationTexts(rendition) : null;
+      let batchTransTexts: string[] = page || await rendition.getBatchTransTexts();
+      if (!isCurrent()) return;
       if (batchTransTexts && batchTransTexts.length > 0) {
         let targetLang = getFullTranslationTarget();
         const cacheLanguage = personalMode ? JSON.stringify([targetLang, readingAIIdentity("translation")]) : targetLang;
@@ -175,7 +188,9 @@ const PageWidget = () => {
           }
         });
         if (pendingTexts.length > 0) {
-          let res = await getBatchTrans(pendingTexts, "Automatic", targetLang);
+          if (personalMode) toast.loading(t("custom.ai.translatingPage"), { id: "custom-ai-translation" });
+          let res = await getBatchTrans(pendingTexts, "Automatic", targetLang, controller?.signal);
+          if (!isCurrent()) return;
           if (res && res.data && res.data.texts) {
             pendingIndexes.forEach((index, i) => {
               translatedTexts[index] = res.data.texts[i];
@@ -191,13 +206,20 @@ const PageWidget = () => {
           }
         }
         if (translatedTexts.every((text) => text !== undefined)) {
-          if (personalMode && useAppStore.getState().reader.htmlBook?.rendition !== rendition) return;
+          if (!isCurrent()) return;
           rendition.handleBatchTransResult(batchTransTexts, translatedTexts);
         }
       }
     });
     batchTranslationLock.current = next.catch(() => {});
-    return personalMode ? next.catch((error: unknown) => { toast.error(t(readingAIErrorKey(error)), { id: "custom-ai-reading" }); }) : next;
+    return personalMode ? next.catch((error: unknown) => {
+      if (isCurrent()) toast.error(t(readingAIErrorKey(error)), { id: "custom-ai-reading" });
+    }).finally(() => {
+      if (translationRequest.current === controller) {
+        toast.dismiss("custom-ai-translation");
+        if (isCurrent()) clearTranslationLoading(rendition);
+      }
+    }) : next;
   };
 
   const handleWordDefinition = async (rendition) => {
@@ -292,6 +314,11 @@ const PageWidget = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  useEffect(() => () => {
+    translationRequest.current?.abort();
+    toast.dismiss("custom-ai-translation");
+  }, [htmlBook]);
+
   // UNSAFE_componentWillReceiveProps: htmlBook 从无到有，注册 rendition 监听
   const prevHtmlBookRef = useRef(htmlBook);
   useEffect(() => {
@@ -303,6 +330,7 @@ const PageWidget = () => {
       (async () => {
         await methodsRef.current.handlePageNum(rendition);
         rendition.on("page-changed", async () => {
+          if (personalMode) translationRequest.current?.abort();
           await methodsRef.current.handlePageNum(rendition);
           await methodsRef.current.handleBatchTranslation(rendition);
           if (ignoreNextPageChange.current) {
@@ -363,6 +391,7 @@ const PageWidget = () => {
           }
         );
         rendition.on("rendered", async () => {
+          if (personalMode) translationRequest.current?.abort();
           await methodsRef.current.handlePageNum(rendition);
           await methodsRef.current.handleBatchTranslation(rendition);
           await methodsRef.current.handleWordDefinition(rendition);

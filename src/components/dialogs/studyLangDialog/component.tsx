@@ -299,7 +299,7 @@ const StudyLangDialog = () => {
       <ul className="sort-by-category">
         <div className="setting-dialog-new-title scale-page-preset-row">
           <span>
-            <Trans>Full text translation</Trans>
+            {personalMode ? t("custom.ai.pageTranslation") : <Trans>Full text translation</Trans>}
             {!personalMode && <span style={{ fontSize: "13px", color: "#f16464" }}> (Pro)</span>}
           </span>
           <select
@@ -320,6 +320,7 @@ const StudyLangDialog = () => {
             ))}
           </select>
         </div>
+        {personalMode && <p className="setting-option-subtitle">{t("custom.ai.pageTranslationHelp")}</p>}
         {(state.fullTranslationModeValue === "both" ||
           state.fullTranslationModeValue === "target") && (
           <div className="setting-dialog-new-title scale-page-preset-row">
