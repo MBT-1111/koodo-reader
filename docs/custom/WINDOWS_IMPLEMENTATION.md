@@ -60,6 +60,8 @@ Azure-MiMo-TTS-Chrome 的参考落实为语音能力元数据 → 情绪选择 �
 
 修复提交 `91e17392` 的 [后续运行](https://github.com/MBT-1111/koodo-reader/actions/runs/41193608257) 已通过配置生成、原生重建和 Windows 渲染资源编译。隔离启动进入 UI 后，冒烟脚本的 `.setting-icon` 同时匹配设置、账户和同步三个图标，触发 Playwright strict mode 错误。测试定位改为已有设置图标的组合 class `.icon-setting.setting-icon`，保持严格唯一匹配，不通过 first() 隐藏歧义；没有改变产品 UI。完整冒烟与产物仍待下一次云端运行。
 
+提交 `7881eb9d` 的 [云端运行](https://github.com/MBT-1111/koodo-reader/actions/runs/41193986610) 已通过完整隔离冒烟，包括实际数据库 IPC、设置页文件夹同步、路径/凭证排除与更新/TTS 网络拦截。打包命令随后失败：Yarn 将短参数 `-c.win.signAndEditExecutable=false` 改写为 `-c .win.signAndEditExecutable=false`，builder 将后者当配置文件路径。改用 builder 支持的长参数 `--config.win.signAndEditExecutable=false`，保留禁止发布和 x64 ZIP 目标。使用本地真实 builder 参数解析器及配置 schema 验证，不执行本机打包。
+
 ## 未取得的结论
 
 本地源码验收时没有执行本地 yarn build/dev/ele/release、没有修改已安装程序、没有启动真实书库、没有真实 MEGA/Azure 调用，也没有云端构建结果或实际 Windows 阅读窗口手工回归结果。后续云端结果以交付提交关联的 Actions 记录及产物为准；源码与本地自动化验证完成不能代替 Windows 产物或真实服务验收通过。

@@ -43,7 +43,7 @@ jobs:
       - name: Smoke test with synthetic isolated data and blocked external network
         run: yarn custom:smoke
       - name: Build unsigned Windows x64 archive without publishing
-        run: yarn electron-builder --win zip --x64 --publish never -c.win.signAndEditExecutable=false
+        run: yarn electron-builder --win zip --x64 --publish never --config.win.signAndEditExecutable=false
       - name: Upload reviewable build and provenance
         uses: actions/upload-artifact@v4
         with:
