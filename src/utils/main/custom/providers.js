@@ -15,6 +15,45 @@ const closeStorage = async (storage) => {
   // Stop polling locally while keeping the reusable server-side session alive.
   storage.api.close();
 };
+const prepareMegaStorage = (storage) => {
+  const request = storage.api.request.bind(storage.api);
+  const orderTree = (reply) => {
+    if (!Array.isArray(reply?.f)) throw new Error("CUSTOM_MEGA_INVALID_TREE");
+    const nodes = new Map(), children = new Map(), ordered = [];
+    for (const node of reply.f) {
+      if (!node || typeof node.h !== "string" || (node.p && typeof node.p !== "string") || nodes.has(node.h)) throw new Error("CUSTOM_MEGA_INVALID_TREE");
+      nodes.set(node.h, node);
+      if (node.p) {
+        if (!children.has(node.p)) children.set(node.p, []);
+        children.get(node.p).push(node);
+      }
+    }
+    for (const node of reply.f) if (!node.p || !nodes.has(node.p)) ordered.push(node);
+    for (let index = 0; index < ordered.length; index++) for (const child of children.get(ordered[index].h) || []) ordered.push(child);
+    if (ordered.length !== reply.f.length) throw new Error("CUSTOM_MEGA_INVALID_TREE");
+    // The SDK links a child only when its parent was imported earlier. MEGA's
+    // listing order is not reliable, so normalize it before reload imports nodes.
+    return { ...reply, f: ordered };
+  };
+  storage.api.request = (command, callback, attempt) => {
+    if (command?.a !== "f" || command.c !== 1) return request(command, callback, attempt);
+    if (typeof callback !== "function") return request(command, callback, attempt).then(orderTree);
+    return request(command, (error, reply) => {
+      if (error) return callback(error);
+      let ordered;
+      try { ordered = orderTree(reply); } catch (failure) { return callback(failure); }
+      callback(null, ordered);
+    }, attempt);
+  };
+  return storage;
+};
+const megaTransfer = {
+  forceHttps: true,
+  maxConnections: 2,
+  // A fresh sync can safely retry its immutable snapshot. Do not leave the SDK's
+  // background transfer retries running after the enclosing operation has failed.
+  handleRetries: (_attempt, error, done) => done(error),
+};
 const documentName = (document, text) => `${document.deviceId}-${String(document.sequence).padStart(16, "0")}-${sha(text).slice(0, 16)}.json`;
 
 // Keep tied latest generations so an actor fork is not silently discarded.
@@ -95,7 +134,7 @@ class MegaProvider {
     const selected = latest(files);
     if (selected.length > 1024 || selected.reduce((sum, file) => sum + (file.size || MAX_DOCUMENT + 1), 0) > 100 * 1024 * 1024 || selected.some((file) => file.size > MAX_DOCUMENT)) throw new Error("CUSTOM_DOCUMENT_LIMIT");
     const documents = [];
-    for (const file of selected) documents.push(decode(file.name, await file.downloadBuffer({ maxConnections: 1 })));
+    for (const file of selected) documents.push(decode(file.name, await file.downloadBuffer(megaTransfer)));
     return documents;
   }
   async append(document) {
@@ -104,16 +143,16 @@ class MegaProvider {
     const folders = await this.folders(true);
     let published = folders.flatMap((folder) => folder.children || []).find((file) => !file.directory && file.name === name);
     if (!published) published = await new Promise((resolve, reject) => {
-      const stream = folders[0].upload({ name, size: buffer.length }, buffer, (error, file) => error ? reject(error) : resolve(file));
+      const stream = folders[0].upload({ ...megaTransfer, name, size: buffer.length }, buffer, (error, file) => error ? reject(error) : resolve(file));
       stream.on("error", reject);
     });
-    decode(name, await published.downloadBuffer({ maxConnections: 1 }));
+    decode(name, await published.downloadBuffer(megaTransfer));
     for (const file of obsolete(folders.flatMap((folder) => folder.children || []).filter((file) => !file.directory), document.deviceId)) {
-      try { if (file.size <= MAX_DOCUMENT) { decode(file.name, await file.downloadBuffer({ maxConnections: 1 })); await file.delete(false); } }
+      try { if (file.size <= MAX_DOCUMENT) { decode(file.name, await file.downloadBuffer(megaTransfer)); await file.delete(false); } }
       catch { /* Failure to prune history must not invalidate a verified upload. */ }
     }
   }
   async close() { await closeStorage(this.storage); }
 }
 
-module.exports = { FolderProvider, MegaProvider, latest, decode, documentName, MAX_DOCUMENT, writeFlushed, closeStorage };
+module.exports = { FolderProvider, MegaProvider, prepareMegaStorage, latest, decode, documentName, MAX_DOCUMENT, writeFlushed, closeStorage };

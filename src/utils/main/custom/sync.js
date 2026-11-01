@@ -1,7 +1,7 @@
 const fs = require("fs");
 const path = require("path");
 const crypto = require("crypto");
-const { FolderProvider, MegaProvider, MAX_DOCUMENT, writeFlushed, closeStorage } = require("./providers");
+const { FolderProvider, MegaProvider, prepareMegaStorage, MAX_DOCUMENT, writeFlushed, closeStorage } = require("./providers");
 const { isInside, assertTestPath } = require("./runtime");
 
 const hash = (value) => crypto.createHash("sha256").update(value).digest("hex");
@@ -30,10 +30,11 @@ const createCustomSync = ({ app, safeStorage, dialog, shell, runtime, hasReaders
   let active = null;
   let configuring = false;
   const fingerprints = new Map();
-  const timedFetch = (url, options = {}) => fetchRequest(url, {
-    ...options,
-    signal: AbortSignal.any([AbortSignal.timeout(30000), ...(options.signal ? [options.signal] : [])]),
-  });
+  const timedFetch = async (url, options = {}) => {
+    const signal = AbortSignal.any([AbortSignal.timeout(30000), ...(options.signal ? [options.signal] : [])]);
+    signal.throwIfAborted();
+    return fetchRequest(url, { ...options, signal });
+  };
   const readSettings = () => {
     const saved = readJSON(settingsFile);
     // Read the original single connection without discarding its encrypted session.
@@ -87,37 +88,54 @@ const createCustomSync = ({ app, safeStorage, dialog, shell, runtime, hasReaders
     active.expires = Date.now() + 180000;
     return active;
   };
-  const provider = async (config) => {
+  const provider = async (config, signal, onRequest) => {
     if (config.provider === "folder") return new FolderProvider(config.folder, config.namespace);
     if (runtime.testing) throw new Error("CUSTOM_TEST_NETWORK_BLOCKED");
     if (!safeStorage.isEncryptionAvailable()) throw new Error("CUSTOM_CREDENTIAL_STORAGE_UNAVAILABLE");
     const { Storage } = require("megajs");
     const credentials = JSON.parse(safeStorage.decryptString(Buffer.from(config.session, "base64")));
-    credentials.options.fetch = timedFetch;
-    const storage = Storage.fromJSON(credentials);
+    credentials.options.fetch = (url, options = {}) => {
+      if (!signal.aborted) onRequest();
+      return timedFetch(url, { ...options, signal: AbortSignal.any([signal, ...(options.signal ? [options.signal] : [])]) });
+    };
+    const storage = prepareMegaStorage(Storage.fromJSON(credentials));
     try { await storage.ready; await storage.reload(true); return new MegaProvider(storage, config.namespace); }
     catch (error) { await closeStorage(storage); throw error; }
   };
   const withProvider = async (config, action) => {
-    let instance, timer, finished = false;
+    let instance, timer, maximumTimer, finished = false;
+    const controller = new AbortController();
+    let touch;
+    const deadline = new Promise((_, reject) => {
+      const timeout = () => {
+        const error = new Error("CUSTOM_PROVIDER_TIMEOUT");
+        reject(error); controller.abort(error);
+      };
+      touch = () => { clearTimeout(timer); timer = setTimeout(timeout, 60000); };
+      touch();
+      // Allow several healthy requests to exceed one minute, but always finish
+      // before the 180-second renderer lease expires.
+      maximumTimer = setTimeout(timeout, 150000);
+    });
     try {
       return await Promise.race([
         (async () => {
-          const opened = await provider(config);
+          const opened = await provider(config, controller.signal, touch);
           if (finished) { await opened.close(); throw new Error("CUSTOM_PROVIDER_TIMEOUT"); }
           instance = opened;
           return action(instance);
         })(),
-        new Promise((_, reject) => { timer = setTimeout(() => reject(new Error("CUSTOM_PROVIDER_TIMEOUT")), 60000); }),
+        deadline,
       ]);
     } catch (error) {
       if (/^CUSTOM_[A-Z_]+$/.test(error.message)) throw error;
+      if (error.name === "TimeoutError") throw new Error("CUSTOM_PROVIDER_TIMEOUT");
       if (config.provider === "folder") throw new Error("CUSTOM_FOLDER_ACCESS_FAILED");
       // SDK messages are used only for classification, never forwarded with account details.
       if (/EOVERQUOTA|EGOINGOVERQUOTA|EPAYWALL|ERATELIMIT/i.test(error.message)) throw new Error("CUSTOM_MEGA_QUOTA_FAILED");
       if (/ENOENT|EACCESS|ESID|EKEY|EBLOCKED|ENOMFA|EMFAREQUIRED|invalid (password|session)|session.*(expired|invalid)|access denied/i.test(error.message)) throw new Error("CUSTOM_MEGA_AUTH_FAILED");
       throw new Error("CUSTOM_MEGA_NETWORK_FAILED");
-    } finally { finished = true; clearTimeout(timer); if (instance) await instance.close(); }
+    } finally { finished = true; clearTimeout(timer); clearTimeout(maximumTimer); controller.abort(); if (instance) await instance.close(); }
   };
   const configure = async (request) => {
     if (active) throw new Error("CUSTOM_SYNC_BUSY");
@@ -140,7 +158,8 @@ const createCustomSync = ({ app, safeStorage, dialog, shell, runtime, hasReaders
       if (!safeStorage.isEncryptionAvailable()) throw new Error("CUSTOM_CREDENTIAL_STORAGE_UNAVAILABLE");
       if (typeof request.email !== "string" || request.email.length > 320 || !/^[^\s@]+@[^\s@]+$/.test(request.email) || typeof request.password !== "string" || !request.password || request.password.length > 4096 || (request.secondFactorCode && !/^\d{6}$/.test(request.secondFactorCode))) throw new Error("CUSTOM_INVALID_SETTINGS");
       const { Storage } = require("megajs");
-      const storage = new Storage({ email: request.email.trim(), password: request.password, secondFactorCode: request.secondFactorCode || undefined, keepalive: false, fetch: timedFetch });
+      const controller = new AbortController();
+      const storage = prepareMegaStorage(new Storage({ email: request.email.trim(), password: request.password, secondFactorCode: request.secondFactorCode || undefined, keepalive: false, fetch: (url, options = {}) => timedFetch(url, { ...options, signal: AbortSignal.any([controller.signal, ...(options.signal ? [options.signal] : [])]) }) }));
       let timer;
       try {
         await Promise.race([storage.ready, new Promise((_, reject) => { timer = setTimeout(() => reject(new Error("CUSTOM_PROVIDER_TIMEOUT")), 60000); })]);
@@ -148,7 +167,7 @@ const createCustomSync = ({ app, safeStorage, dialog, shell, runtime, hasReaders
         delete session.options.password;
         delete session.options.secondFactorCode;
         config = { ...config, email: request.email.trim(), session: safeStorage.encryptString(JSON.stringify(session)).toString("base64"), account: hash(request.email.trim().toLowerCase()) };
-      } finally { clearTimeout(timer); await closeStorage(storage); }
+      } finally { clearTimeout(timer); controller.abort(); await closeStorage(storage); }
     }
     // Verify folder access before claiming it is connected (including write permission).
     if (config.provider === "folder") await withProvider(config, async (p) => {

@@ -1233,6 +1233,7 @@
   "custom.sync.error.CUSTOM_MEGA_LOGIN_FAILED": "MEGA 登录失败，请检查邮箱、密码、两步验证码及网络代理设置。",
   "custom.sync.error.CUSTOM_MEGA_AUTH_FAILED": "MEGA 拒绝了已保存的会话或访问请求，请填写密码重新登录，并检查账户访问权限。",
   "custom.sync.error.CUSTOM_MEGA_NETWORK_FAILED": "无法连接 MEGA 或完成存储请求，请检查网络和代理设置后测试连接。",
+  "custom.sync.error.CUSTOM_MEGA_INVALID_TREE": "无法完整解析 MEGA 的目录列表，已停止同步以避免重复创建文件夹，请稍后重试。",
   "custom.sync.error.CUSTOM_MEGA_QUOTA_FAILED": "MEGA 请求受到限制或账户配额已用尽，请检查存储及传输配额，或稍后重试。",
   "custom.sync.error.CUSTOM_FOLDER_ACCESS_FAILED": "无法读写同步文件夹，请检查对应磁盘是否已挂载、目录是否存在，以及读写权限。",
   "custom.sync.error.CUSTOM_LOCAL_FILE_FAILED": "无法访问本地书籍、同步状态或备份文件，请检查书库所在磁盘、剩余空间与文件权限。",

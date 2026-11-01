@@ -123,7 +123,7 @@ describe("MEGA adapter public API contract", () => {
       reload: async () => {
         if (failure) throw new Error(failure);
         await data.options.fetch!("https://synthetic.invalid/mega", { method: "POST", body: "[]" });
-      }, api: { close: () => undefined },
+      }, api: { close: () => undefined, request: async () => undefined },
     }) as unknown as InstanceType<typeof Storage>);
     try {
       const saved = await sync.handle(event, { action: "configure", provider: "folder", folder, namespace: "saved-folder", autoMinutes: 0 }) as SyncStatus;
@@ -231,5 +231,51 @@ describe("MEGA adapter public API contract", () => {
     await create().handle(event, { action: "test", provider: "mega" });
     expect(commands).toEqual(["f", "f"]);
     expect(validSession).toBe(true);
+  });
+  it.each([false, true])("handles slow MEGA requests and cancels stalled transfers (stalled=%s)", async (stalled) => {
+    vi.useFakeTimers();
+    const profile = path.join(root, `mega-deadline-${stalled}`); fs.mkdirSync(path.join(profile, "custom-sync"), { recursive: true });
+    const credentials = { options: { email: "fixture@example.invalid" } };
+    fs.writeFileSync(path.join(profile, "custom-sync", "settings.json"), JSON.stringify({ provider: "mega", account: "fixture", namespace: "default", autoMinutes: 0, session: Buffer.from(JSON.stringify(credentials)).toString("base64") }));
+    let cancelled = false;
+    const network = vi.fn<typeof globalThis.fetch>(async (url, options) => {
+      if (stalled && String(url).endsWith("/body")) return new Promise<Response>((_resolve, reject) => {
+        options!.signal!.addEventListener("abort", () => { cancelled = true; reject(options!.signal!.reason); }, { once: true });
+      });
+      if (!stalled) await new Promise((resolve) => setTimeout(resolve, 25000));
+      return new Response("[]");
+    });
+    const { Storage } = require("megajs") as typeof import("megajs");
+    let fetchAgain: typeof globalThis.fetch | undefined;
+    const state = envelope(reconcile(freshCheckpoint(), {}, [])), buffer = Buffer.from(JSON.stringify(state));
+    const restored = vi.spyOn(Storage, "fromJSON").mockImplementation((data) => {
+      const fetch = data.options.fetch! as typeof globalThis.fetch; fetchAgain = fetch;
+      const file = { name: documentName(state, buffer.toString()), directory: false, size: buffer.length, downloadBuffer: async () => {
+        await fetch("https://synthetic.invalid/body");
+        if (!stalled) await fetch("https://synthetic.invalid/verify");
+        return buffer;
+      } };
+      return { ready: Promise.resolve(), root: { children: [{ name: "KoodoReaderCustom-v1-default", nodeId: "folder", directory: true, children: [file] }] },
+        reload: async () => { await fetch("https://synthetic.invalid/tree"); }, api: { close: () => undefined, request: async () => undefined },
+      } as unknown as InstanceType<typeof Storage>;
+    });
+    try {
+      const sync = createCustomSync({ app: { getPath: () => profile }, runtime: { testing: false, root }, hasReaders: () => false,
+        safeStorage: { isEncryptionAvailable: () => true, decryptString: (value: Buffer) => value.toString() }, shell: {}, dialog: {}, fetch: network });
+      const event = { sender: { id: 33 } };
+      const pending = sync.handle(event, { action: "begin", provider: "mega", storagePath: path.join(root, "deadline-library") }) as Promise<{ token: string; documents: unknown[] }>;
+      const completed = pending.then((value) => ({ value, error: null }), (error: Error) => ({ value: null, error }));
+      await vi.advanceTimersByTimeAsync(stalled ? 60001 : 75001);
+      const result = await completed;
+      if (stalled) {
+        expect(result.error?.message).toBe("CUSTOM_PROVIDER_TIMEOUT"); expect(cancelled).toBe(true);
+        await expect(fetchAgain!("https://synthetic.invalid/late-retry")).rejects.toThrow("CUSTOM_PROVIDER_TIMEOUT");
+        expect(network).toHaveBeenCalledTimes(2);
+      } else {
+        expect(result.error).toBeNull(); expect(result.value?.documents).toEqual([state]);
+        await sync.handle(event, { action: "abort", token: result.value!.token });
+      }
+      expect(sync.busy()).toBe(false);
+    } finally { restored.mockRestore(); vi.useRealTimers(); }
   });
 });

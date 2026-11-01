@@ -1231,6 +1231,7 @@
   "custom.sync.error.CUSTOM_MEGA_LOGIN_FAILED": "MEGA sign-in failed. Check your email, password, two-factor code and the network proxy settings.",
   "custom.sync.error.CUSTOM_MEGA_AUTH_FAILED": "MEGA rejected the saved session or access permissions. Enter your password to sign in again and check account access.",
   "custom.sync.error.CUSTOM_MEGA_NETWORK_FAILED": "Could not reach MEGA or complete its storage request. Check the network and proxy settings, then test the connection.",
+  "custom.sync.error.CUSTOM_MEGA_INVALID_TREE": "MEGA's folder listing could not be reconstructed safely. Sync stopped to avoid creating duplicate folders; retry after the service recovers.",
   "custom.sync.error.CUSTOM_MEGA_QUOTA_FAILED": "MEGA has limited the request or the account quota is exhausted. Check available storage and transfer quota, or retry later.",
   "custom.sync.error.CUSTOM_FOLDER_ACCESS_FAILED": "Cannot read or write the sync folder. Check that its drive is mounted and the folder permits access.",
   "custom.sync.error.CUSTOM_LOCAL_FILE_FAILED": "Cannot access a local book, sync state or backup file. Check the library drive, free space and file permissions.",
