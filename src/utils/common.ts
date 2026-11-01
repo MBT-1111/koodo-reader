@@ -1391,7 +1391,7 @@ export const clearAllData = async () => {
         storagePath: storageLocation,
       });
     }
-    if (fs.existsSync(storageLocation)) {
+    if (!personalMode && fs.existsSync(storageLocation)) {
       fs.rmSync(storageLocation, { recursive: true, force: true });
     }
     const ipcRenderer = window.electronAPI;

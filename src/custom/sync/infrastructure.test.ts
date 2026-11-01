@@ -123,7 +123,7 @@ describe("MEGA adapter public API contract", () => {
       reload: async () => {
         if (failure) throw new Error(failure);
         await data.options.fetch!("https://synthetic.invalid/mega", { method: "POST", body: "[]" });
-      }, close: async () => undefined,
+      }, api: { close: () => undefined },
     }) as unknown as InstanceType<typeof Storage>);
     try {
       const saved = await sync.handle(event, { action: "configure", provider: "folder", folder, namespace: "saved-folder", autoMinutes: 0 }) as SyncStatus;
@@ -188,6 +188,15 @@ describe("MEGA adapter public API contract", () => {
       expect(sync.busy()).toBe(false);
     } finally { readdir.mockRestore(); }
   });
+  it("allows a sync directory beside app-profile while rejecting sync files inside the live profile", async () => {
+    const library = path.join(root, "combined-library"), profile = path.join(library, "app-profile");
+    fs.mkdirSync(profile, { recursive: true });
+    const sync = createCustomSync({ app: { getPath: () => profile }, runtime: { testing: true, root }, hasReaders: () => false, safeStorage: {}, shell: {}, dialog: {} });
+    const event = { sender: { id: 31 } };
+    await sync.handle(event, { action: "configure", provider: "folder", folder: library, namespace: "default", autoMinutes: 0 });
+    expect(fs.existsSync(path.join(library, "KoodoReaderCustom-v1-default"))).toBe(true);
+    await expect(sync.handle(event, { action: "configure", provider: "folder", folder: profile, namespace: "default", autoMinutes: 0 })).rejects.toThrow("CUSTOM_UNSAFE_FOLDER");
+  });
   it("works through root.mkdir after session restoration and verifies uploaded bytes", async () => {
     interface RemoteFile { name: string; directory: boolean; size: number; downloadBuffer: () => Promise<Buffer>; delete: () => Promise<void> }
     const files: RemoteFile[] = [];
@@ -197,11 +206,30 @@ describe("MEGA adapter public API contract", () => {
         files.push(file); queueMicrotask(() => done(null, file)); return new EventEmitter();
       },
     };
-    const storage = { status: "closed", root: { children: [] as typeof folder[], mkdir: async () => { storage.root.children.push(folder); return folder; } }, mkdir: () => { throw new Error("Storage convenience methods require ready status"); }, close: async () => undefined };
+    const storage = { status: "closed", root: { children: [] as typeof folder[], mkdir: async () => { storage.root.children.push(folder); return folder; } }, mkdir: () => { throw new Error("Storage convenience methods require ready status"); }, api: { close: () => undefined } };
     const provider = new MegaProvider(storage, "mega");
     const state = reconcile(freshCheckpoint(), {}, []);
     await provider.append(envelope(state));
     expect(await provider.read()).toEqual([envelope(state)]);
     await provider.close();
+  });
+  it("reuses an actual SDK session across provider cleanup without sending a logout command", async () => {
+    const profile = path.join(root, "mega-session-profile"); fs.mkdirSync(path.join(profile, "custom-sync"), { recursive: true });
+    const session = { key: Buffer.alloc(16, 1).toString("base64url"), sid: "synthetic-session", name: "Fixture", user: "fixture", options: { email: "fixture@example.invalid", keepalive: false } };
+    fs.writeFileSync(path.join(profile, "custom-sync", "settings.json"), JSON.stringify({ provider: "mega", account: "fixture", namespace: "default", autoMinutes: 0, session: Buffer.from(JSON.stringify(session)).toString("base64") }));
+    const commands: string[] = [];
+    let validSession = true;
+    const network: typeof globalThis.fetch = async (_url, options) => {
+      const command = (JSON.parse(String(options?.body)) as { a: string }[])[0].a; commands.push(command);
+      if (command === "sml") validSession = false;
+      return new Response(JSON.stringify([validSession ? { ok: [], f: [{ h: "root", t: 2, ts: 0 }] } : -15]));
+    };
+    const create = () => createCustomSync({ app: { getPath: () => profile }, runtime: { testing: false, root }, hasReaders: () => false,
+      safeStorage: { isEncryptionAvailable: () => true, decryptString: (value: Buffer) => value.toString() }, shell: {}, dialog: {}, fetch: network });
+    const event = { sender: { id: 32 } };
+    await create().handle(event, { action: "test", provider: "mega" });
+    await create().handle(event, { action: "test", provider: "mega" });
+    expect(commands).toEqual(["f", "f"]);
+    expect(validSession).toBe(true);
   });
 });

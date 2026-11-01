@@ -2,6 +2,7 @@ const { contextBridge, ipcRenderer } = require("electron");
 
 const INVOKE_CHANNELS = new Set([
   "custom-sync",
+  "storage-profile",
   "cancel-download-app",
   "discord-rpc-update",
   "discord-rpc-clear",

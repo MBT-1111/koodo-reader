@@ -11,13 +11,9 @@ const writeFlushed = (filename, data) => {
   finally { fs.closeSync(descriptor); }
 };
 const closeStorage = async (storage) => {
-  let timer;
-  try {
-    await Promise.race([
-      Promise.resolve().then(() => storage.close()).catch(() => undefined),
-      new Promise((resolve) => { timer = setTimeout(resolve, 3000); }),
-    ]);
-  } finally { clearTimeout(timer); }
+  // Storage.close() sends `sml` (logout), invalidating the session saved on disk.
+  // Stop polling locally while keeping the reusable server-side session alive.
+  storage.api.close();
 };
 const documentName = (document, text) => `${document.deviceId}-${String(document.sequence).padStart(16, "0")}-${sha(text).slice(0, 16)}.json`;
 

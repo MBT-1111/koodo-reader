@@ -14,7 +14,7 @@ const configureRuntime = (app, config, testRoot = process.env.KRC_TEST_PROFILE) 
     fs.mkdirSync(profile, { recursive: true });
     app.setPath("userData", profile);
     app.setPath("sessionData", profile);
-    return { testing: false, profile };
+    return { testing: false, profile, bootstrapProfile: profile };
   }
   if (!path.isAbsolute(testRoot) || !path.basename(testRoot).startsWith("krc-test-") || isInside(profile, testRoot)) throw new Error("CUSTOM_UNSAFE_TEST_PROFILE");
   const marker = path.join(testRoot, ".krc-test-profile");
@@ -27,7 +27,7 @@ const configureRuntime = (app, config, testRoot = process.env.KRC_TEST_PROFILE) 
     fs.mkdirSync(target, { recursive: true });
     app.setPath(name, target);
   }
-  return { testing: true, profile: app.getPath("userData"), root: testRoot };
+  return { testing: true, profile: app.getPath("userData"), bootstrapProfile: app.getPath("userData"), root: testRoot };
 };
 
 const assertOfficialUpdateAllowed = (config) => {

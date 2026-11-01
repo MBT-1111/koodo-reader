@@ -20,6 +20,25 @@ const path = require("path");
 const customBuild = require("./src/custom/build.json");
 const { configureRuntime, assertOfficialUpdateAllowed, assertTestPath } = require("./src/utils/main/custom/runtime");
 const customRuntime = configureRuntime(app, customBuild);
+// Keep one lock at the stable bootstrap location even when the actual profile moves.
+const singleInstance = app.requestSingleInstanceLock();
+if (!singleInstance) { app.quit(); return; }
+const { activateProfile, stageStorage, cancelStorage, clearLibrary } = require("./src/utils/main/custom/profile");
+try { activateProfile(app, customRuntime); }
+catch (error) {
+  try { cancelStorage(customRuntime); } catch { /* Keep the original bootstrap if the disk itself is unavailable. */ }
+  app.whenReady().then(() => {
+    const i18n = require("i18next").createInstance();
+    i18n.init({ initImmediate: false, keySeparator: false, lng: app.getLocale().startsWith("zh") ? "zh-CN" : "en", fallbackLng: "en", resources: {
+      en: { translation: require("./src/assets/locales/en.json") },
+      "zh-CN": { translation: require("./src/assets/locales/zh-CN.json") },
+    } });
+    const key = /^CUSTOM_PROFILE_[A-Z_]+$/.test(error.message) ? `custom.profile.error.${error.message}` : "custom.profile.error.CUSTOM_PROFILE_COPY_FAILED";
+    dialog.showErrorBox(customBuild.productName, `${i18n.t("custom.profile.startupFailed")}\n\n${i18n.t(key)}`);
+    app.exit(1);
+  });
+  return;
+}
 const { createCustomSync } = require("./src/utils/main/custom/sync");
 const { applyBatch: applyCustomSyncBatch } = require("./src/utils/main/custom/database");
 const { pathToFileURL } = require("url");
@@ -70,7 +89,7 @@ const ttsCacheUtil = require("./src/utils/plugins/main/voice/ttsCache");
 const configDir = app.getPath("userData");
 const dirPath = path.join(configDir, "uploads");
 // 数据目录（即渲染进程的 getStorageLocation，见 "storage-location"）
-const dataPath = path.join(dirPath, "data");
+const dataPath = customRuntime.storagePath || path.join(dirPath, "data");
 const { createPreferences } = require("./src/utils/main/custom/preferences");
 const preferences = createPreferences(store, customRuntime, dataPath);
 // 递归计算目录大小（字节），不存在或出错时返回 0
@@ -159,9 +178,11 @@ let dbConnection = {};
 let syncUtilCache = {};
 let pickerUtilCache = {};
 let downloadRequest = null;
+const hasOpenReaders = () => !!(mainView && mainWin && !mainWin.isDestroyed() && mainWin.contentView.children.includes(mainView) && !mainView.webContents.isDestroyed()) || !!(readerWindow && !readerWindow.isDestroyed()) || readerWindowList.some((win) => !win.isDestroyed());
+let storageRestartPending = false;
 const customSync = createCustomSync({ app, safeStorage, dialog, shell, runtime: customRuntime,
   fetch: (url, options) => net.fetch(url, options),
-  hasReaders: () => !!(mainView && mainWin && !mainWin.isDestroyed() && mainWin.contentView.children.includes(mainView) && !mainView.webContents.isDestroyed()) || !!(readerWindow && !readerWindow.isDestroyed()) || readerWindowList.some((win) => !win.isDestroyed()),
+  hasReaders: hasOpenReaders,
 });
 
 const RESIZE_THROTTLE_MS = 300;
@@ -249,7 +270,6 @@ const loadUrlInAuxWindow = async (win, url) => {
   await wc.loadURL(url);
 };
 
-const singleInstance = app.requestSingleInstanceLock();
 var filePath = null;
 var pendingDeepLink = null;
 if (process.platform != "darwin" && process.argv.length >= 2) {
@@ -1495,6 +1515,7 @@ const createMainWin = () => {
     return result;
   });
   ipcMain.handle("database-command", async (event, config) => {
+    if (storageRestartPending) throw new Error("CUSTOM_PROFILE_RESTART_REQUIRED");
     if (config?.statement === "customSyncBatch") {
       customSync.authorize(event, config.customSyncToken, config.storagePath);
       if (!["books", "notes", "bookmarks"].includes(config.dbName)) throw new Error("CUSTOM_INVALID_DATABASE_REQUEST");
@@ -1962,6 +1983,12 @@ const createMainWin = () => {
     }
   });
   ipcMain.handle("clear-all-data", async (event, config) => {
+    if (customSync.busy() || storageRestartPending) throw new Error("CUSTOM_SYNC_BUSY");
+    if (hasOpenReaders()) throw new Error("CUSTOM_CLOSE_READERS");
+    const library = path.resolve(preferences.storageLocation());
+    if (library === path.parse(library).root) throw new Error("CUSTOM_INVALID_STORAGE");
+    assertTestPath(customRuntime, library);
+    if (customBuild.personalServicesOnly) clearLibrary(customRuntime, library);
     try {
       if (fs.existsSync(path.join(dirPath, "tts"))) {
         await fsExtra.remove(path.join(dirPath, "tts"));
@@ -1972,6 +1999,7 @@ const createMainWin = () => {
       console.error(error);
     }
     store.clear();
+    if (customBuild.personalServicesOnly) store.set("rendererPreferences", { storageLocation: library });
   });
   ipcMain.handle("new-tab", (event, config) => {
     if (customSync.busy()) throw new Error("CUSTOM_SYNC_BUSY");
@@ -2311,7 +2339,31 @@ const applyCorsToRendererRequests = () => {
 };
 
 app.on("ready", async () => {
-  ipcMain.handle("custom-sync", (event, request) => customSync.handle(event, request));
+  ipcMain.handle("storage-profile", async (event, request) => {
+    if (!request || typeof request !== "object") throw new Error("CUSTOM_PROFILE_INVALID_PATH");
+    if (request.action === "status") return { profile: configDir, storage: dataPath, cleanupPending: !!customRuntime.cleanupPending };
+    if (request.action === "stage") {
+      if (storageRestartPending || customSync.busy()) throw new Error("CUSTOM_SYNC_BUSY");
+      if (hasOpenReaders()) throw new Error("CUSTOM_CLOSE_READERS");
+      try { stageStorage(customRuntime, request.target, request.mode); }
+      catch (error) { throw new Error(/^CUSTOM_[A-Z_]+$/.test(error.message) ? error.message : "CUSTOM_PROFILE_COPY_FAILED"); }
+      storageRestartPending = true;
+      return true;
+    }
+    if (request.action === "restart" && storageRestartPending) {
+      for (const db of Object.values(dbConnection)) { try { db.close(); } catch { /* Exit will release remaining native handles. */ } }
+      dbConnection = {};
+      session.defaultSession.flushStorageData();
+      if (!customRuntime.testing) app.relaunch();
+      setImmediate(() => app.quit());
+      return true;
+    }
+    throw new Error("CUSTOM_PROFILE_INVALID_PATH");
+  });
+  ipcMain.handle("custom-sync", (event, request) => {
+    if (storageRestartPending && !["status", "abort"].includes(request?.action)) throw new Error("CUSTOM_PROFILE_RESTART_REQUIRED");
+    return customSync.handle(event, request);
+  });
   if (customRuntime.testing) {
     session.defaultSession.webRequest.onBeforeRequest({ urls: ["http://*/*", "https://*/*"] }, (details, callback) => {
       const hostname = new URL(details.url).hostname;

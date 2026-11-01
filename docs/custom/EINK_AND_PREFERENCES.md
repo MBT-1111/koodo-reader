@@ -14,7 +14,7 @@ AI 模型、Discord 开关、书库位置及其他 ConfigService 配置原先仅
 
 代理仍通过原有主进程配置保存。此前保存后隐藏输入框且没有编辑入口；现在启用代理时始终显示已保存的配置，可继续编辑。
 
-配置仍属于 `%APPDATA%\koodo-reader-custom`，迁移书库不等于迁移整个应用 profile；不要删除该 profile 来清理旧软件。此次没有写入正式 profile 或 E 盘书库，也没有自动覆盖旧备份。
+最初的持久化修复仍将配置保存在 `%APPDATA%\koodo-reader-custom`。后续实现了配置随书库迁移：已有外部书库在新版本首次启动时接收 `app-profile`，更改位置通过重启迁移配置和缓存；AppData 仅保留启动指针。详见 [目录迁移与 MEGA 会话修复](PROFILE_STORAGE_AND_MEGA.md)。源码检查没有写入正式 profile 或 E 盘书库。
 
 ## 验证
 

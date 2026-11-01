@@ -59,7 +59,8 @@ const { isInside } = require("../src/utils/main/custom/runtime");
     // A synthetic second connection exercises target selection without contacting MEGA.
     const syncSettingsFile = path.join(locations.userData, "custom-sync", "settings.json");
     const syncSettings = JSON.parse(fs.readFileSync(syncSettingsFile, "utf8"));
-    syncSettings.connections.mega = { provider: "mega", namespace: "smoke-mega", autoMinutes: 0, email: "fixture@example.invalid", account: "synthetic-mega", session: "synthetic-session-never-used" };
+    const profileSecret = await app.evaluate(({ safeStorage }) => safeStorage.encryptString("synthetic-profile-token").toString("base64"));
+    syncSettings.connections.mega = { provider: "mega", namespace: "smoke-mega", autoMinutes: 0, email: "fixture@example.invalid", account: "synthetic-mega", session: profileSecret };
     fs.writeFileSync(syncSettingsFile, JSON.stringify(syncSettings));
     await page.locator(".header .icon-sync.setting-icon").click();
     assert.equal(await page.locator('select[name="vex-select"] option').count(), 2, "Header chooser must offer both saved connections");
@@ -138,6 +139,13 @@ const { isInside } = require("../src/utils/main/custom/runtime");
     page = await app.firstWindow();
     page.setDefaultTimeout(60000);
     await page.locator(".header").waitFor();
+    const movedPaths = await app.evaluate(({ app }) => Object.fromEntries(["userData", "sessionData", "logs", "temp", "crashDumps"].map((name) => [name, app.getPath(name)])));
+    assert.equal(movedPaths.userData, path.join(relocated, "app-profile"));
+    assert.ok(Object.values(movedPaths).every((directory) => isInside(relocated, directory)), "Settings, browser state, logs and caches must follow the library");
+    assert.ok(fs.existsSync(path.join(locations.userData, "profile-location.json")), "Bootstrap must remember the selected profile");
+    assert.equal(fs.existsSync(path.join(locations.userData, "config.json")), false, "The original bootstrap location should no longer hold application settings");
+    const savedCiphertext = JSON.parse(fs.readFileSync(path.join(movedPaths.userData, "custom-sync", "settings.json"), "utf8")).connections.mega.session;
+    assert.equal(await app.evaluate(({ safeStorage }, value) => safeStorage.decryptString(Buffer.from(value, "base64")), savedCiphertext), "synthetic-profile-token", "Credentials must remain decryptable after the profile moves");
     const restored = await page.evaluate(() => ({
       storagePath: window.electronAPI.sendSync("storage-location", "ping"),
       ai: localStorage.getItem("aiModelConfig"),
@@ -162,8 +170,22 @@ const { isInside } = require("../src/utils/main/custom/runtime");
     const restartedBooks = await invoke("database-command", { statement: "getAllStatement", statementType: "string", executeType: "all", dbName: "books", storagePath: restored.storagePath });
     assert.equal(restartedBooks.length, 1);
     assert.equal(restartedBooks[0].key, book.key);
+    // Exercise the actual migration request and another cold restart.
+    const finalLocation = path.join(root, "moved-library"); fs.mkdirSync(finalLocation);
+    await invoke("storage-profile", { action: "stage", target: finalLocation, mode: "move" });
+    await app.close(); app = null;
+    app = await electron.launch({ args: [path.resolve(".")], env, timeout: 60000 });
+    page = await app.firstWindow(); page.setDefaultTimeout(60000);
+    await page.locator(".header").waitFor();
+    assert.equal(await page.evaluate(() => window.electronAPI.sendSync("storage-location", "ping")), finalLocation);
+    assert.equal(await app.evaluate(({ app }) => app.getPath("userData")), path.join(finalLocation, "app-profile"));
+    assert.equal(await page.evaluate(() => localStorage.getItem("aiModelConfig")), aiModelConfig);
+    assert.deepEqual(await invoke("get-proxy-config"), proxy);
+    const movedBooks = await invoke("database-command", { statement: "getAllStatement", statementType: "string", executeType: "all", dbName: "books", storagePath: finalLocation });
+    assert.equal(movedBooks[0].key, book.key);
+    assert.equal(fs.existsSync(relocated), false, "The verified source library should be removed after a successful move");
     fs.mkdirSync(path.resolve("dist"), { recursive: true });
-    fs.writeFileSync(path.resolve("dist/custom-smoke.json"), JSON.stringify({ passed: true, source: process.env.GITHUB_SHA || "working-tree", platform: process.platform, checks: ["profile-isolation", "official-update-blocked", "real-database-ipc", "personal-sync-ui", "header-personal-sync", "unchanged-sync-no-upload", "official-account-hidden", "login-route-redirect", "immutable-folder-provider", "credential-exclusion", "tts-network-blocked", "eink-ui-toggle", "eink-theme-restoration", "preferences-cold-restart", "chromium-storage-recovery", "relocated-library-restart", "proxy-restart-and-display"] }, null, 2));
+    fs.writeFileSync(path.resolve("dist/custom-smoke.json"), JSON.stringify({ passed: true, source: process.env.GITHUB_SHA || "working-tree", platform: process.platform, checks: ["profile-isolation", "official-update-blocked", "real-database-ipc", "personal-sync-ui", "header-personal-sync", "unchanged-sync-no-upload", "official-account-hidden", "login-route-redirect", "immutable-folder-provider", "credential-exclusion", "tts-network-blocked", "eink-ui-toggle", "eink-theme-restoration", "preferences-cold-restart", "chromium-storage-recovery", "relocated-library-restart", "proxy-restart-and-display", "profile-follows-library", "credential-decryption-after-profile-move", "verified-library-move"] }, null, 2));
     console.info("Custom Windows smoke checks passed (synthetic data only).");
   } finally {
     if (app) await app.close();

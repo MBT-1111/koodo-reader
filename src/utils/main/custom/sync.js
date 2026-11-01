@@ -129,7 +129,8 @@ const createCustomSync = ({ app, safeStorage, dialog, shell, runtime, hasReaders
       if (typeof selected !== "string" || !path.isAbsolute(selected)) throw new Error("CUSTOM_UNSAFE_FOLDER");
       try { if (!fs.statSync(selected).isDirectory()) throw new Error(); } catch { throw new Error("CUSTOM_FOLDER_ACCESS_FAILED"); }
       const folder = fs.realpathSync(selected);
-      if (isInside(app.getPath("userData"), folder) || isInside(folder, app.getPath("userData"))) throw new Error("CUSTOM_UNSAFE_FOLDER");
+      const syncFolder = path.join(folder, `KoodoReaderCustom-v1-${config.namespace}`);
+      if (isInside(app.getPath("userData"), syncFolder) || isInside(syncFolder, app.getPath("userData"))) throw new Error("CUSTOM_UNSAFE_FOLDER");
       if (runtime.testing && !isInside(runtime.root, folder)) throw new Error("CUSTOM_TEST_PATH_ESCAPE");
       config = { ...config, folder, account: hash(folder) };
     } else if (!request.password && !request.secondFactorCode && old && (!request.email || request.email === summary(old).email)) {

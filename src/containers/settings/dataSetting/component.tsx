@@ -1,6 +1,7 @@
 import { useTranslation } from "react-i18next";
 import { useNavigate } from "react-router-dom";
 import { useEffect, useRef, useState } from "react";
+import { personalMode } from "../../../custom/personal";
 import { Trans } from "react-i18next";
 import {
   clearAllData,
@@ -474,7 +475,28 @@ const DataSetting = () => {
     });
   };
 
+  const [storageBusy, setStorageBusy] = useState(false);
+  const [profileLocation, setProfileLocation] = useState("");
+  useEffect(() => {
+    if (isElectron && personalMode) window.electronAPI.invoke("storage-profile", { action: "status" }).then((value: { profile: string }) => setProfileLocation(value.profile)).catch(() => undefined);
+  }, []);
+  const relocateStorage = async (mode: "move" | "switch") => {
+    if (storageBusy) return;
+    setStorageBusy(true);
+    try {
+      const target = await window.electronAPI.invoke("select-path");
+      if (!target) return;
+      toast.loading(t("custom.profile.preparing"), { id: "storage-profile" });
+      await window.electronAPI.invoke("storage-profile", { action: "stage", target, mode });
+      toast.success(t("custom.profile.restarting"), { id: "storage-profile" });
+      await window.electronAPI.invoke("storage-profile", { action: "restart" });
+    } catch (error) {
+      const code = error instanceof Error ? error.message.match(/\bCUSTOM_[A-Z_]+\b/)?.[0] : undefined;
+      toast.error(t(code?.startsWith("CUSTOM_PROFILE_") ? `custom.profile.error.${code}` : code ? `custom.sync.error.${code}` : "custom.profile.error.CUSTOM_PROFILE_COPY_FAILED"), { id: "storage-profile" });
+    } finally { setStorageBusy(false); }
+  };
   const handleChangeLocation = async () => {
+    if (personalMode) return relocateStorage("move");
     const ipcRenderer = window.electronAPI;
     const newPath = await ipcRenderer.invoke("select-path");
     if (!newPath) {
@@ -497,6 +519,7 @@ const DataSetting = () => {
   };
   const handleSwitchLibrary = async () => {
     if (isElectron) {
+      if (personalMode) return relocateStorage("switch");
       const ipcRenderer = window.electronAPI;
       const newPath = await ipcRenderer.invoke("select-path");
       if (!newPath) {
@@ -640,15 +663,19 @@ const DataSetting = () => {
               </div>
             </div>
             <p className="setting-option-subtitle">
-              <Trans>
+              {personalMode ? t("custom.profile.locationHelp") : <Trans>
                 {
                   "Modify the storage location of the library, and the library will be moved to the new location. Please ensure that the new folder is empty"
                 }
-              </Trans>
+              </Trans>}
             </p>
             <div className="setting-dialog-location-title">
               {stateRef.current.storageLocation}
             </div>
+            {personalMode && profileLocation && <>
+              <p className="setting-option-subtitle">{t("custom.profile.profileHelp")}</p>
+              <div className="setting-dialog-location-title">{profileLocation}</div>
+            </>}
           </>
         )}
         {stateRef.current.storageLocation && (
