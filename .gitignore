@@ -16,6 +16,8 @@
 dist/
 
 /build/*
+/build-android/
+!/android/gradle/wrapper/gradle-wrapper.jar
 /.vscode
 /.claude
 /.superpowers

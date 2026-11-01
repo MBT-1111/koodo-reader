@@ -3,7 +3,7 @@ import react from "@vitejs/plugin-react";
 import { nodePolyfills } from "vite-plugin-node-polyfills";
 import { visualizer } from "rollup-plugin-visualizer";
 
-export default defineConfig(({ command }) => ({
+export default defineConfig(({ command, mode }) => ({
   base: command === "build" ? "./" : "/",
   plugins: [
     react(),
@@ -39,7 +39,7 @@ export default defineConfig(({ command }) => ({
     },
   },
   build: {
-    outDir: "build",
+    outDir: mode === "android" ? "build-android" : "build",
     assetsDir: "static",
     sourcemap: false,
     target: "chrome130",

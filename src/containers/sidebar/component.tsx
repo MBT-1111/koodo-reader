@@ -400,7 +400,7 @@ const Sidebar = () => {
 
   return (
     <>
-      <div className="sidebar">
+      <div className="sidebar" data-collapsed={isCollapsed}>
         <div
           className="sidebar-list-icon"
           onClick={() => {

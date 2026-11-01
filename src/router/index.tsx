@@ -8,6 +8,7 @@ import Login from "../pages/login";
 import Stats from "../pages/stats";
 import HtmlReader from "../pages/reader";
 import _Redirect from "../pages/redirect";
+import AndroidNavigation from "../components/androidNavigation";
 
 const Router = () => {
   useEffect(() => {
@@ -145,6 +146,7 @@ const Router = () => {
   }, []);
   return (
     <HashRouter>
+      <AndroidNavigation />
       <Routes>
         <Route element={<Manager />} path="/manager/*" />
         <Route element={personalMode ? <Navigate to="/manager" replace /> : <Login />} path="/login" />

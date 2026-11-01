@@ -4,6 +4,8 @@ import { useEffect, useRef, useState } from "react";
 import "./manager.css";
 import Sidebar from "../../containers/sidebar";
 import Header from "../../containers/header";
+import AndroidHeader from "../../components/androidHeader";
+import { isAndroid } from "../../utils/platform";
 import DeleteDialog from "../../components/dialogs/deleteDialog";
 import EditDialog from "../../components/dialogs/editDialog";
 import AddDialog from "../../components/dialogs/addDialog";
@@ -371,7 +373,11 @@ const Manager = () => {
           },
         }}
       />
-      <Header {...({ handleDrag: handleDrag } as any)} />
+      {isAndroid ? (
+        <AndroidHeader handleDrag={handleDrag} />
+      ) : (
+        <Header {...({ handleDrag: handleDrag } as any)} />
+      )}
       {isOpenDeleteDialog && <DeleteDialog />}
       {isOpenEditDialog && <EditDialog />}
       {isOpenAddDialog && <AddDialog />}

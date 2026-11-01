@@ -35,6 +35,9 @@ import { READING_PANEL_TOGGLE_EVENT } from "../../utils/reader/mouseEvent";
 import { isPaginatedBook, isReadingRawPDF, throttle } from "../../utils/common";
 import { getOuterDoc } from "../../utils/reader/docUtil";
 import { useAppStore } from "../../store/useAppStore";
+import { isAndroid } from "../../utils/platform";
+import { ANDROID_READER_CLOSE_EVENT, closeAndroidReader } from "../../custom/android/navigation";
+import "../../components/androidHeader/android.css";
 
 const QUICK_BUTTON_EDGE_DISTANCE = 60;
 
@@ -527,11 +530,18 @@ const Reader = () => {
       }));
     }, 60000);
 
-    window.addEventListener("beforeunload", function () {
+    const handleBeforeUnload = () => {
       if (!isElectron) {
         ConfigService.setReaderConfig("isFinishWebReading", "yes");
       }
-    });
+    };
+    const handleAndroidClose = () => {
+      if (propsRef.current.htmlBook?.rendition) handleLocation();
+    };
+    window.addEventListener("beforeunload", handleBeforeUnload);
+    if (isAndroid) {
+      window.addEventListener(ANDROID_READER_CLOSE_EVENT, handleAndroidClose);
+    }
     const handleMouseMove = (e: MouseEvent) => {
       isMouseMoving = true;
       setTimeout(() => {
@@ -558,6 +568,9 @@ const Reader = () => {
       updateState({ isNearEdge: false });
     }, 1500);
     return () => {
+      window.removeEventListener("beforeunload", handleBeforeUnload);
+      window.removeEventListener("mousemove", throttledMouseMove);
+      window.removeEventListener(ANDROID_READER_CLOSE_EVENT, handleAndroidClose);
       window.removeEventListener(
         READING_PANEL_TOGGLE_EVENT,
         handleReadingPanelToggle
@@ -659,6 +672,35 @@ const Reader = () => {
       className={"viewer" + (state.isNearEdge ? " quick-buttons-shown" : "")}
     >
       <Tooltip id="my-tooltip" style={{ zIndex: 25 }} />
+      {isAndroid && (
+        <nav className="android-reader-toolbar">
+          <button type="button" aria-label={t("Exit reader")} onClick={() => closeAndroidReader()}>
+            <span className="icon-exit" />
+          </button>
+          <span className="android-reader-title">{currentBook.name}</span>
+          <button type="button" aria-label={t("Chapters")} onClick={() => {
+            const open = stateRef.current.isOpenLeftPanel;
+            PANEL_POSITIONS.forEach(handleLeaveReader);
+            if (!open) handleEnterReader("left");
+          }}>
+            <span className="icon-menu" />
+          </button>
+          <button type="button" aria-label={t("Setting")} onClick={() => {
+            const open = stateRef.current.isOpenRightPanel;
+            PANEL_POSITIONS.forEach(handleLeaveReader);
+            if (!open) handleEnterReader("right");
+          }}>
+            <span className="icon-setting" />
+          </button>
+          <button type="button" aria-label={t("Bookmark")} onClick={() => {
+            const open = stateRef.current.isOpenTopPanel;
+            PANEL_POSITIONS.forEach(handleLeaveReader);
+            if (!open) handleEnterReader("top");
+          }}>
+            <span className="icon-grid" />
+          </button>
+        </nav>
+      )}
       {isSeparateElectronWindow && (
         <div className="reader-window-drag-region" />
       )}
@@ -747,7 +789,7 @@ const Reader = () => {
               }),
           zIndex: 14,
           width: "max-content",
-          display: "flex",
+          display: isAndroid ? "none" : "flex",
           flexDirection: "column",
           alignItems:
             isSeparateElectronWindow && isMacOS ? "flex-start" : "flex-end",

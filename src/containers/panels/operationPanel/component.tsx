@@ -12,6 +12,8 @@ import { handleExitFullScreen, handleFullScreen } from "../../../utils/common";
 import DatabaseService from "../../../utils/storage/databaseService";
 import BookLocation from "../../../models/BookLocation";
 import { useAppStore } from "../../../store/useAppStore";
+import { isAndroid } from "../../../utils/platform";
+import { closeAndroidReader } from "../../../custom/android/navigation";
 
 export interface OperationPanelProps {
   rendition: any;
@@ -105,6 +107,10 @@ const OperationPanel = (props: OperationPanelProps) => {
   };
 
   const handleExit = async () => {
+    if (isAndroid) {
+      await closeAndroidReader();
+      return;
+    }
     ConfigService.setReaderConfig("isFullscreen", "no");
     handleReadingState(false);
     handleSearch(false);

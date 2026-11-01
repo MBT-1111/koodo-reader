@@ -15,7 +15,22 @@ import {
   applyAppBackgroundImage,
 } from "./utils/reader/launchUtil";
 import { migrateConfig } from "./utils/common";
+import { ConfigService } from "./assets/lib/kookit-extra-browser.min";
+import { useAppStore } from "./store/useAppStore";
+import { isAndroid } from "./utils/platform";
 initTheme();
+// Zustand is initialized while modules load, before initTheme refreshes isOSNight.
+if (
+  isAndroid &&
+  !ConfigService.getReaderConfig("backgroundColor") &&
+  ConfigService.getReaderConfig("isMergeWord") !== "yes"
+) {
+  useAppStore.getState().handleBackgroundColor(
+    document.documentElement.dataset.theme === "dark"
+      ? "rgba(44,47,49,1)"
+      : "rgba(255,255,255,1)"
+  );
+}
 initSystemFont();
 migrateConfig();
 applyCustomSystemCSS();

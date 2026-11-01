@@ -36,6 +36,7 @@ import {
 } from "../constants/dropdownList";
 import TokenService from "./storage/tokenService";
 import { getBuiltinPluginDefinition } from "./plugins/catalog";
+import { isAndroid } from "./platform";
 declare var window: any;
 export const supportedFormats = [
   ".epub",
@@ -627,6 +628,13 @@ export const getPageWidth = (
   isSettingLocked: boolean,
   isFitPage: boolean = false
 ) => {
+  if (isAndroid) {
+    const inset = 12;
+    return {
+      pageOffset: `${inset}px`,
+      pageWidth: `${Math.max(0, document.body.clientWidth - inset * 2)}px`,
+    };
+  }
   // 页间距与 kookit 渲染引擎的 getSectionGap 保持一致：
   // 未设置时取 min(60, 宽度/12)，只能取偶数
   const getPageGapValue = (width: number) => {

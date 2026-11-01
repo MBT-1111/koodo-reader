@@ -13,6 +13,7 @@ import { getCloudConfig } from "./common";
 import CoverUtil from "./coverUtil";
 import { LocalFileManager } from "./localFile";
 import TokenService from "../storage/tokenService";
+import { isAndroid } from "../platform";
 declare var window: any;
 
 class BookUtil {
@@ -355,6 +356,11 @@ class BookUtil {
           isAlwaysOnTop: ConfigService.getReaderConfig("isAlwaysOnTop"),
         });
       }
+    } else if (isAndroid) {
+      window.location.hash = `/${ref}/${book.key}?${new URLSearchParams({
+        title: book.name,
+        file: book.key,
+      })}`;
     } else {
       window.open(
         `${window.location.href.split("#")[0]}#/${ref}/${book.key}?title=${

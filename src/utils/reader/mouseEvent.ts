@@ -10,6 +10,8 @@ import {
 } from "../common";
 import Hammer from "hammerjs";
 import TTSUtil from "./ttsUtil";
+import { isAndroid } from "../platform";
+import { closeAndroidReader } from "../../custom/android/navigation";
 import {
   getShortcutConfig,
   isNextPageKey,
@@ -299,7 +301,11 @@ const handleShortcut = (event: any, book: Book, rendition?: any) => {
         }
       } else {
         ConfigService.setReaderConfig("isFinishWebReading", "yes");
-        window.close();
+        if (isAndroid) {
+          void closeAndroidReader();
+        } else {
+          window.close();
+        }
       }
     }
   }

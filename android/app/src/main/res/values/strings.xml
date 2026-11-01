@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Koodo Reader Custom</string>
+    <string name="title_activity_main">Koodo Reader Custom</string>
+    <string name="package_name">xyz.koodoreader.custom.android</string>
+    <string name="custom_url_scheme">xyz.koodoreader.custom.android</string>
+</resources>

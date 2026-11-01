@@ -20,6 +20,7 @@ import MoreSetting from "../../../containers/settings/moreSetting";
 import ShortcutSetting from "../../../containers/settings/shortcutSetting";
 import { isElectron } from "react-device-detect";
 import { personalMode } from "../../../custom/personal";
+import { isAndroid } from "../../../utils/platform";
 const SettingDialog = () => {
   const settingMode = useAppStore((s) => s.manager.settingMode);
   const handleSetting = useAppStore((s) => s.handleSetting);
@@ -49,6 +50,7 @@ const SettingDialog = () => {
     labelKey: string,
     fontSize: string
   ) => {
+    if (isAndroid && ["sync", "shortcut", "dict"].includes(mode)) return null;
     const isActive = settingMode === mode;
     return (
       <div
