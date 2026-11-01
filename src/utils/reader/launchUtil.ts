@@ -15,7 +15,12 @@ export const syncNativeThemeSource = (appSkin: string) => {
     return;
   }
   const ipcRenderer = window.electronAPI;
-  ipcRenderer.invoke("set-native-theme-source", appSkin || "system");
+  ipcRenderer.invoke(
+    "set-native-theme-source",
+    ConfigService.getReaderConfig("isEinkMode") === "yes"
+      ? "light"
+      : appSkin || "system"
+  );
 };
 
 export const initTheme = () => {
@@ -52,7 +57,10 @@ export const initTheme = () => {
     (ConfigService.getReaderConfig("appSkin") === "system" &&
       ConfigService.getReaderConfig("isOSNight") === "yes");
   style.href = "./assets/styles/theme.css";
-  document.documentElement.dataset.theme = isNightSkin ? "dark" : "light";
+  const isEinkMode = ConfigService.getReaderConfig("isEinkMode") === "yes";
+  document.documentElement.dataset.eink = String(isEinkMode);
+  document.documentElement.dataset.theme =
+    !isEinkMode && isNightSkin ? "dark" : "light";
   document.head.appendChild(style);
 };
 export const initSystemFont = async () => {

@@ -1365,6 +1365,7 @@ export const compareVersions = (version1: string, version2: string) => {
   return 0; // Versions are equal
 };
 export const clearAllData = async () => {
+  const storageLocation = getStorageLocation();
   let deviceUuid = "";
   if (!isElectron) {
     deviceUuid = ConfigService.getItem("fingerPrint") || "";
@@ -1377,20 +1378,19 @@ export const clearAllData = async () => {
   //clear all indexed db data
 
   if (isElectron) {
-    let storageLocation = getStorageLocation();
     const fs = window.electronAPI.fs;
     let databaseList = CommonTool.databaseList;
     for (let i = 0; i < databaseList.length; i++) {
       await window.electronAPI.invoke("close-database", {
         dbName: databaseList[i],
-        storagePath: getStorageLocation(),
+        storagePath: storageLocation,
       });
     }
     if (fs.existsSync(storageLocation)) {
       fs.rmSync(storageLocation, { recursive: true, force: true });
     }
     const ipcRenderer = window.electronAPI;
-    ipcRenderer.invoke("clear-all-data", {});
+    await ipcRenderer.invoke("clear-all-data", {});
   }
   await localforage.clear();
 };

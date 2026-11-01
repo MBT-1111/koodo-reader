@@ -4,6 +4,7 @@ const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const path = require("node:path");
 const os = require("node:os");
+const { pathToFileURL } = require("node:url");
 const { isInside } = require("../src/utils/main/custom/runtime");
 
 (async () => {
@@ -16,7 +17,7 @@ const { isInside } = require("../src/utils/main/custom/runtime");
     app = await electron.launch({ args: [path.resolve(".")], env, timeout: 60000 });
     const locations = await app.evaluate(({ app }) => Object.fromEntries(["userData", "sessionData", "temp", "logs", "crashDumps"].map((name) => [name, app.getPath(name)])));
     assert.ok(Object.values(locations).every((directory) => isInside(root, directory)), "All writable Electron locations must be isolated");
-    const page = await app.firstWindow();
+    let page = await app.firstWindow();
     page.setDefaultTimeout(60000);
     await page.waitForFunction(() => !!window.electronAPI);
     await page.locator(".header").waitFor();
@@ -27,6 +28,16 @@ const { isInside } = require("../src/utils/main/custom/runtime");
     });
     assert.equal(await proPromotions.count(), 0, "Personal build should hide Pro promotions");
     const invoke = (channel, data) => page.evaluate(({ channel, data }) => window.electronAPI.invoke(channel, data), { channel, data });
+    // Use public exports from the renderer's own engine instance, including its persistence adapter.
+    const engineChunk = fs.readdirSync(path.resolve("build/static")).find((name) => /^kookit-.*\.js$/.test(name));
+    assert.ok(engineChunk, "Built engine chunk must exist");
+    const engineUrl = pathToFileURL(path.resolve("build/static", engineChunk)).href;
+    const configure = (values, reader = {}) => page.evaluate(async ({ engineUrl, values, reader }) => {
+      const config = Object.values(await import(engineUrl)).find((value) => typeof value?.setReaderConfig === "function");
+      if (!config) throw new Error("Renderer ConfigService export not found");
+      for (const [key, value] of Object.entries(values)) config.setItem(key, value);
+      for (const [key, value] of Object.entries(reader)) config.setReaderConfig(key, value);
+    }, { engineUrl, values, reader });
     const update = await page.evaluate(async () => {
       try { await window.electronAPI.invoke("update-win-app", { version: "0.0.0" }); return "ALLOWED"; }
       catch (error) { return String(error.message); }
@@ -39,10 +50,10 @@ const { isInside } = require("../src/utils/main/custom/runtime");
     const book = { key: "synthetic-book", name: "Synthetic Book", author: "Test", description: "Fixture", md5: "fixture", cover: "", format: "EPUB", publisher: "", size: fs.statSync(fixture).size, page: 1, path: fixture, charset: "utf-8", published: "", modified: "", identifier: "", language: "en", subject: "", rights: "", isbn: "", layout: "" };
     const note = { key: "synthetic-note", bookKey: book.key, date: { year: 2026, month: 10, day: 31 }, chapter: "Test", chapterIndex: 0, text: "Synthetic highlight", cfi: "{}", range: "[]", notes: "Synthetic note", percentage: "0.5", color: "1", tag: [] };
     for (const [dbName, data] of [["books", book], ["notes", note]]) await invoke("database-command", { statement: "saveStatement", statementType: "string", executeType: "run", dbName, data, storagePath });
-    await page.evaluate(() => {
-      localStorage.setItem("readingTime", JSON.stringify({ "synthetic-book": 6 }));
-      localStorage.setItem("readingStats", JSON.stringify({ "2026-10-31": ["synthetic-book-6"] }));
-      localStorage.setItem("recordLocation", JSON.stringify({ "synthetic-book": { percentage: "0.5", cfi: "fixture" } }));
+    await configure({
+      readingTime: JSON.stringify({ "synthetic-book": 6 }),
+      readingStats: JSON.stringify({ "2026-10-31": ["synthetic-book-6"] }),
+      recordLocation: JSON.stringify({ "synthetic-book": { percentage: "0.5", cfi: "fixture" } }),
     });
     await invoke("custom-sync", { action: "configure", provider: "folder", namespace: "smoke", autoMinutes: 0, folder: remote });
     await page.locator(".header .icon-sync.setting-icon").click();
@@ -75,8 +86,67 @@ const { isInside } = require("../src/utils/main/custom/runtime");
     assert.match(blocked, /CUSTOM_TEST_NETWORK_BLOCKED/);
     await page.evaluate(() => { window.location.hash = "/login"; });
     await page.waitForFunction(() => window.location.hash.startsWith("#/manager"));
+    // A relocated library, application preferences and main-process proxy must survive a cold restart.
+    const relocated = path.join(root, "relocated-library");
+    for (const dbName of ["books", "notes", "bookmarks", "words", "plugins"]) await invoke("close-database", { dbName, storagePath });
+    fs.cpSync(storagePath, relocated, { recursive: true });
+    const aiModelConfig = JSON.stringify({ "synthetic-model": { key: "synthetic-model", displayName: "Synthetic model", config: {
+      endpoint: "http://127.0.0.1:9/v1", modelId: "synthetic", modelName: "Synthetic model", apiKey: "synthetic-key", providerId: "custom",
+    } } });
+    await configure({ storageLocation: relocated, aiModelConfig }, { appSkin: "night", themeColor: "#0179CA", isEinkMode: "no", isEnableDiscordRPC: "yes", aiService: "synthetic-model" });
+    const proxy = { enabled: true, type: "http", host: "127.0.0.1", port: 7890, username: "", password: "" };
+    assert.equal((await invoke("set-proxy-config", proxy)).ok, true);
+    await page.reload();
+    await page.locator(".header").waitFor();
+    assert.equal(await page.evaluate(() => document.documentElement.dataset.theme), "dark");
+    await page.locator(".icon-setting.setting-icon").click();
+    await page.locator(".setting-dialog-sidebar-item").filter({ hasText: /^(Appearance|外观)$/ }).click();
+    const toggleEink = () => page.locator(".setting-dialog-new-title").filter({ hasText: /E-ink mode|E-ink 模式/ }).locator(".single-control-switch").click();
+    await toggleEink();
+    await page.waitForFunction(() => document.documentElement.dataset.eink === "true");
+    await page.waitForFunction(() => getComputedStyle(document.body).color === "rgb(0, 0, 0)");
+    assert.equal(await page.evaluate(() => document.documentElement.dataset.theme), "light");
+    const colors = await page.evaluate(() => ({ bg: getComputedStyle(document.body).backgroundColor, text: getComputedStyle(document.body).color }));
+    assert.deepEqual(colors, { bg: "rgb(255, 255, 255)", text: "rgb(0, 0, 0)" });
+    await page.locator(".icon-setting.setting-icon").click();
+    await page.locator(".setting-dialog-sidebar-item").filter({ hasText: /^(Appearance|外观)$/ }).click();
+    await toggleEink();
+    await page.waitForFunction(() => document.documentElement.dataset.eink === "false");
+    assert.equal(await page.evaluate(() => document.documentElement.dataset.theme), "dark", "Disabling E-ink restores the saved theme");
+    await configure({}, { isEinkMode: "yes" });
+    await app.evaluate(({ session }) => session.defaultSession.clearStorageData({ storages: ["localstorage"] }));
+    await app.close();
+    app = null;
+    app = await electron.launch({ args: [path.resolve(".")], env, timeout: 60000 });
+    page = await app.firstWindow();
+    page.setDefaultTimeout(60000);
+    await page.locator(".header").waitFor();
+    const restored = await page.evaluate(() => ({
+      storagePath: window.electronAPI.sendSync("storage-location", "ping"),
+      ai: localStorage.getItem("aiModelConfig"),
+      reader: JSON.parse(localStorage.getItem("readerConfig") || "{}"),
+      eink: document.documentElement.dataset.eink,
+      theme: document.documentElement.dataset.theme,
+    }));
+    assert.equal(restored.storagePath, relocated);
+    assert.equal(restored.ai, aiModelConfig);
+    assert.equal(restored.reader.isEnableDiscordRPC, "yes");
+    assert.equal(restored.reader.aiService, "synthetic-model");
+    assert.equal(restored.reader.appSkin, "night");
+    assert.equal(restored.reader.themeColor, "#0179CA");
+    assert.equal(restored.eink, "true");
+    assert.equal(restored.theme, "light");
+    assert.deepEqual(await invoke("get-proxy-config"), proxy);
+    await page.locator(".icon-setting.setting-icon").click();
+    await page.locator(".setting-dialog-sidebar-item").filter({ hasText: /^(More settings|更多设置)$/ }).click();
+    await page.getByPlaceholder(/^(Proxy host|代理主机)$/).waitFor();
+    assert.equal(await page.getByPlaceholder(/^(Proxy host|代理主机)$/).inputValue(), proxy.host);
+    assert.equal(await page.getByPlaceholder(/^(Proxy port|代理端口)$/).inputValue(), String(proxy.port));
+    const restartedBooks = await invoke("database-command", { statement: "getAllStatement", statementType: "string", executeType: "all", dbName: "books", storagePath: restored.storagePath });
+    assert.equal(restartedBooks.length, 1);
+    assert.equal(restartedBooks[0].key, book.key);
     fs.mkdirSync(path.resolve("dist"), { recursive: true });
-    fs.writeFileSync(path.resolve("dist/custom-smoke.json"), JSON.stringify({ passed: true, source: process.env.GITHUB_SHA || "working-tree", platform: process.platform, checks: ["profile-isolation", "official-update-blocked", "real-database-ipc", "personal-sync-ui", "header-personal-sync", "unchanged-sync-no-upload", "official-account-hidden", "login-route-redirect", "immutable-folder-provider", "credential-exclusion", "tts-network-blocked"] }, null, 2));
+    fs.writeFileSync(path.resolve("dist/custom-smoke.json"), JSON.stringify({ passed: true, source: process.env.GITHUB_SHA || "working-tree", platform: process.platform, checks: ["profile-isolation", "official-update-blocked", "real-database-ipc", "personal-sync-ui", "header-personal-sync", "unchanged-sync-no-upload", "official-account-hidden", "login-route-redirect", "immutable-folder-provider", "credential-exclusion", "tts-network-blocked", "eink-ui-toggle", "eink-theme-restoration", "preferences-cold-restart", "chromium-storage-recovery", "relocated-library-restart", "proxy-restart-and-display"] }, null, 2));
     console.info("Custom Windows smoke checks passed (synthetic data only).");
   } finally {
     if (app) await app.close();

@@ -71,6 +71,8 @@ const configDir = app.getPath("userData");
 const dirPath = path.join(configDir, "uploads");
 // 数据目录（即渲染进程的 getStorageLocation，见 "storage-location"）
 const dataPath = path.join(dirPath, "data");
+const { createPreferences } = require("./src/utils/main/custom/preferences");
+const preferences = createPreferences(store, customRuntime, dataPath);
 // 递归计算目录大小（字节），不存在或出错时返回 0
 const getDirSize = (targetPath) => {
   if (!fs.existsSync(targetPath)) {
@@ -2175,7 +2177,14 @@ const createMainWin = () => {
     event.returnvalue = false;
   });
   ipcMain.on("storage-location", (event, config) => {
-    event.returnValue = path.join(dirPath, "data");
+    event.returnValue = preferences.storageLocation();
+  });
+  ipcMain.on("preferences", (event, request) => {
+    try {
+      event.returnValue = { ok: true, value: preferences.handle(request) };
+    } catch (error) {
+      event.returnValue = { ok: false, error: error.message };
+    }
   });
   ipcMain.on("url-window-status", (event, config) => {
     if (config.type === "dict") {
@@ -2314,6 +2323,7 @@ app.on("ready", async () => {
 });
 app.on("before-quit", () => {
   isQuitting = true;
+  session.defaultSession.flushStorageData();
   destroyDiscordRPC();
 });
 app.on("window-all-closed", () => {

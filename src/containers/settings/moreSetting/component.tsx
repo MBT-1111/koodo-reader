@@ -83,6 +83,7 @@ const MoreSetting = () => {
           proxyPort: cfg.port ? String(cfg.port) : "",
           proxyUsername: cfg.username || "",
           proxyPassword: cfg.password || "",
+          proxyEditing: !!cfg.enabled && cfg.type !== "none",
         });
       });
     }
@@ -374,7 +375,6 @@ const MoreSetting = () => {
         password: proxyPassword,
       });
       if (res && res.ok) {
-        updateState({ proxyEditing: false });
         toast.success(t("Added successfully"));
       } else {
         toast.error(t("Save failed"));

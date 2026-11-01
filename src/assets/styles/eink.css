@@ -1,0 +1,70 @@
+/* E-ink keeps the saved light/dark and accent preferences intact. */
+:root[data-eink="true"] {
+  color-scheme: light;
+  --app-bg: #fff;
+  --panel-bg: #fff;
+  --cover-bg: #fff;
+  --text-color: #000;
+  --text-weak: #000;
+  --link-color: #000;
+  --hover-bg: #eee;
+  --input-bg: #fff;
+  --scrollbar-bg: #000;
+  --control-bg: #000;
+  --on-control: #fff;
+  --accent-bg: #000;
+  --filled-bg: #000;
+  --on-filled: #fff;
+  --active-item-bg: #000;
+  --tab-active-bg: #eee;
+  --sidebar-divider: #000;
+  --divider: #000;
+  --float-shadow: none;
+  --header-shadow: none;
+  --soft-shadow: none;
+  --spine-border: 1px solid #000;
+  --option-border: 1px solid #000;
+  --card-border: 1px solid #000;
+}
+
+html[data-eink="true"] *,
+html[data-eink="true"] *::before,
+html[data-eink="true"] *::after {
+  box-shadow: none !important;
+  text-shadow: none !important;
+  animation: none !important;
+  transition: none !important;
+  scroll-behavior: auto !important;
+  backdrop-filter: none !important;
+}
+
+html[data-eink="true"] #root {
+  background-image: none !important;
+}
+
+html[data-eink="true"] :is(
+  .setting-dialog-container,
+  .popup-menu-container,
+  .action-dialog-container,
+  .book-cover,
+  .book-item-cover,
+  .book-cover-item-cover,
+  .header-search-box,
+  .custom-sync,
+  .single-control-switch
+) {
+  border: 1px solid #000;
+}
+
+html[data-eink="true"] .single-control-switch {
+  opacity: 1 !important;
+  background-color: #000 !important;
+}
+
+html[data-eink="true"] .single-control-button {
+  background-color: #fff !important;
+}
+
+html[data-eink="true"] :is(.spine-shadow-left, .spine-shadow-right) {
+  display: none;
+}

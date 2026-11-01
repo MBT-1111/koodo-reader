@@ -69,13 +69,13 @@ const SettingPanel = () => {
   const [isShowMenu, setIsShowMenu] = useState(false);
   const [activeTab, setActiveTab] = useState(() => {
     const availableTabs = getAvailableTabs().map((item) => item.key);
-    const savedTab = localStorage.getItem(SETTING_PANEL_TAB_KEY);
+    const savedTab = ConfigService.getItem(SETTING_PANEL_TAB_KEY);
     return savedTab && availableTabs.includes(savedTab) ? savedTab : "theme";
   });
 
   const handleTabChange = (nextTab: string) => {
     setActiveTab(nextTab);
-    localStorage.setItem(SETTING_PANEL_TAB_KEY, nextTab);
+    ConfigService.setItem(SETTING_PANEL_TAB_KEY, nextTab);
   };
 
   const handleLock = () => {
@@ -104,7 +104,7 @@ const SettingPanel = () => {
         localStorage.getItem("readerConfig") || "{}"
       );
       KookitConfig.StyleKeys.forEach((key) => delete readerConfig[key]);
-      localStorage.setItem("readerConfig", JSON.stringify(readerConfig));
+      ConfigService.setItem("readerConfig", JSON.stringify(readerConfig));
     }
 
     toast.success(t("Clear successful"));

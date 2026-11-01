@@ -64,6 +64,10 @@ class styleUtil {
   }
 
   static applyTheme() {
+    if (ConfigService.getReaderConfig("isEinkMode") === "yes") {
+      applyThemeColor("#000000");
+      return;
+    }
     const themeColor = ConfigService.getReaderConfig("themeColor");
     if (themeColor && themeColor !== "default") {
       applyThemeColor(themeColor);

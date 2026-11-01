@@ -33,6 +33,7 @@ export interface SettingInfoState {
   isDisablePDFCover: boolean;
   isDisableCrop: boolean;
   isShowShelfBookCount: boolean;
+  isEinkMode: boolean;
   isCustomSystemCSS: boolean;
   customSystemCSS: string;
   ttsHighlightStyleType: string;
@@ -69,6 +70,7 @@ const AppearanceSetting = () => {
       isDisableCrop: ConfigService.getReaderConfig("isDisableCrop") === "yes",
       isShowShelfBookCount:
         ConfigService.getReaderConfig("isShowShelfBookCount") === "yes",
+      isEinkMode: ConfigService.getReaderConfig("isEinkMode") === "yes",
       isCustomSystemCSS:
         ConfigService.getReaderConfig("isCustomSystemCSS") === "yes",
       customSystemCSS: ConfigService.getReaderConfig("customSystemCSS") || "",
@@ -364,6 +366,23 @@ const AppearanceSetting = () => {
 
   return (
     <>
+      <SwitchRow
+        variant="setting"
+        title={t("E-ink mode")}
+        isEnabled={state.isEinkMode}
+        onClick={() => {
+          ConfigService.setReaderConfig(
+            "isEinkMode",
+            state.isEinkMode ? "no" : "yes"
+          );
+          reloadManager();
+        }}
+      />
+      <p className="setting-option-subtitle">
+        {t(
+          "Use a black-and-white interface with clear borders and no shadows or animations. Your regular theme is restored when turned off."
+        )}
+      </p>
       {renderSwitchOption(appearanceSettingList)}
       <div className="setting-dialog-new-title">
         <Trans>System font</Trans>

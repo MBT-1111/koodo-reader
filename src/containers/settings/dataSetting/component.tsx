@@ -517,7 +517,7 @@ const DataSetting = () => {
         );
         let config = JSON.parse(text);
         for (let key in config) {
-          ConfigService.setItem(key, config[key]);
+          if (key !== "storageLocation") ConfigService.setItem(key, config[key]);
         }
       } catch (error) {
         console.error("Error reading config.json:", error);
