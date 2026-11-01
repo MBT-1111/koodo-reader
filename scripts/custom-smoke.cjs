@@ -215,9 +215,36 @@ const { isInside } = require("../src/utils/main/custom/runtime");
     const movedBooks = await invoke("database-command", { statement: "getAllStatement", statementType: "string", executeType: "all", dbName: "books", storagePath: finalLocation });
     assert.equal(movedBooks[0].key, book.key);
     assert.equal(fs.existsSync(relocated), false, "The verified source library should be removed after a successful move");
+    // A failed placement write must not crash the main process during X-close.
+    const configFile = path.join(finalLocation, "app-profile", "config.json"), configBeforeClose = fs.readFileSync(configFile);
+    const closeWriteMarker = path.join(root, "window-state-write-attempted");
+    const changedSize = await app.evaluate(({ app, BrowserWindow }, marker) => {
+      const req = process.getBuiltinModule("module").createRequire(`${app.getAppPath()}/package.json`);
+      const fs = req("fs"), path = req("path"), atomically = req("atomically");
+      const target = path.join(app.getPath("userData"), "config.json"), saved = JSON.parse(fs.readFileSync(target, "utf8"));
+      const main = BrowserWindow.getAllWindows()[0];
+      main.unmaximize(); main.setSize(saved.mainWinWidth === 850 ? 900 : 850, 650);
+      const write = atomically.writeFileSync;
+      atomically.writeFileSync = (filename, ...args) => {
+        if (path.resolve(filename) === target) {
+          fs.writeFileSync(marker, "EPERM");
+          throw Object.assign(new Error("Synthetic locked configuration"), { code: "EPERM" });
+        }
+        return write(filename, ...args);
+      };
+      return main.getBounds().width !== saved.mainWinWidth;
+    }, closeWriteMarker);
+    assert.ok(changedSize, "Closing must attempt to save changed window placement");
+    const closingApp = app, closed = closingApp.waitForEvent("close", { timeout: 15000 });
+    try {
+      await Promise.all([closed, closingApp.evaluate(({ BrowserWindow }) => { setTimeout(() => BrowserWindow.getAllWindows()[0].close(), 50); })]);
+    } catch (error) { closingApp.process().kill(); throw error; }
+    finally { app = null; }
+    assert.ok(fs.existsSync(closeWriteMarker), "The close handler must exercise the configuration write failure");
+    assert.deepEqual(fs.readFileSync(configFile), configBeforeClose, "A failed placement write must preserve the entire saved configuration");
     fs.mkdirSync(path.resolve("dist"), { recursive: true });
-    fs.writeFileSync(path.resolve("dist/custom-smoke.json"), JSON.stringify({ passed: true, source: process.env.GITHUB_SHA || "working-tree", platform: process.platform, checks: ["profile-isolation", "official-update-blocked", "real-database-ipc", "personal-sync-ui", "header-personal-sync", "unchanged-sync-no-upload", "official-account-hidden", "login-route-redirect", "immutable-folder-provider", "credential-exclusion", "tts-network-blocked", "eink-ui-toggle", "eink-theme-restoration", "preferences-cold-restart", "chromium-storage-recovery", "relocated-library-restart", "proxy-restart-and-display", "profile-follows-library", "credential-decryption-after-profile-move", "verified-library-move"] }, null, 2));
-    console.info("Custom Windows smoke checks passed (synthetic data only).");
+    fs.writeFileSync(path.resolve("dist/custom-smoke.json"), JSON.stringify({ passed: true, source: process.env.GITHUB_SHA || "working-tree", platform: process.platform, checks: ["profile-isolation", "official-update-blocked", "real-database-ipc", "personal-sync-ui", "header-personal-sync", "unchanged-sync-no-upload", "official-account-hidden", "login-route-redirect", "immutable-folder-provider", "credential-exclusion", "tts-network-blocked", "eink-ui-toggle", "eink-theme-restoration", "preferences-cold-restart", "chromium-storage-recovery", "relocated-library-restart", "proxy-restart-and-display", "profile-follows-library", "credential-decryption-after-profile-move", "verified-library-move", "locked-window-state-close"] }, null, 2));
+    console.info("Custom Windows smoke checks passed (synthetic data only; locked-configuration close verified).");
   } finally {
     if (app) await app.close();
     // Retain synthetic profile on failure for CI diagnostics; never touch another profile.

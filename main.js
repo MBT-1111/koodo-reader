@@ -47,6 +47,8 @@ const Store = require("electron-store");
 const log = require("electron-log/main");
 const os = require("os");
 const store = new Store();
+const { persistWindowState } = require("./src/utils/main/window-state");
+const saveWindowState = (values) => persistWindowState(store, values, (code) => log.warn("WINDOW_STATE_SAVE_FAILED", code));
 const fs = require("fs");
 const fsExtra = require("fs-extra");
 const nodeCrypto = require("crypto");
@@ -627,7 +629,7 @@ const createMainWin = () => {
       const currentDisplay = screen.getDisplayMatching(bounds);
       const primaryDisplay = screen.getPrimaryDisplay();
       if (bounds.width > 300 && bounds.height > 100) {
-        store.set({
+        saveWindowState({
           mainWinWidth: bounds.width,
           mainWinHeight: bounds.height,
           mainWinX: mainWin.isMaximized() ? 0 : bounds.x,
@@ -1051,7 +1053,7 @@ const createMainWin = () => {
         const currentDisplay = screen.getDisplayMatching(bounds);
         const primaryDisplay = screen.getPrimaryDisplay();
         if (bounds.width > 300 && bounds.height > 100) {
-          store.set({
+          saveWindowState({
             windowWidth: bounds.width,
             windowHeight: bounds.height,
             windowX:
@@ -2169,7 +2171,7 @@ const createMainWin = () => {
           const currentDisplay = screen.getDisplayMatching(bounds);
           const primaryDisplay = screen.getPrimaryDisplay();
           if (bounds.width > 300 && bounds.height > 100) {
-            store.set({
+            saveWindowState({
               windowWidth: bounds.width,
               windowHeight: bounds.height,
               windowX:
