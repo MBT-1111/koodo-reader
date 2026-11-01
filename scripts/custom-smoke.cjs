@@ -19,8 +19,8 @@ const { isInside } = require("../src/utils/main/custom/runtime");
     assert.ok(Object.values(locations).every((directory) => isInside(root, directory)), "All writable Electron locations must be isolated");
     // Exercise SDK-shaped upload headers through actual Electron net.fetch.
     // Loopback-only synthetic traffic also passes the test profile's network guard.
-    const uploadedBytes = await app.evaluate(async ({ net }, directory) => {
-      const req = require("module").createRequire(process.mainModule.filename);
+    const uploadedBytes = await app.evaluate(async ({ net, app }, directory) => {
+      const req = process.getBuiltinModule("module").createRequire(`${app.getAppPath()}/package.json`);
       const fs = req("fs"), path = req("path"), http = req("http"), { Storage } = req("megajs");
       const { createCustomSync } = req("./src/utils/main/custom/sync.js");
       const profile = path.join(directory, "transport-regression"), body = Buffer.from("Synthetic encrypted upload chunk");
