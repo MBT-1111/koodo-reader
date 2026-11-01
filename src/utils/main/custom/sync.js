@@ -23,20 +23,50 @@ const validDocument = (document) => {
   if (!document || document.format !== "koodo-reader-custom" || document.version !== 1 || !/^[0-9a-f-]{36}$/.test(document.deviceId) || !Number.isSafeInteger(document.sequence) || document.sequence < 0 || !document.entries || typeof document.entries !== "object" || Array.isArray(document.entries) || Buffer.byteLength(JSON.stringify(document)) > MAX_DOCUMENT) throw new Error("CUSTOM_INVALID_DOCUMENT");
 };
 
-const createCustomSync = ({ app, safeStorage, dialog, shell, runtime, hasReaders }) => {
+const createCustomSync = ({ app, safeStorage, dialog, shell, runtime, hasReaders, fetch: fetchRequest = globalThis.fetch }) => {
   const root = path.join(app.getPath("userData"), "custom-sync");
   fs.mkdirSync(root, { recursive: true });
   const settingsFile = path.join(root, "settings.json");
   let active = null;
   let configuring = false;
   const fingerprints = new Map();
-  const timedFetch = (url, options = {}) => fetch(url, {
+  const timedFetch = (url, options = {}) => fetchRequest(url, {
     ...options,
     signal: AbortSignal.any([AbortSignal.timeout(30000), ...(options.signal ? [options.signal] : [])]),
   });
-  const status = () => {
-    const config = readJSON(settingsFile);
-    return { configured: !!config, provider: config?.provider || "mega", namespace: config?.namespace || "default", autoMinutes: config?.autoMinutes || 0, testing: runtime.testing, busy: !!active || configuring };
+  const readSettings = () => {
+    const saved = readJSON(settingsFile);
+    // Read the original single connection without discarding its encrypted session.
+    return saved?.provider ? { activeProvider: saved.provider, connections: { [saved.provider]: saved } } : saved || { activeProvider: "mega", connections: {} };
+  };
+  const getConfig = (selected) => {
+    if (selected !== undefined && !["mega", "folder"].includes(selected)) throw new Error("CUSTOM_INVALID_SETTINGS");
+    const saved = readSettings();
+    return saved.connections[selected || saved.activeProvider];
+  };
+  const writeConfig = (config) => {
+    const saved = readSettings();
+    saved.connections[config.provider] = config;
+    saved.activeProvider = config.provider;
+    // Automatic sync has one explicit target; manual sync can use either connection.
+    if (config.autoMinutes) for (const other of Object.values(saved.connections)) if (other.provider !== config.provider) other.autoMinutes = 0;
+    atomicWrite(settingsFile, saved);
+  };
+  const pauseAutomatic = () => {
+    const saved = readSettings();
+    for (const connection of Object.values(saved.connections)) connection.autoMinutes = 0;
+    atomicWrite(settingsFile, saved);
+  };
+  const summary = (config) => {
+    let email = config.email || "";
+    if (config.provider === "mega" && !email && safeStorage.isEncryptionAvailable?.()) {
+      try { email = JSON.parse(safeStorage.decryptString(Buffer.from(config.session, "base64"))).options.email || ""; } catch { /* Credentials may be unavailable on another OS account. */ }
+    }
+    return { provider: config.provider, namespace: config.namespace, autoMinutes: config.autoMinutes, email, folder: config.folder || "" };
+  };
+  const status = (selected) => {
+    const saved = readSettings(), config = getConfig(selected);
+    return { configured: !!config, provider: selected || saved.activeProvider, namespace: config?.namespace || "default", autoMinutes: config?.autoMinutes || 0, activeProvider: saved.activeProvider, connections: Object.values(saved.connections).map(summary), testing: runtime.testing, busy: !!active || configuring };
   };
   const checkProfile = (storagePath) => {
     if (typeof storagePath !== "string" || !path.isAbsolute(storagePath) || path.parse(storagePath).root === path.resolve(storagePath)) throw new Error("CUSTOM_INVALID_STORAGE");
@@ -80,21 +110,29 @@ const createCustomSync = ({ app, safeStorage, dialog, shell, runtime, hasReaders
         })(),
         new Promise((_, reject) => { timer = setTimeout(() => reject(new Error("CUSTOM_PROVIDER_TIMEOUT")), 60000); }),
       ]);
+    } catch (error) {
+      if (/^CUSTOM_[A-Z_]+$/.test(error.message)) throw error;
+      if (config.provider === "folder") throw new Error("CUSTOM_FOLDER_ACCESS_FAILED");
+      // SDK messages are used only for classification, never forwarded with account details.
+      if (/EOVERQUOTA|EGOINGOVERQUOTA|EPAYWALL|ERATELIMIT/i.test(error.message)) throw new Error("CUSTOM_MEGA_QUOTA_FAILED");
+      if (/ENOENT|EACCESS|ESID|EKEY|EBLOCKED|ENOMFA|EMFAREQUIRED|invalid (password|session)|session.*(expired|invalid)|access denied/i.test(error.message)) throw new Error("CUSTOM_MEGA_AUTH_FAILED");
+      throw new Error("CUSTOM_MEGA_NETWORK_FAILED");
     } finally { finished = true; clearTimeout(timer); if (instance) await instance.close(); }
   };
   const configure = async (request) => {
     if (active) throw new Error("CUSTOM_SYNC_BUSY");
-    const old = readJSON(settingsFile);
     if (!["mega", "folder"].includes(request.provider) || typeof request.namespace !== "string" || !/^[a-zA-Z0-9_-]{1,64}$/.test(request.namespace) || ![0, 5, 15, 30, 60].includes(request.autoMinutes)) throw new Error("CUSTOM_INVALID_SETTINGS");
+    const old = getConfig(request.provider);
     let config = { provider: request.provider, namespace: request.namespace, autoMinutes: request.autoMinutes };
     if (request.provider === "folder") {
       const selected = request.folder || (old?.provider === "folder" ? old.folder : "");
-      if (typeof selected !== "string" || !path.isAbsolute(selected) || !fs.statSync(selected).isDirectory()) throw new Error("CUSTOM_UNSAFE_FOLDER");
+      if (typeof selected !== "string" || !path.isAbsolute(selected)) throw new Error("CUSTOM_UNSAFE_FOLDER");
+      try { if (!fs.statSync(selected).isDirectory()) throw new Error(); } catch { throw new Error("CUSTOM_FOLDER_ACCESS_FAILED"); }
       const folder = fs.realpathSync(selected);
       if (isInside(app.getPath("userData"), folder) || isInside(folder, app.getPath("userData"))) throw new Error("CUSTOM_UNSAFE_FOLDER");
       if (runtime.testing && !isInside(runtime.root, folder)) throw new Error("CUSTOM_TEST_PATH_ESCAPE");
       config = { ...config, folder, account: hash(folder) };
-    } else if (!request.email && !request.password && old?.provider === "mega") {
+    } else if (!request.password && !request.secondFactorCode && old && (!request.email || request.email === summary(old).email)) {
       config = { ...old, ...config };
     } else {
       if (runtime.testing) throw new Error("CUSTOM_TEST_NETWORK_BLOCKED");
@@ -108,16 +146,21 @@ const createCustomSync = ({ app, safeStorage, dialog, shell, runtime, hasReaders
         const session = storage.toJSON();
         delete session.options.password;
         delete session.options.secondFactorCode;
-        config = { ...config, session: safeStorage.encryptString(JSON.stringify(session)).toString("base64"), account: hash(request.email.trim().toLowerCase()) };
+        config = { ...config, email: request.email.trim(), session: safeStorage.encryptString(JSON.stringify(session)).toString("base64"), account: hash(request.email.trim().toLowerCase()) };
       } finally { clearTimeout(timer); await closeStorage(storage); }
     }
-    atomicWrite(settingsFile, config);
-    return status();
+    // Verify folder access before claiming it is connected (including write permission).
+    if (config.provider === "folder") await withProvider(config, async (p) => {
+      await p.read();
+      const probe = path.join(p.root, `${crypto.randomUUID()}.tmp`);
+      try { writeFlushed(probe, ""); } finally { if (fs.existsSync(probe)) fs.unlinkSync(probe); }
+    });
+    writeConfig(config);
   };
   const handle = async (event, request) => {
     if (!request || typeof request !== "object" || Array.isArray(request) || typeof request.action !== "string") throw new Error("CUSTOM_INVALID_REQUEST");
     try {
-      if (request.action === "status") return status();
+      if (request.action === "status") return status(request.provider);
       if (request.action === "choose-folder") {
         const result = await dialog.showOpenDialog({ properties: ["openDirectory", "createDirectory"] });
         return result.canceled ? null : result.filePaths[0];
@@ -125,16 +168,35 @@ const createCustomSync = ({ app, safeStorage, dialog, shell, runtime, hasReaders
       if (request.action === "configure") {
         if (configuring) throw new Error("CUSTOM_SYNC_BUSY");
         configuring = true;
-        try { return await configure(request); } finally { configuring = false; }
+        try { await configure(request); } finally { configuring = false; }
+        return status(request.provider);
       }
       if (request.action === "disconnect") {
         if (active || configuring) throw new Error("CUSTOM_SYNC_BUSY");
-        if (fs.existsSync(settingsFile)) fs.unlinkSync(settingsFile);
-        return status();
+        const config = getConfig(request.provider), saved = readSettings();
+        if (config) delete saved.connections[config.provider];
+        if (!saved.connections[saved.activeProvider]) saved.activeProvider = Object.keys(saved.connections)[0] || "mega";
+        atomicWrite(settingsFile, saved);
+        return status(request.provider);
       }
-      if (request.action === "backups") { await shell.openPath(root); return true; }
-      const config = readJSON(settingsFile);
+      if (request.action === "backups") {
+        const directory = path.join(checkProfile(request.storagePath), "sync-backups");
+        fs.mkdirSync(directory, { recursive: true });
+        if (await shell.openPath(directory)) throw new Error("CUSTOM_OPEN_FOLDER_FAILED");
+        return true;
+      }
+      const config = getConfig(request.provider);
       if (!config) throw new Error("CUSTOM_NOT_CONFIGURED");
+      if (request.action === "open-folder") {
+        if (config.provider !== "folder") throw new Error("CUSTOM_INVALID_REQUEST");
+        await withProvider(config, async (p) => { if (await shell.openPath(p.root)) throw new Error("CUSTOM_OPEN_FOLDER_FAILED"); });
+        return true;
+      }
+      if (request.action === "test") {
+        if (active || configuring) throw new Error("CUSTOM_SYNC_BUSY");
+        configuring = true;
+        try { await withProvider(config, (p) => p.read()); return true; } finally { configuring = false; }
+      }
       if (request.action === "inspect") {
         const scope = scopeFor(config, checkProfile(request.storagePath));
         return readJSON(path.join(root, `${scope}.json`));
@@ -144,12 +206,21 @@ const createCustomSync = ({ app, safeStorage, dialog, shell, runtime, hasReaders
         if (hasReaders()) throw new Error("CUSTOM_CLOSE_READERS");
         const storagePath = checkProfile(request.storagePath), scope = scopeFor(config, storagePath);
         const recoveryFile = path.join(root, `${scope}.recovery.json`);
-        if (request.action === "begin" && fs.existsSync(recoveryFile)) {
-          if (readJSON(recoveryFile)?.phase === "prepared") fs.unlinkSync(recoveryFile);
-          else {
-            atomicWrite(settingsFile, { ...config, autoMinutes: 0 });
-            throw new Error("CUSTOM_RECOVERY_REQUIRED");
+        if (request.action === "begin") {
+          // Both targets write the same library. A partial import on either target blocks both.
+          for (const connection of Object.values(readSettings().connections)) {
+            const marker = path.join(root, `${scopeFor(connection, storagePath)}.recovery.json`);
+            if (fs.existsSync(marker) && readJSON(marker)?.phase !== "prepared") {
+              pauseAutomatic();
+              throw new Error("CUSTOM_RECOVERY_REQUIRED");
+            }
           }
+          if (fs.existsSync(recoveryFile)) fs.unlinkSync(recoveryFile);
+        }
+        if (request.provider) {
+          const saved = readSettings();
+          saved.activeProvider = config.provider;
+          atomicWrite(settingsFile, saved);
         }
         const token = crypto.randomUUID();
         const lease = { owner: event.sender.id, sender: event.sender, token, storagePath, scope, config, phase: "reading", expires: Date.now() + 180000, timer: null, restoring: request.action === "begin-restore", onDestroyed: null };
@@ -164,9 +235,9 @@ const createCustomSync = ({ app, safeStorage, dialog, shell, runtime, hasReaders
         active = lease;
         try {
           if (lease.restoring) {
-            const directory = path.join(root, "backups", scope);
-            const files = fs.existsSync(directory) ? fs.readdirSync(directory).filter((name) => /^\d+-[a-f0-9-]{36}\.json$/.test(name)).sort().reverse() : [];
-            for (const name of files) {
+            const directories = [path.join(storagePath, "sync-backups", scope), path.join(root, "backups", scope)];
+            const files = directories.flatMap((directory) => fs.existsSync(directory) ? fs.readdirSync(directory).filter((name) => /^\d+-[a-f0-9-]{36}\.json$/.test(name)).map((name) => ({ name, directory })) : []).sort((a, b) => b.name.localeCompare(a.name));
+            for (const { name, directory } of files) {
               const backup = readJSON(path.join(directory, name));
               if (backup?.format === "koodo-reader-custom-backup" && backup.version === 1 && backup.kind === "sync") {
                 if (backup.checksum !== hash(JSON.stringify(backup.before))) throw new Error("CUSTOM_LOCAL_STATE_CORRUPT");
@@ -183,7 +254,7 @@ const createCustomSync = ({ app, safeStorage, dialog, shell, runtime, hasReaders
       const lease = assertLease(event, request.token);
       const saveBackup = (kind) => {
         if (!request.backup?.tables || !request.backup?.config || Buffer.byteLength(JSON.stringify(request.backup)) > 100 * 1024 * 1024) throw new Error("CUSTOM_INVALID_REQUEST");
-        const directory = path.join(root, "backups", lease.scope);
+        const directory = path.join(lease.storagePath, "sync-backups", lease.scope);
         fs.mkdirSync(directory, { recursive: true });
         const existing = fs.readdirSync(directory).filter((name) => /^\d+-[a-f0-9-]{36}\.json$/.test(name));
         const stamp = existing.reduce((maximum, name) => Math.max(maximum, Number(name.split("-")[0]) + 1), Date.now());
@@ -199,7 +270,7 @@ const createCustomSync = ({ app, safeStorage, dialog, shell, runtime, hasReaders
       if (request.action === "recovery-needed") {
         lease.phase = "recovery";
         atomicWrite(path.join(root, `${lease.scope}.recovery.json`), { phase: "recovery" });
-        atomicWrite(settingsFile, { ...lease.config, autoMinutes: 0 });
+        pauseAutomatic();
         return true;
       }
       if (request.action === "applying") {
@@ -216,7 +287,7 @@ const createCustomSync = ({ app, safeStorage, dialog, shell, runtime, hasReaders
       }
       if (request.action === "stage-restore" && lease.restoring) {
         saveBackup("restore");
-        atomicWrite(settingsFile, { ...lease.config, autoMinutes: 0 });
+        pauseAutomatic();
         atomicWrite(path.join(root, `${lease.scope}.recovery.json`), { phase: "prepared" });
         lease.phase = "prepared";
         return true;
@@ -284,7 +355,7 @@ const createCustomSync = ({ app, safeStorage, dialog, shell, runtime, hasReaders
       }
       throw new Error("CUSTOM_INVALID_REQUEST");
     } catch (error) {
-      const code = typeof error.message === "string" && /^CUSTOM_[A-Z_]+$/.test(error.message) ? error.message : "CUSTOM_PROVIDER_FAILED";
+      const code = typeof error.message === "string" && /^CUSTOM_[A-Z_]+$/.test(error.message) ? error.message : error.code && /^(EACCES|EPERM|ENOENT|ENOSPC|ENOTDIR|EROFS|EIO)$/.test(error.code) ? "CUSTOM_LOCAL_FILE_FAILED" : request.action === "configure" && request.provider === "mega" ? "CUSTOM_MEGA_LOGIN_FAILED" : "CUSTOM_PROVIDER_FAILED";
       throw new Error(code);
     }
   };

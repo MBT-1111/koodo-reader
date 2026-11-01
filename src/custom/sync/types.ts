@@ -22,11 +22,21 @@ export type Table = "books" | "notes" | "bookmarks";
 export type Row = Record<string, Json> & { key: string };
 export interface RawData { tables: Record<Table, Row[]>; config: Record<string, string | null> }
 export interface Change { key: string; before: Row | null; value: Row | null }
+export type SyncProvider = "mega" | "folder";
+export interface SyncConnection {
+  provider: SyncProvider;
+  namespace: string;
+  autoMinutes: number;
+  email: string;
+  folder: string;
+}
 export interface SyncStatus {
   configured: boolean;
-  provider: "mega" | "folder";
+  provider: SyncProvider;
   namespace: string;
   autoMinutes: number;
   testing: boolean;
   busy: boolean;
+  activeProvider: SyncProvider;
+  connections: SyncConnection[];
 }

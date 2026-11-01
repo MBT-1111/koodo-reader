@@ -7,7 +7,7 @@ import { useAppStore } from "../../store/useAppStore";
 import { changes, configKeys, plan, snapshot, tables } from "./data";
 import { acknowledge, conflicts, copy, envelope, freshCheckpoint, materialize, mergeDocuments, reconcile, stable, validateEnvelope } from "./protocol";
 import { personalMode } from "../personal";
-import type { Change, Checkpoint, Conflict, RawData, Row, SyncStatus, Table } from "./types";
+import type { Change, Checkpoint, Conflict, RawData, Row, SyncProvider, SyncStatus, Table } from "./types";
 
 export const customSyncIPC = <T>(action: string, data: Record<string, unknown> = {}): Promise<T> => window.electronAPI.invoke<T>("custom-sync", { ...data, action });
 const safeKey = (key: unknown): key is string => typeof key === "string" && /^[\w-]{1,256}$/.test(key) && !["__proto__", "constructor", "prototype"].includes(key);
@@ -79,13 +79,13 @@ function describeConflicts(state: Checkpoint): Conflict[] {
     return { ...conflict, bookTitle };
   });
 }
-export async function runCustomSync(resolutions: Record<string, string> = {}): Promise<SyncResult> {
+export async function runCustomSync(resolutions: Record<string, string> = {}, provider?: SyncProvider): Promise<SyncResult> {
   if (running) throw new Error("CUSTOM_SYNC_BUSY");
   if (!personalMode && (ConfigService.getItem("defaultSyncOption") || ConfigService.getReaderConfig("isEnableKoodoSync") === "yes")) throw new Error("CUSTOM_OTHER_SYNC_ENABLED");
   running = true;
   let token: string | undefined;
   try {
-    const session = await customSyncIPC<{ token: string; checkpoint: Checkpoint | null; documents: unknown[] }>("begin", { storagePath: getStorageLocation() });
+    const session = await customSyncIPC<{ token: string; checkpoint: Checkpoint | null; documents: unknown[] }>("begin", { storagePath: getStorageLocation(), provider });
     token = session.token;
     const state = checkpoint(session.checkpoint), raw = await collect();
     const fingerprints = await customSyncIPC<Record<string, string>>("fingerprints", { token, books: raw.tables.books.map((book) => ({ key: book.key, path: BookUtil.getBookPath(book as unknown as Book) })) });
@@ -123,12 +123,12 @@ export async function runCustomSync(resolutions: Record<string, string> = {}): P
   }
 }
 
-export async function restoreSyncBackup(): Promise<void> {
+export async function restoreSyncBackup(provider?: SyncProvider): Promise<void> {
   if (running) throw new Error("CUSTOM_SYNC_BUSY");
   running = true;
   let token: string | undefined;
   try {
-    const session = await customSyncIPC<{ token: string; backup: RawData }>("begin-restore", { storagePath: getStorageLocation() });
+    const session = await customSyncIPC<{ token: string; backup: RawData }>("begin-restore", { storagePath: getStorageLocation(), provider });
     token = session.token;
     const before = await collect(), backup = session.backup;
     if (!backup || !tables.every((table) => Array.isArray(backup.tables?.[table]) && backup.tables[table].every((row) => row && safeKey(row.key)) && new Set(backup.tables[table].map((row) => row.key)).size === backup.tables[table].length) || !backup.config || !configKeys.every((key) => backup.config[key] === null || typeof backup.config[key] === "string")) throw new Error("CUSTOM_INVALID_LOCAL_DATA");
@@ -148,8 +148,8 @@ export async function restoreSyncBackup(): Promise<void> {
   }
 }
 
-export async function inspectConflicts(): Promise<Conflict[]> {
-  const saved = await customSyncIPC<Checkpoint | null>("inspect", { storagePath: getStorageLocation() });
+export async function inspectConflicts(provider?: SyncProvider): Promise<Conflict[]> {
+  const saved = await customSyncIPC<Checkpoint | null>("inspect", { storagePath: getStorageLocation(), provider });
   return saved ? describeConflicts(checkpoint(saved)) : [];
 }
 export const syncErrorKey = (error: unknown) => {
@@ -165,10 +165,11 @@ export function scheduleCustomSync(onResult: (result: SyncResult) => void, onErr
     if (stopped || running || Date.now() < nextAttempt) return;
     try {
       const status = await customSyncIPC<SyncStatus>("status");
-      if (stopped || !status.configured || !status.autoMinutes || status.busy) return;
-      const result = await runCustomSync();
+      const automatic = status.connections.find((connection) => connection.autoMinutes > 0);
+      if (stopped || !automatic || status.busy) return;
+      const result = await runCustomSync({}, automatic.provider);
       failures = 0;
-      nextAttempt = Date.now() + status.autoMinutes * 60000;
+      nextAttempt = Date.now() + automatic.autoMinutes * 60000;
       if (!stopped) onResult(result);
     } catch (error) {
       const key = syncErrorKey(error);

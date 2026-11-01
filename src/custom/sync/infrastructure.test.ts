@@ -3,7 +3,8 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { EventEmitter } from "node:events";
-import { afterAll, describe, expect, it } from "vitest";
+import { afterAll, describe, expect, it, vi } from "vitest";
+import type { SyncStatus } from "./types";
 import { envelope, freshCheckpoint, reconcile } from "./protocol";
 
 const require = createRequire(import.meta.url);
@@ -103,6 +104,90 @@ describe("immutable folder provider", () => {
 });
 
 describe("MEGA adapter public API contract", () => {
+  it("migrates the saved session, keeps both connections, selects explicitly, and uses the supplied network transport", async () => {
+    const profile = path.join(root, "multi-profile"), folder = path.join(root, "multi-remote"), storagePath = path.join(root, "library-on-another-drive");
+    fs.mkdirSync(path.join(profile, "custom-sync"), { recursive: true }); fs.mkdirSync(folder);
+    const settingsFile = path.join(profile, "custom-sync", "settings.json");
+    const session = Buffer.from(JSON.stringify({ options: { email: "fixture@example.invalid" } })).toString("base64");
+    fs.writeFileSync(settingsFile, JSON.stringify({ provider: "mega", namespace: "saved-mega", autoMinutes: 5, session, account: "synthetic-account" }));
+    const network = vi.fn(async () => new Response("[]")), openPath = vi.fn(async () => "");
+    const sync = createCustomSync({ app: { getPath: () => profile }, runtime: { testing: false, root }, hasReaders: () => false,
+      safeStorage: { isEncryptionAvailable: () => true, decryptString: (value: Buffer) => value.toString() }, dialog: {}, shell: { openPath }, fetch: network });
+    const event = { sender: { id: 21 } };
+    expect(sync.status().connections[0]).toMatchObject({ provider: "mega", email: "fixture@example.invalid", namespace: "saved-mega" });
+    expect(JSON.stringify(sync.status())).not.toContain(session);
+    const { Storage } = require("megajs") as typeof import("megajs");
+    let failure = "";
+    const restored = vi.spyOn(Storage, "fromJSON").mockImplementation((data) => ({
+      ready: Promise.resolve(), root: { children: [] },
+      reload: async () => {
+        if (failure) throw new Error(failure);
+        await data.options.fetch!("https://synthetic.invalid/mega", { method: "POST", body: "[]" });
+      }, close: async () => undefined,
+    }) as unknown as InstanceType<typeof Storage>);
+    try {
+      const saved = await sync.handle(event, { action: "configure", provider: "folder", folder, namespace: "saved-folder", autoMinutes: 0 }) as SyncStatus;
+      expect(saved.connections).toHaveLength(2);
+      expect(saved.busy).toBe(false);
+      const disk = JSON.parse(fs.readFileSync(settingsFile, "utf8"));
+      expect(disk.connections.mega.session).toBe(session);
+      const restarted = createCustomSync({ app: { getPath: () => profile }, runtime: { testing: false, root }, hasReaders: () => false, safeStorage: {}, dialog: {}, shell: {} });
+      expect(restarted.status().connections.map((item) => item.provider)).toEqual(["mega", "folder"]);
+      // No provider means the last saved connection; an explicit target never uses that default.
+      const local = await sync.handle(event, { action: "begin", storagePath }) as { token: string };
+      expect(network).not.toHaveBeenCalled();
+      await sync.handle(event, { action: "abort", token: local.token });
+      const remote = await sync.handle(event, { action: "begin", storagePath, provider: "mega" }) as { token: string };
+      expect(network).toHaveBeenCalledWith("https://synthetic.invalid/mega", expect.objectContaining({ signal: expect.any(AbortSignal) }));
+      await sync.handle(event, { action: "abort", token: remote.token });
+      failure = "ESID (-15): Invalid or expired user session, please relogin";
+      await expect(sync.handle(event, { action: "test", provider: "mega" })).rejects.toThrow("CUSTOM_MEGA_AUTH_FAILED");
+      expect(sync.busy()).toBe(false);
+      // Enabling automatic sync on the folder switches off MEGA, while retaining the account.
+      await sync.handle(event, { action: "configure", provider: "folder", folder, namespace: "saved-folder", autoMinutes: 15 });
+      expect(sync.status("mega").autoMinutes).toBe(0);
+      failure = "";
+      const sender = Object.assign(new EventEmitter(), { id: 23 }), recoveryEvent = { sender };
+      const begun = await sync.handle(recoveryEvent, { action: "begin", storagePath, provider: "mega" }) as { token: string };
+      expect(sync.status().provider).toBe("mega");
+      expect(sync.status("folder").autoMinutes).toBe(15); // Manual selection leaves the automatic target intact.
+      const state = reconcile(freshCheckpoint(), {}, []), backup = { tables: { books: [], notes: [], bookmarks: [] }, config: {} };
+      await sync.handle(recoveryEvent, { action: "stage", token: begun.token, checkpoint: state, document: envelope(state), backup, publish: false });
+      await sync.handle(recoveryEvent, { action: "applying", token: begun.token });
+      sender.emit("destroyed");
+      await expect(sync.handle(event, { action: "begin", storagePath, provider: "folder" })).rejects.toThrow("CUSTOM_RECOVERY_REQUIRED");
+      expect(sync.status().connections.every((item) => item.autoMinutes === 0)).toBe(true);
+      const recovery = await sync.handle(event, { action: "begin-restore", storagePath, provider: "mega" }) as { token: string };
+      await sync.handle(event, { action: "stage-restore", token: recovery.token, backup });
+      await sync.handle(event, { action: "applying", token: recovery.token });
+      await sync.handle(event, { action: "finish-restore", token: recovery.token });
+      await sync.handle(event, { action: "open-folder", provider: "folder" });
+      expect(openPath).toHaveBeenLastCalledWith(path.join(folder, "KoodoReaderCustom-v1-saved-folder"));
+      await sync.handle(event, { action: "backups", storagePath });
+      expect(openPath).toHaveBeenLastCalledWith(path.join(storagePath, "sync-backups"));
+      openPath.mockResolvedValueOnce("Synthetic shell failure");
+      await expect(sync.handle(event, { action: "backups", storagePath })).rejects.toThrow("CUSTOM_OPEN_FOLDER_FAILED");
+      const remaining = await sync.handle(event, { action: "disconnect", provider: "folder" }) as SyncStatus;
+      expect(remaining.connections.map((item) => item.provider)).toEqual(["mega"]);
+      expect(JSON.parse(fs.readFileSync(settingsFile, "utf8")).connections.mega.session).toBe(session);
+      const reopened = createCustomSync({ app: { getPath: () => profile }, runtime: { testing: false, root }, hasReaders: () => false, safeStorage: {}, dialog: {}, shell: {} });
+      expect(reopened.status().connections[0].namespace).toBe("saved-mega");
+    } finally { restored.mockRestore(); }
+  });
+  it("reports folder access failures without labelling them as cloud/network errors", async () => {
+    const profile = path.join(root, "folder-error-profile"), folder = path.join(root, "folder-error-remote"); fs.mkdirSync(folder);
+    const sync = createCustomSync({ app: { getPath: () => profile }, runtime: { testing: true, root }, hasReaders: () => false, safeStorage: {}, dialog: {}, shell: {} });
+    const event = { sender: { id: 22 } };
+    await expect(sync.handle(event, { action: "configure", provider: "folder", folder: path.join(root, "missing"), namespace: "default", autoMinutes: 0 })).rejects.toThrow("CUSTOM_FOLDER_ACCESS_FAILED");
+    await sync.handle(event, { action: "configure", provider: "folder", folder, namespace: "default", autoMinutes: 0 });
+    const target = path.join(folder, "KoodoReaderCustom-v1-default");
+    const readdir = vi.spyOn(fs, "readdirSync").mockImplementationOnce(() => { throw Object.assign(new Error("Synthetic access denial"), { code: "EACCES" }); });
+    try {
+      await expect(sync.handle(event, { action: "begin", provider: "folder", storagePath: path.join(root, "folder-error-library") })).rejects.toThrow("CUSTOM_FOLDER_ACCESS_FAILED");
+      expect(fs.existsSync(target)).toBe(true);
+      expect(sync.busy()).toBe(false);
+    } finally { readdir.mockRestore(); }
+  });
   it("works through root.mkdir after session restoration and verifies uploaded bytes", async () => {
     interface RemoteFile { name: string; directory: boolean; size: number; downloadBuffer: () => Promise<Buffer>; delete: () => Promise<void> }
     const files: RemoteFile[] = [];

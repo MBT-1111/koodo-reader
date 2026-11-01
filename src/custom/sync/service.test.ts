@@ -104,7 +104,7 @@ describe("full personal-sync lifecycle with separate device profiles", () => {
     expect(a.raw.tables.notes[0].text).toBe("Edited during upload");
     const result = await sync(a);
     expect(result.conflicts.some((conflict) => conflict.kind === "note")).toBe(true);
-    const backups = path.join(root, "client-3", "custom-sync", "backups");
+    const backups = path.join(a.storagePath, "sync-backups");
     expect(fs.readdirSync(backups)).not.toHaveLength(0);
   });
   it("rolls back an earlier table when a later table fails, then retries safely", async () => {
@@ -134,5 +134,17 @@ describe("full personal-sync lifecycle with separate device profiles", () => {
     await restoreSyncBackup();
     expect(a.raw.config.recordLocation).toBeUndefined();
     expect(a.raw.config.noteTags).toBeUndefined();
+  });
+  it("can still restore backups created in the old profile directory", async () => {
+    const a = await client(8, "legacy-backup"); await sync(a);
+    const current = path.join(a.storagePath, "sync-backups");
+    const legacy = path.join(root, "client-8", "custom-sync", "backups");
+    if (!isInside(root, current) || !isInside(root, legacy)) throw new Error("Unsafe fixture move");
+    fs.renameSync(current, legacy);
+    a.raw.config.noteTags = '["Changed after backup"]';
+    await restoreSyncBackup("folder");
+    expect(a.raw.config.noteTags).toBeUndefined();
+    expect(fs.existsSync(current)).toBe(true); // The pre-restore safety copy uses the library location.
+    expect(fs.readdirSync(legacy)).not.toHaveLength(0);
   });
 });

@@ -160,6 +160,7 @@ let syncUtilCache = {};
 let pickerUtilCache = {};
 let downloadRequest = null;
 const customSync = createCustomSync({ app, safeStorage, dialog, shell, runtime: customRuntime,
+  fetch: (url, options) => net.fetch(url, options),
   hasReaders: () => !!(mainView && mainWin && !mainWin.isDestroyed() && mainWin.contentView.children.includes(mainView) && !mainView.webContents.isDestroyed()) || !!(readerWindow && !readerWindow.isDestroyed()) || readerWindowList.some((win) => !win.isDestroyed()),
 });
 

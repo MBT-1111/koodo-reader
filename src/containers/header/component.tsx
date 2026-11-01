@@ -2,7 +2,7 @@ import { useTranslation } from "react-i18next";
 import { useNavigate } from "react-router-dom";
 import { personalMode } from "../../custom/personal";
 import { customSyncIPC, runCustomSync, syncErrorKey } from "../../custom/sync/service";
-import type { SyncStatus } from "../../custom/sync/types";
+import type { SyncProvider, SyncStatus } from "../../custom/sync/types";
 import { useEffect, useRef, useState } from "react";
 import "./header.css";
 import SearchBox from "../../components/searchBox";
@@ -41,6 +41,7 @@ import {
   scanFolderForNewBooks,
   showTaskProgress,
   vexComfirmAsync,
+  vexSelectAsync,
   AUTO_IMPORT_FOLDERS_KEY,
 } from "../../utils/common";
 import { driveList } from "../../constants/driveList";
@@ -900,8 +901,13 @@ const Header = (props: HeaderProps) => {
               setIsSync(true);
               try {
                 const status = await customSyncIPC<SyncStatus>("status");
-                if (!status.configured) { handleSetting(true); handleSettingMode("sync"); return; }
-                const result = await runCustomSync();
+                if (!status.connections.length) { handleSetting(true); handleSettingMode("sync"); return; }
+                const selected = await vexSelectAsync(t("custom.sync.chooseTarget"), status.connections.map((connection) => ({
+                  value: connection.provider,
+                  label: t("custom.sync.targetLabel", { provider: t(`custom.sync.${connection.provider}`), destination: connection.folder || connection.email || t("custom.sync.savedAccount"), namespace: connection.namespace }),
+                })));
+                if (!selected) return;
+                const result = await runCustomSync({}, selected as SyncProvider);
                 toast.success(t(result.unchanged ? "custom.sync.unchanged" : "custom.sync.complete"));
                 if (result.conflicts.length) { handleSetting(true); handleSettingMode("sync"); }
                 if (result.pendingBooks) toast(t("custom.sync.pendingBooks", { count: result.pendingBooks }));

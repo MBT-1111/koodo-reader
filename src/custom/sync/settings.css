@@ -9,3 +9,6 @@
 .custom-sync-actions { display: flex; flex-wrap: wrap; gap: 8px; }
 .custom-sync-conflict { margin: 16px 0; padding: 12px; border: 1px solid rgba(128,128,128,.3); border-radius: 6px; overflow-wrap: anywhere; }
 .custom-sync-conflict > div { margin-top: 12px; }
+.custom-sync-status { padding: 10px 12px; border: 1px solid rgba(128,128,128,.3); border-radius: 5px; overflow-wrap: anywhere; }
+.custom-sync-status p { margin: 4px 0 0; }
+.custom-sync details { margin-top: 16px; }

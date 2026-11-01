@@ -403,7 +403,12 @@ export const vexSelectAsync = (
     window.vex.dialog.buttons.YES.text = i18n.t("Confirm");
     window.vex.dialog.buttons.NO.text = i18n.t("Cancel");
     const optionsHtml = options
-      .map((o) => `<option value="${o.value}">${i18n.t(o.label)}</option>`)
+      .map((o) => {
+        const option = document.createElement("option");
+        option.value = o.value;
+        option.textContent = i18n.t(o.label);
+        return option.outerHTML;
+      })
       .join("");
     const selectHtml = `<select name="vex-select" style="width:100%;padding:6px">${optionsHtml}</select>`;
     window.vex.dialog.open({
