@@ -1,7 +1,7 @@
 const fs = require("fs");
 const path = require("path");
 const crypto = require("crypto");
-const { FolderProvider, MegaProvider, prepareMegaStorage, MAX_DOCUMENT, writeFlushed, closeStorage } = require("./providers");
+const { FolderProvider, MegaProvider, prepareMegaStorage, catchUpMegaStorage, MAX_DOCUMENT, writeFlushed, closeStorage } = require("./providers");
 const { isInside, assertTestPath } = require("./runtime");
 
 const hash = (value) => crypto.createHash("sha256").update(value).digest("hex");
@@ -33,7 +33,12 @@ const createCustomSync = ({ app, safeStorage, dialog, shell, runtime, hasReaders
   const timedFetch = async (url, options = {}) => {
     const signal = AbortSignal.any([AbortSignal.timeout(30000), ...(options.signal ? [options.signal] : [])]);
     signal.throwIfAborted();
-    return fetchRequest(url, { ...options, signal });
+    // MEGAJS supplies Content-Length for upload chunks. Electron's net.fetch
+    // rejects that header with ERR_INVALID_ARGUMENT; it derives the length from
+    // the request body itself. Keep other headers and the body unchanged.
+    const headers = new Headers(options.headers);
+    headers.delete("content-length");
+    return fetchRequest(url, { ...options, headers: Object.fromEntries(headers.entries()), signal });
   };
   const readSettings = () => {
     const saved = readJSON(settingsFile);
@@ -99,7 +104,7 @@ const createCustomSync = ({ app, safeStorage, dialog, shell, runtime, hasReaders
       return timedFetch(url, { ...options, signal: AbortSignal.any([signal, ...(options.signal ? [options.signal] : [])]) });
     };
     const storage = prepareMegaStorage(Storage.fromJSON(credentials));
-    try { await storage.ready; await storage.reload(true); return new MegaProvider(storage, config.namespace); }
+    try { await storage.ready; await storage.reload(true); await catchUpMegaStorage(storage); return new MegaProvider(storage, config.namespace); }
     catch (error) { await closeStorage(storage); throw error; }
   };
   const withProvider = async (config, action) => {

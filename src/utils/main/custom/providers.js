@@ -15,10 +15,14 @@ const closeStorage = async (storage) => {
   // Stop polling locally while keeping the reusable server-side session alive.
   storage.api.close();
 };
+const megaDirectories = new WeakMap();
 const prepareMegaStorage = (storage) => {
+  storage.api.keepalive = false;
+  const state = { sequence: null };
+  megaDirectories.set(storage, state);
   const request = storage.api.request.bind(storage.api);
   const orderTree = (reply) => {
-    if (!Array.isArray(reply?.f)) throw new Error("CUSTOM_MEGA_INVALID_TREE");
+    if (!Array.isArray(reply?.f) || typeof reply.sn !== "string") throw new Error("CUSTOM_MEGA_INVALID_TREE");
     const nodes = new Map(), children = new Map(), ordered = [];
     for (const node of reply.f) {
       if (!node || typeof node.h !== "string" || (node.p && typeof node.p !== "string") || nodes.has(node.h)) throw new Error("CUSTOM_MEGA_INVALID_TREE");
@@ -31,6 +35,7 @@ const prepareMegaStorage = (storage) => {
     for (const node of reply.f) if (!node.p || !nodes.has(node.p)) ordered.push(node);
     for (let index = 0; index < ordered.length; index++) for (const child of children.get(ordered[index].h) || []) ordered.push(child);
     if (ordered.length !== reply.f.length) throw new Error("CUSTOM_MEGA_INVALID_TREE");
+    state.sequence = reply.sn;
     // The SDK links a child only when its parent was imported earlier. MEGA's
     // listing order is not reliable, so normalize it before reload imports nodes.
     return { ...reply, f: ordered };
@@ -46,6 +51,27 @@ const prepareMegaStorage = (storage) => {
     }, attempt);
   };
   return storage;
+};
+const catchUpMegaStorage = async (storage) => {
+  const state = megaDirectories.get(storage);
+  if (!state?.sequence) throw new Error("CUSTOM_MEGA_INVALID_TREE");
+  // A full MEGA listing may be a cached baseline. With keepalive disabled we
+  // must explicitly consume its server-client changes before looking for files.
+  for (let count = 0; count < 32; count++) {
+    const query = new URLSearchParams({ sn: state.sequence, sid: storage.api.sid, ssl: "1" });
+    const response = await storage.api.fetch(`${storage.api.gateway}sc?${query}`, { method: "POST" });
+    if (!response.ok) throw new Error("CUSTOM_MEGA_NETWORK_FAILED");
+    const packet = await response.json();
+    if (packet === -15) throw new Error("CUSTOM_MEGA_AUTH_FAILED");
+    if (typeof packet === "number") throw new Error("CUSTOM_MEGA_NETWORK_FAILED");
+    if (!packet || typeof packet !== "object" || (packet.a !== undefined && !Array.isArray(packet.a))) throw new Error("CUSTOM_MEGA_INVALID_TREE");
+    if (packet.a?.length) storage.api.emit("sc", packet.a);
+    if (typeof packet.sn === "string") state.sequence = packet.sn;
+    if (typeof packet.w === "string" && packet.w) return;
+    if (packet.w !== undefined && typeof packet.w !== "string") throw new Error("CUSTOM_MEGA_INVALID_TREE");
+    if (typeof packet.sn !== "string") throw new Error("CUSTOM_MEGA_INVALID_TREE");
+  }
+  throw new Error("CUSTOM_PROVIDER_TIMEOUT");
 };
 const megaTransfer = {
   forceHttps: true,
@@ -155,4 +181,4 @@ class MegaProvider {
   async close() { await closeStorage(this.storage); }
 }
 
-module.exports = { FolderProvider, MegaProvider, prepareMegaStorage, latest, decode, documentName, MAX_DOCUMENT, writeFlushed, closeStorage };
+module.exports = { FolderProvider, MegaProvider, prepareMegaStorage, catchUpMegaStorage, latest, decode, documentName, MAX_DOCUMENT, writeFlushed, closeStorage };

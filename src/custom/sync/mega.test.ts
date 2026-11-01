@@ -4,20 +4,25 @@ import { envelope, freshCheckpoint, reconcile } from "./protocol";
 
 const require = createRequire(import.meta.url);
 const { Storage } = require("megajs") as typeof import("megajs");
-const { MegaProvider, prepareMegaStorage } = require("../../utils/main/custom/providers.js") as typeof import("../../utils/main/custom/providers.js");
+const { MegaProvider, prepareMegaStorage, catchUpMegaStorage } = require("../../utils/main/custom/providers.js") as typeof import("../../utils/main/custom/providers.js");
 type MegaFetch = NonNullable<ConstructorParameters<typeof Storage>[0]["fetch"]>;
 
 interface RemoteNode { h: string; t: number; p?: string; a?: string; k?: string; s?: number; ts: number }
 interface Command { a: string; t?: string; n?: string | { t: number; a: string; k: string; h: string }[]; s?: number; ssl?: number }
 // Exercise the installed SDK's encryption, node-tree reconstruction and transfer
 // streams against a local in-memory server, without real accounts or credentials.
-const server = () => {
+const server = (cached = false) => {
   const nodes: RemoteNode[] = [{ h: "root0000", t: 2, ts: 0 }];
   const uploads = new Map<string, { bytes: Buffer; chunks: Set<number>; received: number }>(), contents = new Map<string, Buffer>();
   const commands: Command[] = [];
+  const changes: { a: string; t: { f: RemoteNode[] } }[] = [];
   let uploadFailure = false, downloadFailure = false, reverseTree = false, corruptTree = false;
   const fetch: typeof globalThis.fetch = async (input, options) => {
     const url = new URL(String(input));
+    if (url.pathname === "/sc") {
+      const index = Number((url.searchParams.get("sn") || "sequence0").slice(8));
+      return new Response(JSON.stringify(index < changes.length ? { a: changes.slice(index), sn: `sequence${changes.length}` } : { w: "https://synthetic.invalid/wait" }));
+    }
     if (url.hostname === "upload.invalid") {
       if (uploadFailure) throw new Error("Synthetic upload failure");
       const [, id, offset] = url.pathname.split("/"), start = Number(offset);
@@ -34,7 +39,7 @@ const server = () => {
     }
     const command = (JSON.parse(String(options?.body)) as Command[])[0]; commands.push(command);
     let result: unknown;
-    if (command.a === "f") result = { ok: [], f: corruptTree ? [...nodes, { h: "cycle001", p: "cycle002", t: 1 }, { h: "cycle002", p: "cycle001", t: 1 }] : reverseTree ? [...nodes].reverse() : nodes };
+    if (command.a === "f") result = { ok: [], sn: `sequence${cached ? 0 : changes.length}`, f: corruptTree ? [...nodes, { h: "cycle001", p: "cycle002", t: 1 }, { h: "cycle002", p: "cycle001", t: 1 }] : cached ? [nodes[0]] : reverseTree ? [...nodes].reverse() : nodes };
     else if (command.a === "u") {
       const id = `transfer${uploads.size}`;
       uploads.set(id, { bytes: Buffer.alloc(command.s!), chunks: new Set(), received: 0 });
@@ -44,6 +49,7 @@ const server = () => {
       const bytes = item.t === 0 ? uploads.get(Buffer.from(item.h, "base64url").toString())!.bytes : undefined;
       const node: RemoteNode = { h: id, t: item.t, p: command.t, a: item.a, k: `fixture:${item.k}`, s: bytes?.length, ts: 0 };
       nodes.push(node); if (bytes) contents.set(id, bytes);
+      changes.push({ a: "t", t: { f: [node] } });
       result = { f: [node] };
     } else if (command.a === "g" && typeof command.n === "string") result = { g: `https://download.invalid/${command.n}`, s: contents.get(command.n)!.length };
     else throw new Error(`Unexpected synthetic MEGA command: ${command.a}`);
@@ -51,7 +57,7 @@ const server = () => {
   };
   const open = async () => {
     const storage = prepareMegaStorage(Storage.fromJSON({ key: Buffer.alloc(16, 1).toString("base64url"), sid: "synthetic-session", name: "Fixture", user: "fixture", options: { email: "fixture@example.invalid", password: "", keepalive: false, fetch: fetch as unknown as MegaFetch } }));
-    await storage.ready; await storage.reload(true);
+    await storage.ready; await storage.reload(true); await catchUpMegaStorage(storage);
     return storage;
   };
   return { nodes, commands, open, failUpload: (value: boolean) => { uploadFailure = value; }, failDownload: (value: boolean) => { downloadFailure = value; }, reverseTree: () => { reverseTree = true; }, corruptTree: () => { corruptTree = true; } };
@@ -122,5 +128,15 @@ describe("MEGA transfers through the installed SDK", () => {
     const remote = server(); remote.corruptTree();
     await expect(remote.open()).rejects.toThrow("CUSTOM_MEGA_INVALID_TREE");
     expect(remote.commands.some((command) => command.a === "p")).toBe(false);
+  });
+  it("catches up a cached directory snapshot before retrying so it does not create another directory", async () => {
+    const remote = server(true), state = envelope(reconcile(freshCheckpoint(), {}, []));
+    const first = new MegaProvider(await remote.open(), "default");
+    await first.append(state); await first.close();
+    const second = new MegaProvider(await remote.open(), "default");
+    expect(await second.read()).toEqual([state]);
+    await second.append(state); await second.close();
+    expect(remote.nodes.filter((node) => node.t === 1)).toHaveLength(1);
+    expect(remote.nodes.filter((node) => node.t === 0)).toHaveLength(1);
   });
 });

@@ -17,6 +17,37 @@ const { isInside } = require("../src/utils/main/custom/runtime");
     app = await electron.launch({ args: [path.resolve(".")], env, timeout: 60000 });
     const locations = await app.evaluate(({ app }) => Object.fromEntries(["userData", "sessionData", "temp", "logs", "crashDumps"].map((name) => [name, app.getPath(name)])));
     assert.ok(Object.values(locations).every((directory) => isInside(root, directory)), "All writable Electron locations must be isolated");
+    // Exercise SDK-shaped upload headers through actual Electron net.fetch.
+    // Loopback-only synthetic traffic also passes the test profile's network guard.
+    const uploadedBytes = await app.evaluate(async ({ net }, directory) => {
+      const req = require("module").createRequire(process.mainModule.filename);
+      const fs = req("fs"), path = req("path"), http = req("http"), { Storage } = req("megajs");
+      const { createCustomSync } = req("./src/utils/main/custom/sync.js");
+      const profile = path.join(directory, "transport-regression"), body = Buffer.from("Synthetic encrypted upload chunk");
+      fs.mkdirSync(path.join(profile, "custom-sync"), { recursive: true });
+      fs.writeFileSync(path.join(profile, "custom-sync", "settings.json"), JSON.stringify({ provider: "mega", account: "fixture", namespace: "default", autoMinutes: 0, session: Buffer.from('{"options":{}}').toString("base64") }));
+      let received = Buffer.alloc(0);
+      const server = http.createServer((request, response) => {
+        const chunks = []; request.on("data", (chunk) => chunks.push(chunk)); request.on("end", () => { received = Buffer.concat(chunks); response.end("[]"); });
+      });
+      await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+      const fromJSON = Storage.fromJSON;
+      Storage.fromJSON = (data) => {
+        const api = { gateway: "https://synthetic.invalid/", sid: "fixture", close() {}, fetch: async () => new Response('{"w":"https://synthetic.invalid/wait"}'),
+          request: (_command, callback) => { const reply = { f: [], sn: "fixture-sequence" }; callback?.(null, reply); return Promise.resolve(reply); },
+        };
+        return { ready: Promise.resolve(), root: { children: [] }, api,
+          reload: async () => { const response = await data.options.fetch(`http://127.0.0.1:${server.address().port}/upload`, { method: "POST", headers: { "content-length": body.length, "content-type": "application/octet-stream" }, body }); await response.arrayBuffer(); await new Promise((resolve) => api.request({ a: "f", c: 1 }, resolve)); },
+        };
+      };
+      try {
+        const transport = createCustomSync({ app: { getPath: () => profile }, runtime: { testing: false }, hasReaders: () => false,
+          safeStorage: { isEncryptionAvailable: () => true, decryptString: (value) => value.toString() }, shell: {}, dialog: {}, fetch: (url, options) => net.fetch(url, options) });
+        await transport.handle({ sender: { id: 1 } }, { action: "test", provider: "mega" });
+        return received.equals(body) ? received.length : -1;
+      } finally { Storage.fromJSON = fromJSON; server.closeAllConnections(); await new Promise((resolve) => server.close(resolve)); }
+    }, root);
+    assert.ok(uploadedBytes > 0, "Electron must accept and transmit SDK upload chunks without a caller-supplied Content-Length");
     let page = await app.firstWindow();
     page.setDefaultTimeout(60000);
     await page.waitForFunction(() => !!window.electronAPI);
