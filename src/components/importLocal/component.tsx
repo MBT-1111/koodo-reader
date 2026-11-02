@@ -36,6 +36,7 @@ import {
   importNoteRecords,
 } from "../../utils/file/importData";
 import { useAppStore } from "../../store/useAppStore";
+import { isAndroid, isNativeAndroid } from "../../utils/platform";
 
 export interface ImportLocalProps {
   handleDrag: (isDrag: boolean) => void;
@@ -247,125 +248,128 @@ const ImportLocal = (props: ImportLocalProps) => {
     BookUtil.redirectBook(book);
     navigate("/manager/home");
   };
-  const handleAddBook = (
+  const handleAddBook = async (
     book: BookModel,
     buffer: ArrayBuffer,
     sourcePath?: string,
     isConverted = false
-  ) => {
-    return new Promise<void>(async (resolve) => {
-      toast.loading(
-        t("Importing") + ": " + book.name.substring(0, 50),
-        {
-          id: "add-book",
-        }
-      );
-      let isImportPath =
-        ConfigService.getReaderConfig("isImportPath") === "yes";
-      // A converted book has no readable source file, so its PDF always has to
-      // be written into the library; opening it in place is not an option.
-      const isPreventAdd =
-        !isConverted && ConfigService.getReaderConfig("isPreventAdd") === "yes";
-      if (isElectron && isImportPath) {
-        const fs = window.electronAPI.fs;
-        if (!book.path || !fs.existsSync(book.path)) {
-          isImportPath = false;
-        }
+  ): Promise<void> => {
+    toast.loading(
+      t("Importing") + ": " + book.name.substring(0, 50),
+      {
+        id: "add-book",
       }
-      if (stateRef.current.isOpenFile) {
-        if (isPreventAdd) {
-          //ignore
-        } else if (
-          isAuthed &&
-          ConfigService.getItem("defaultSyncOption")
-        ) {
-          await BookUtil.addBook(
-            book.key,
-            book.format.toLowerCase(),
-            buffer,
-            sourcePath
-          );
-          await CoverUtil.addCover(book);
-        } else if (isImportPath) {
-          await CoverUtil.addCover(book);
-          //ignore
-        } else {
-          await BookUtil.addBook(
-            book.key,
-            book.format.toLowerCase(),
-            buffer,
-            sourcePath
-          );
-          await CoverUtil.addCover(book);
-        }
-        if (isPreventAdd) {
-          handleJump(book);
-          setState({ isOpenFile: false });
-          toast.dismiss("add-book");
-          return resolve();
-        }
+    );
+    let isImportPath =
+      !isNativeAndroid && ConfigService.getReaderConfig("isImportPath") === "yes";
+    // A converted book has no readable source file, so its PDF always has to
+    // be written into the library; opening it in place is not an option.
+    const isPreventAdd =
+      !isNativeAndroid && !isConverted && ConfigService.getReaderConfig("isPreventAdd") === "yes";
+    if (isElectron && isImportPath) {
+      const fs = window.electronAPI.fs;
+      if (!book.path || !fs.existsSync(book.path)) {
+        isImportPath = false;
+      }
+    }
+    if (stateRef.current.isOpenFile) {
+      if (isPreventAdd) {
+        //ignore
+      } else if (
+        isAuthed &&
+        ConfigService.getItem("defaultSyncOption")
+      ) {
+        await BookUtil.addBook(
+          book.key,
+          book.format.toLowerCase(),
+          buffer,
+          sourcePath
+        );
+        await CoverUtil.addCover(book);
+      } else if (isImportPath) {
+        await CoverUtil.addCover(book);
+        //ignore
       } else {
-        if (
-          !isImportPath ||
-          (isAuthed && ConfigService.getItem("defaultSyncOption"))
-        ) {
-          await BookUtil.addBook(
-            book.key,
-            book.format.toLowerCase(),
-            buffer,
-            sourcePath
-          );
-        }
-
+        await BookUtil.addBook(
+          book.key,
+          book.format.toLowerCase(),
+          buffer,
+          sourcePath
+        );
         await CoverUtil.addCover(book);
       }
+      if (isPreventAdd) {
+        handleJump(book);
+        setState({ isOpenFile: false });
+        toast.dismiss("add-book");
+        return;
+      }
+    } else {
+      if (
+        !isImportPath ||
+        (isAuthed && ConfigService.getItem("defaultSyncOption"))
+      ) {
+        await BookUtil.addBook(
+          book.key,
+          book.format.toLowerCase(),
+          buffer,
+          sourcePath
+        );
+      }
 
-      handleReadingBook(book);
-      ConfigService.setListConfig(book.key, "recentBooks");
-      DatabaseService.saveRecord(book, "books")
-        .then(() => {
-          handleFetchBooks();
-          if (mode === "shelf") {
-            ConfigService.setMapConfig(
-              shelfTitle,
-              book.key,
-              "shelfList"
-            );
+      await CoverUtil.addCover(book);
+    }
+
+    if (!isAndroid) handleReadingBook(book);
+    ConfigService.setListConfig(book.key, "recentBooks");
+    await DatabaseService.saveRecord(book, "books")
+      .then(() => {
+        handleFetchBooks();
+        if (mode === "shelf") {
+          ConfigService.setMapConfig(
+            shelfTitle,
+            book.key,
+            "shelfList"
+          );
+        }
+        toast.success(
+          t("Addition successful") +
+            ": " +
+            book.name.substring(0, 50),
+          {
+            id: "add-book",
           }
-          toast.success(
-            t("Addition successful") +
-              ": " +
-              book.name.substring(0, 50),
-            {
-              id: "add-book",
-            }
-          );
-          setTimeout(() => {
-            stateRef.current.isOpenFile && handleJump(book);
-            if (
-              ConfigService.getReaderConfig("isOpenInMain") === "yes" &&
-              stateRef.current.isOpenFile
-            ) {
-              setState({ isOpenFile: false });
-              return;
-            }
+        );
+        if (isAndroid) {
+          setState({ isOpenFile: false });
+          return;
+        }
+        setTimeout(() => {
+          stateRef.current.isOpenFile && handleJump(book);
+          if (
+            ConfigService.getReaderConfig("isOpenInMain") === "yes" &&
+            stateRef.current.isOpenFile
+          ) {
             setState({ isOpenFile: false });
-            navigate("/manager/home");
-          }, 100);
-          return resolve();
-        })
-        .catch((error) => {
-          console.error(error, book.name);
-          toast.error(
-            t("Import failed") + ": " + book.name.substring(0, 50),
-            {
-              duration: 4000,
-              id: "add-book",
-            }
-          );
-          return resolve();
-        });
-    });
+            return;
+          }
+          setState({ isOpenFile: false });
+          navigate("/manager/home");
+        }, 100);
+        return;
+      })
+      .catch((error) => {
+        if (isNativeAndroid) throw error;
+        console.error(error, book.name);
+        toast.error(
+          t("Import failed") + ": " + book.name.substring(0, 50),
+          {
+            duration: 4000,
+            id: "add-book",
+          }
+        );
+        return;
+      });
   };
 
   const analyzeBookMetadata = async (book: BookModel, bookName: string) => {
@@ -856,12 +860,17 @@ const ImportLocal = (props: ImportLocalProps) => {
       return null;
     }
     await analyzeBookMetadata(result as BookModel, bookName);
-    await handleAddBook(
-      result as BookModel,
-      file_content as ArrayBuffer,
-      filePath,
-      isConverted
-    );
+    try {
+      await handleAddBook(
+        result as BookModel,
+        file_content as ArrayBuffer,
+        filePath,
+        isConverted
+      );
+    } catch {
+      toast.error(t("Import failed") + ": " + bookName, { id: "add-book", duration: 4000 });
+      return null;
+    }
 
     return result as BookModel;
   };

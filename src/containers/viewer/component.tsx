@@ -62,6 +62,7 @@ import { useAppStore } from "../../store/useAppStore";
 import BookModel from "../../models/Book";
 import { personalMode } from "../../custom/personal";
 import { hasReadingAI } from "../../custom/ai/reader";
+import { isAndroid } from "../../utils/platform";
 
 export interface ViewerProps {
   book: BookModel;
@@ -88,12 +89,13 @@ export interface ViewerState {
 
 const collectionUtil = new CollectionUtil(ConfigService);
 declare var window: any;
-let lock = false; //prevent from clicking too fasts
 // 章节渲染复用同一 iframe document，"rendered" 每触发一次都会走到这里，
 // 用 WeakSet 保证同一 doc 的 click/pointerup/contextmenu 只绑定一次
 const gestureBoundDocs = new WeakSet<Document>();
 
 const Viewer = (props: ViewerProps) => {
+  const renderLockedRef = useRef(false);
+  const renderUnlockTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const currentBook = useAppStore((s) => s.book.currentBook);
   const htmlBook = useAppStore((s) => s.reader.htmlBook);
   const isNavLocked = useAppStore((s) => s.reader.isNavLocked);
@@ -272,7 +274,7 @@ const Viewer = (props: ViewerProps) => {
     propsRef.current.handleOpenMenu(true);
   };
   const handleRenderBook = async () => {
-    if (lock) return;
+    if (renderLockedRef.current) return;
     let { key, path, format, name } = propsRef.current.currentBook;
     if (ConfigService.getAllListConfig("seperateStyleBooks").includes(key)) {
       window.currentBookKey = key;
@@ -654,7 +656,9 @@ const Viewer = (props: ViewerProps) => {
       }
     }
     rendition.on("rendered", async () => {
-      handleLocation();
+      // Reflow can round the visible page backwards. Keep the saved anchor until
+      // resizing settles; user page/gesture handlers still record new positions.
+      if (!isAndroid || !useAppStore.getState().reader.isReflowing) handleLocation();
       let bookLocation: {
         text: string;
         count: string;
@@ -706,12 +710,16 @@ const Viewer = (props: ViewerProps) => {
       // rendition.tranformText();
       handleBindGesture();
       await handleHighlight(rendition);
-      lock = true;
-      setTimeout(() => {
-        lock = false;
+      renderLockedRef.current = true;
+      if (renderUnlockTimerRef.current) clearTimeout(renderUnlockTimerRef.current);
+      renderUnlockTimerRef.current = setTimeout(() => {
+        renderUnlockTimerRef.current = null;
+        renderLockedRef.current = false;
         if (pendingRerenderRef.current) {
           pendingRerenderRef.current = false;
           handleRenderBook();
+        } else {
+          if (isAndroid) useAppStore.getState().handleReaderReflow(false);
         }
       }, 1000);
       return false;
@@ -847,6 +855,7 @@ const Viewer = (props: ViewerProps) => {
     }
     propsRef.current.handleRenderBookFunc(handleRenderBook);
     const resizeHandler = throttle(() => {
+      if (isAndroid) useAppStore.getState().handleReaderReflow(true);
       flushSync(() => {
         updateState(
           getPageWidth(
@@ -859,7 +868,7 @@ const Viewer = (props: ViewerProps) => {
           )
         );
       });
-      if (lock) {
+      if (renderLockedRef.current) {
         pendingRerenderRef.current = true;
       } else {
         handleRenderBook();
@@ -868,6 +877,8 @@ const Viewer = (props: ViewerProps) => {
     resizeHandlerRef.current = resizeHandler;
     window.addEventListener("resize", resizeHandler);
     return () => {
+      if (isAndroid) useAppStore.getState().handleReaderReflow(false);
+      if (renderUnlockTimerRef.current) clearTimeout(renderUnlockTimerRef.current);
       if (resizeHandlerRef.current) {
         window.removeEventListener("resize", resizeHandlerRef.current);
         resizeHandlerRef.current = null;

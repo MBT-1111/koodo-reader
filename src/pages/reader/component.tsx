@@ -36,12 +36,13 @@ import { isPaginatedBook, isReadingRawPDF, throttle } from "../../utils/common";
 import { getOuterDoc } from "../../utils/reader/docUtil";
 import { useAppStore } from "../../store/useAppStore";
 import { isAndroid } from "../../utils/platform";
-import { ANDROID_READER_CLOSE_EVENT, closeAndroidReader } from "../../custom/android/navigation";
+import { ANDROID_READER_CLOSE_EVENT, ANDROID_READER_DISMISS_EVENT, closeAndroidReader, dismissAndroidReaderOverlay } from "../../custom/android/navigation";
 import "../../components/androidHeader/android.css";
 
 const QUICK_BUTTON_EDGE_DISTANCE = 60;
 
 export interface ReaderState {
+  loadedBookKey: string;
   isOpenRightPanel: boolean;
   isOpenTopPanel: boolean;
   isOpenBottomPanel: boolean;
@@ -165,6 +166,7 @@ const Reader = () => {
   };
   const propsRef = useLatest(currentProps);
   const [state, setState] = useState<ReaderState>({
+    loadedBookKey: "",
     isOpenTopPanel: false,
     isOpenBottomPanel: false,
     hoverPanel: "",
@@ -256,6 +258,7 @@ const Reader = () => {
   };
 
   const scheduleLeaveReader = (position: string) => {
+    if (isAndroid) return;
     cancelLeaveReader(position);
     leaveTimers[position] = setTimeout(() => {
       leaveTimers[position] = null;
@@ -487,7 +490,7 @@ const Reader = () => {
       }
       DatabaseService.getRecord(key, "books").then((book: Book | null) => {
         book = book || JSON.parse(ConfigService.getItem("tempBook") || "{}");
-        if (!book) return;
+        if (!book?.key || !book.format) return;
 
         propsRef.current.handleFetchPercentage(book);
         let readerMode = isPaginatedBook(book)
@@ -501,7 +504,7 @@ const Reader = () => {
         const savedTotal = readingTimeUtilRef.current!.getTotalSeconds(
           book.key
         );
-        updateState({ totalDuration: savedTotal, currentDuration: 0 });
+        updateState({ loadedBookKey: book.key, totalDuration: savedTotal, currentDuration: 0 });
         if (isElectron) {
           updateDiscordPresence(book);
         }
@@ -538,9 +541,29 @@ const Reader = () => {
     const handleAndroidClose = () => {
       if (propsRef.current.htmlBook?.rendition) handleLocation();
     };
+    const handleAndroidDismiss = (event: Event) => {
+      const current = propsRef.current;
+      if (current.isOpenPopupOptionDialog) {
+        useAppStore.getState().handlePopupOptionDialog(false);
+      } else if (current.isAnnotationOpen) {
+        current.handleAnnotationDialog(false);
+      } else if (current.isScaleOpen || current.isConvertOpen || current.isPdfCropOpen || current.isStudyLangOpen || current.isAssistReadOpen || current.isSpeechOpen) {
+        closeSettingDialogs();
+      } else if (PANEL_POSITIONS.some((position) => stateRef.current[PANEL_OPEN_STATE[position]])) {
+        PANEL_POSITIONS.forEach((position) => {
+          cancelEnterReader(position);
+          cancelLeaveReader(position);
+        });
+        updateState({ isOpenLeftPanel: false, isOpenRightPanel: false, isOpenTopPanel: false, isOpenBottomPanel: false });
+      } else {
+        return;
+      }
+      event.preventDefault();
+    };
     window.addEventListener("beforeunload", handleBeforeUnload);
     if (isAndroid) {
       window.addEventListener(ANDROID_READER_CLOSE_EVENT, handleAndroidClose);
+      window.addEventListener(ANDROID_READER_DISMISS_EVENT, handleAndroidDismiss);
     }
     const handleMouseMove = (e: MouseEvent) => {
       isMouseMoving = true;
@@ -571,6 +594,7 @@ const Reader = () => {
       window.removeEventListener("beforeunload", handleBeforeUnload);
       window.removeEventListener("mousemove", throttledMouseMove);
       window.removeEventListener(ANDROID_READER_CLOSE_EVENT, handleAndroidClose);
+      window.removeEventListener(ANDROID_READER_DISMISS_EVENT, handleAndroidDismiss);
       window.removeEventListener(
         READING_PANEL_TOGGLE_EVENT,
         handleReadingPanelToggle
@@ -672,6 +696,9 @@ const Reader = () => {
       className={"viewer" + (state.isNearEdge ? " quick-buttons-shown" : "")}
     >
       <Tooltip id="my-tooltip" style={{ zIndex: 25 }} />
+      {isAndroid && renditionProps.isShow && (
+        <button type="button" className="android-reader-backdrop" aria-label={t("Close")} onClick={dismissAndroidReaderOverlay} />
+      )}
       {isAndroid && (
         <nav className="android-reader-toolbar">
           <button type="button" aria-label={t("Exit reader")} onClick={() => closeAndroidReader()}>
@@ -1168,7 +1195,9 @@ const Reader = () => {
         )}
       </div>
 
-      {currentBook.key && <Viewer {...(renditionProps as any)} />}
+      {currentBook.key && (!isAndroid || state.loadedBookKey === currentBook.key) && (
+        <Viewer key={isAndroid ? currentBook.key : undefined} {...(renditionProps as any)} />
+      )}
       {((readerMode === "scroll" || readerMode === "single") && isScaleOpen) ||
       isConvertOpen ||
       isPdfCropOpen ||

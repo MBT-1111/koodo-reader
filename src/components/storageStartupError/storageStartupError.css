@@ -1,0 +1,20 @@
+.storage-startup-error {
+  position: fixed;
+  inset: 0;
+  display: grid;
+  align-content: center;
+  gap: 24px;
+  padding: 32px;
+  background: #fff;
+  color: #333;
+  font: 16px/1.6 system-ui, sans-serif;
+}
+
+.storage-startup-error button {
+  min-height: 48px;
+  border: 1px solid currentColor;
+  border-radius: 8px;
+  color: inherit;
+  background: transparent;
+  font: inherit;
+}

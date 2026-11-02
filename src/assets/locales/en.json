@@ -1,5 +1,8 @@
 {
   "android.navigation": "Navigation menu",
+  "android.storage.startFailed": "Unable to safely load local data. Your data has been preserved. Please retry.",
+  "android.storage.retry": "Retry",
+  "android.storage.writeFailed": "Unable to save to device storage. Changes remain in the local cache. Check available space and retry.",
   "Books": "Books",
   "Favorites": "Favorites",
   "Notes": "Notes",

@@ -6,6 +6,7 @@ import { Trans } from "react-i18next";
 import i18n from "../../../i18n";
 import _ from "underscore";
 import { useAppStore } from "../../../store/useAppStore";
+import { isAndroid } from "../../../utils/platform";
 
 export interface ContentListState {
   chapters: any;
@@ -226,6 +227,10 @@ const ContentList = () => {
     );
     handleJumpPosition(prevPosition);
     await htmlBook.rendition.goToChapter(item.index, item.href, item.label);
+    if (isAndroid) {
+      await htmlBook.rendition.record();
+      ConfigService.setObjectConfig(currentBook.key, htmlBook.rendition.getPosition(), "recordLocation");
+    }
     handleCurrentChapter(item.label);
     handleCurrentChapterIndex(item.index);
     scrollContents(item.label, item.href);

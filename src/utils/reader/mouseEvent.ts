@@ -516,13 +516,22 @@ export const bindHtmlEvent = (
 
   if (ConfigService.getReaderConfig("isTouch") === "yes") {
     const mc = new Hammer(doc);
-    mc.on("panleft panright panup pandown", async (event: any) => {
+    mc.on(isAndroid ? "panend" : "panleft panright panup pandown", async (event: HammerInput) => {
       if (readerMode === "scroll") {
         return;
       }
-      if (lock || event.pointerType === "mouse") return;
+      if (lock || event.pointerType === "mouse" || (isAndroid && event.maxPointers > 1)) return;
+      const direction = event.offsetDirection;
+      const type = isAndroid
+        ? direction === Hammer.DIRECTION_LEFT ? "panleft"
+          : direction === Hammer.DIRECTION_RIGHT ? "panright"
+            : direction === Hammer.DIRECTION_UP ? "panup"
+              : direction === Hammer.DIRECTION_DOWN ? "pandown" : ""
+        : event.type;
+      if (!type) return;
       lock = true;
-      await gesture(rendition, event.type);
+      await gesture(rendition, type);
+      if (isAndroid) await rendition.record();
       handleLocation(key, rendition);
       setTimeout(() => (lock = false), getThrottleTime());
     });

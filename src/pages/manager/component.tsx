@@ -1,5 +1,5 @@
 import { useTranslation } from "react-i18next";
-import { useNavigate } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 import { useEffect, useRef, useState } from "react";
 import "./manager.css";
 import Sidebar from "../../containers/sidebar";
@@ -122,6 +122,8 @@ const Manager = () => {
     }, (key) => toast.error(t(key)));
   }, [t]);
   const navigate = useNavigate();
+  const location = useLocation();
+  const mode = useAppStore((s) => s.sidebar.mode);
   const [state, setState] = useState<ManagerState>({
     totalBooks: parseInt(ConfigService.getReaderConfig("totalBooks")) || 0,
     isDrag: false,
@@ -198,12 +200,14 @@ const Manager = () => {
       );
       ConfigService.setReaderConfig("totalBooks", totalBooks.toString());
     }
-    if (books && books.length === 1 && !prevBooks) {
+    if (isAndroid && books?.length && mode === "home" && location.pathname === "/manager/empty") {
+      navigate("/manager/home");
+    } else if (!isAndroid && books && books.length === 1 && !prevBooks) {
       navigate("/manager/home");
     }
     prevBooksRef.current = books;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [books]);
+  }, [books, location.pathname, mode]);
 
   const PopupProps = {
     chapterDocIndex: 0,

@@ -12,6 +12,8 @@ import {
 import { getCloudConfig } from "./common";
 import { LocalFileManager } from "./localFile";
 import TokenService from "../storage/tokenService";
+import { isNativeAndroid } from "../platform";
+import { nativeFiles } from "../../custom/android/storage";
 declare var window: any;
 class AsyncQueue {
   private queue: (() => Promise<void>)[] = [];
@@ -43,6 +45,7 @@ class AsyncQueue {
 const saveCoverQueue = new AsyncQueue();
 class CoverUtil {
   static async getCover(book: BookModel) {
+    if (isNativeAndroid) return nativeFiles.getCover(book.key, book.cover);
     if (isElectron) {
       var fs = window.electronAPI.fs;
       var path = window.electronAPI.path;
@@ -97,6 +100,9 @@ class CoverUtil {
   }
   static async isCoverExist(book: BookModel) {
     if (!book) return false;
+    if (isNativeAndroid) {
+      return !!book.cover || (await nativeFiles.list("cover")).some((name) => name.startsWith(`${book.key}.`));
+    }
     if (book.cover) {
       return true;
     }
@@ -127,6 +133,11 @@ class CoverUtil {
     }
   }
   static async deleteCover(key: string) {
+    if (isNativeAndroid) {
+      await nativeFiles.removeCover(key);
+      await this.deleteCloudCover(key);
+      return;
+    }
     if (isElectron) {
       var fs = window.electronAPI.fs;
       var path = window.electronAPI.path;
@@ -159,6 +170,7 @@ class CoverUtil {
     this.deleteCloudCover(key);
   }
   static async deleteOfflineCover(key: string) {
+    if (isNativeAndroid) return nativeFiles.removeCover(key);
     try {
       if (isElectron) {
         var fs = window.electronAPI.fs;
@@ -195,6 +207,10 @@ class CoverUtil {
     }
   }
   static async addCover(book: BookModel) {
+    if (isNativeAndroid) {
+      if (await nativeFiles.saveCover(book.key, book.cover)) book.cover = "";
+      return;
+    }
     let coverBase64 = book.cover;
     if (!coverBase64) return;
     let base64Data = coverBase64.split("base64,")[1];
@@ -341,7 +357,9 @@ class CoverUtil {
         console.error("download cover failed");
         return;
       }
-      if (ConfigService.getItem("isUseLocal") === "yes") {
+      if (isNativeAndroid) {
+        await nativeFiles.write("cover", cover, imgBuffer);
+      } else if (ConfigService.getItem("isUseLocal") === "yes") {
         await LocalFileManager.saveFile(cover, imgBuffer, "cover");
       } else {
         let imgStr = CommonTool.arrayBufferToBase64(imgBuffer);
@@ -404,12 +422,13 @@ class CoverUtil {
         "books"
       );
       if (book) {
-        book.cover = base64;
+        book.cover = isNativeAndroid && await nativeFiles.saveCover(book.key, base64) ? "" : base64;
         await DatabaseService.updateRecord(book, "books");
       }
     });
   }
   static async getLocalCoverList() {
+    if (isNativeAndroid) return nativeFiles.list("cover");
     if (isElectron) {
       var fs = window.electronAPI.fs;
       var path = window.electronAPI.path;

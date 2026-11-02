@@ -61,6 +61,7 @@ export default defineConfig(({ command, mode }) => ({
     namedExports: false,
   },
   optimizeDeps: {
+    entries: ["index.html"],
     include: [
       "buffer",
       "axios",

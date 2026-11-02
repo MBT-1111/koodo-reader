@@ -5,6 +5,7 @@ import _ from "underscore";
 import { ConfigService } from "../../../assets/lib/kookit-extra-browser.min";
 import { isPaginatedBook, scrollContents } from "../../../utils/common";
 import { useAppStore } from "../../../store/useAppStore";
+import { isAndroid } from "../../../utils/platform";
 
 const ProgressPanel = () => {
   const currentBook = useAppStore((s) => s.book.currentBook);
@@ -62,7 +63,7 @@ const ProgressPanel = () => {
       await handlePageNum(rendition);
     })();
     const onPageChanged = async () => {
-      handleLocation();
+      if (!isAndroid || !useAppStore.getState().reader.isReflowing) handleLocation();
       await handlePageNum(rendition);
       handleCurrentChapterIndex(rendition);
       handleFetchPercentage(currentBook);

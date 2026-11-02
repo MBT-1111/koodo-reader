@@ -13,7 +13,8 @@ import { getCloudConfig } from "./common";
 import CoverUtil from "./coverUtil";
 import { LocalFileManager } from "./localFile";
 import TokenService from "../storage/tokenService";
-import { isAndroid } from "../platform";
+import { isAndroid, isNativeAndroid } from "../platform";
+import { nativeFiles } from "../../custom/android/storage";
 declare var window: any;
 
 class BookUtil {
@@ -48,7 +49,10 @@ class BookUtil {
         position: "bottom-center",
       });
     }
-    if (isElectron) {
+    if (isNativeAndroid) {
+      await nativeFiles.write("book", `${key}.${format.toLowerCase()}`, buffer);
+      await this.uploadBook(key, format);
+    } else if (isElectron) {
       const fs = window.electronAPI.fs;
       const path = window.electronAPI.path;
       const dataPath = getStorageLocation() || "";
@@ -90,7 +94,10 @@ class BookUtil {
   }
   static async deleteBook(key: string, format: string) {
     try {
-      if (isElectron) {
+      if (isNativeAndroid) {
+        await nativeFiles.remove("book", `${key}.${format.toLowerCase()}`);
+        await this.deleteCloudBook(key, format);
+      } else if (isElectron) {
         const fs = window.electronAPI.fs;
         const path = window.electronAPI.path;
         const dataPath = getStorageLocation() || "";
@@ -117,6 +124,7 @@ class BookUtil {
     bookPath: string,
     bookSize?: number
   ) {
+    if (isNativeAndroid) return nativeFiles.exists("book", `${key}.${format.toLowerCase()}`);
     return new Promise<boolean>((resolve) => {
       if (isElectron) {
         var fs = window.electronAPI.fs;
@@ -170,6 +178,7 @@ class BookUtil {
     isArrayBuffer: boolean = false,
     bookPath: string
   ) {
+    if (isNativeAndroid) return nativeFiles.read("book", `${key}.${format.toLowerCase()}`).then((buffer) => buffer ?? false);
     if (isElectron) {
       return new Promise<File | ArrayBuffer | boolean>((resolve) => {
         var fs = window.electronAPI.fs;
@@ -469,7 +478,9 @@ class BookUtil {
       if (!bookBuffer) {
         return false;
       }
-      if (ConfigService.getItem("isUseLocal") === "yes") {
+      if (isNativeAndroid) {
+        await nativeFiles.write("book", `${key}.${format.toLowerCase()}`, bookBuffer);
+      } else if (ConfigService.getItem("isUseLocal") === "yes") {
         await LocalFileManager.saveFile(key + "." + format, bookBuffer, "book");
       } else {
         await localforage.setItem(key, bookBuffer);

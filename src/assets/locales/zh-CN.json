@@ -1,5 +1,8 @@
 {
   "android.navigation": "导航菜单",
+  "android.storage.startFailed": "暂时无法安全读取本机数据，数据已保留，请重试。",
+  "android.storage.retry": "重试",
+  "android.storage.writeFailed": "无法保存到设备存储，当前更改仍保留在本机缓存。请检查可用空间后重试。",
   "Books": "全部图书",
   "Favorites": "我的喜爱",
   "Notes": "我的笔记",

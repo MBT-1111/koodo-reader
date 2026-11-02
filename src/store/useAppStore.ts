@@ -107,6 +107,7 @@ const initialReader = {
   margin: ConfigService.getReaderConfig("margin") || "0",
   section: null as any,
   readerMode: "double",
+  isReflowing: false,
   isConvertOpen: false,
   isScaleOpen: false,
   isPdfCropOpen: false,
@@ -269,6 +270,7 @@ export type AppActionName =
   | "handleQuoteText"
   | "handleReaderBackgroundImage"
   | "handleReaderMode"
+  | "handleReaderReflow"
   | "handleReadingBook"
   | "handleReadingRuler"
   | "handleReadingState"
@@ -915,6 +917,7 @@ export const useAppStore = create<AppState>()((set, get) => {
       setReader({ isSpeechAutoStart }),
     handleBookmarks: (bookmarks: BookmarkModel[]) => setReader({ bookmarks }),
     handleHtmlBook: (htmlBook: HtmlBookModel) => setReader({ htmlBook }),
+    handleReaderReflow: (isReflowing: boolean) => setReader({ isReflowing }),
     handleCurrentChapter: (currentChapter: string) =>
       setReader({ currentChapter }),
     handleCurrentChapterIndex: (currentChapterIndex: number) =>

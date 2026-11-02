@@ -172,7 +172,17 @@ html[data-platform="android"] .setting-dialog-main {
 html[data-platform="android"] .operation-panel-container {
   width: 100%;
   left: 0;
+  top: 48px;
   overflow-x: auto;
+}
+
+.android-reader-backdrop {
+  position: absolute;
+  inset: 48px 0 0;
+  z-index: 13;
+  border: 0;
+  padding: 0;
+  background: rgba(0, 0, 0, 0.15);
 }
 
 html[data-platform="android"] .navigation-panel-container,

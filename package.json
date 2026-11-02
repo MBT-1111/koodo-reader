@@ -116,6 +116,7 @@
     "android:open": "cap open android",
     "test:android": "playwright test --config playwright.android.config.ts",
     "test:android:device": "node scripts/android-device-smoke.cjs",
+    "test:android:reading": "node scripts/android-reading-device.cjs",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",

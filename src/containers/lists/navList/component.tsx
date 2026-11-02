@@ -15,6 +15,7 @@ import Book from "../../../models/Book";
 import Bookmark from "../../../models/Bookmark";
 import Note from "../../../models/Note";
 import { useAppStore } from "../../../store/useAppStore";
+import { isAndroid } from "../../../utils/platform";
 
 import BookmarkModel from "../../../models/Bookmark";
 import NoteModel from "../../../models/Note";
@@ -205,6 +206,10 @@ const NavList = (props: NavListProps) => {
         page: bookLocation.page,
       })
     );
+    if (isAndroid) {
+      await htmlBook.rendition.record();
+      ConfigService.setObjectConfig(currentBook.key, htmlBook.rendition.getPosition(), "recordLocation");
+    }
   };
 
   const handleCurrentDataUpdate = async (

@@ -1,10 +1,11 @@
 import { isElectron } from "react-device-detect";
+import { isNativeAndroid } from "../platform";
+import { databaseCommand } from "./databaseCommand";
 import { getStorageLocation } from "../common";
 import localforage from "localforage";
 import SqlUtil from "../file/sqlUtil";
 import { ConfigService } from "../../assets/lib/kookit-extra-browser.min";
 import { LocalFileManager } from "../file/localFile";
-declare var window: any;
 
 class DatabaseService {
   static async getDbBuffer(dbName: string) {
@@ -14,10 +15,8 @@ class DatabaseService {
   }
 
   static async getAllRecords(dbName: string) {
-    if (isElectron) {
-      let records = await window
-        .electronAPI
-        .invoke("database-command", {
+    if (isElectron || isNativeAndroid) {
+      let records = await databaseCommand({
           statement: "getAllStatement",
           statementType: "string",
           executeType: "all",
@@ -44,12 +43,10 @@ class DatabaseService {
     }
   }
   static async saveAllRecords(records: any[], dbName: string, isRecord = true) {
-    if (isElectron) {
+    if (isElectron || isNativeAndroid) {
       for (let record of records) {
         try {
-          await window
-            .electronAPI
-            .invoke("database-command", {
+          await databaseCommand({
               statement: "saveStatement",
               statementType: "string",
               executeType: "run",
@@ -58,6 +55,7 @@ class DatabaseService {
               storagePath: getStorageLocation(),
             });
         } catch (error) {
+          if (isNativeAndroid) throw error;
           console.error("Error saving record:", error);
         }
 
@@ -111,8 +109,8 @@ class DatabaseService {
         );
       }
     }
-    if (isElectron) {
-      await window.electronAPI.invoke("database-command", {
+    if (isElectron || isNativeAndroid) {
+      await databaseCommand({
         statement: "deleteAllStatement",
         statementType: "string",
         executeType: "run",
@@ -128,8 +126,8 @@ class DatabaseService {
     }
   }
   static async saveRecord(record: any, dbName: string, isRecord = true) {
-    if (isElectron) {
-      await window.electronAPI.invoke("database-command", {
+    if (isElectron || isNativeAndroid) {
+      await databaseCommand({
         statement: "saveStatement",
         statementType: "string",
         executeType: "run",
@@ -174,8 +172,8 @@ class DatabaseService {
     }
   }
   static async deleteRecord(key: string, dbName: string, isRecord = true) {
-    if (isElectron) {
-      await window.electronAPI.invoke("database-command", {
+    if (isElectron || isNativeAndroid) {
+      await databaseCommand({
         statement: "deleteStatement",
         statementType: "string",
         executeType: "run",
@@ -203,8 +201,8 @@ class DatabaseService {
     }
   }
   static async updateRecord(record: any, dbName: string, isRecord = true) {
-    if (isElectron) {
-      await window.electronAPI.invoke("database-command", {
+    if (isElectron || isNativeAndroid) {
+      await databaseCommand({
         statement: "updateStatement",
         statementType: "string",
         executeType: "run",
@@ -237,10 +235,8 @@ class DatabaseService {
     }
   }
   static async getRecord(key: string, dbName: string): Promise<any | null> {
-    if (isElectron) {
-      let record = await window
-        .electronAPI
-        .invoke("database-command", {
+    if (isElectron || isNativeAndroid) {
+      let record = await databaseCommand({
           statement: "getStatement",
           statementType: "string",
           executeType: "get",
@@ -260,10 +256,8 @@ class DatabaseService {
     }
   }
   static async getAllRecordKeys(dbName: string): Promise<string[]> {
-    if (isElectron) {
-      let keys = await window
-        .electronAPI
-        .invoke("database-command", {
+    if (isElectron || isNativeAndroid) {
+      let keys = await databaseCommand({
           statement: "getKeysStatement",
           statementType: "string",
           executeType: "all",
@@ -280,10 +274,8 @@ class DatabaseService {
     bookKey: string,
     dbName: string
   ): Promise<any[]> {
-    if (isElectron) {
-      let records = await window
-        .electronAPI
-        .invoke("database-command", {
+    if (isElectron || isNativeAndroid) {
+      let records = await databaseCommand({
           statement: "getByBookKeyStatement",
           statementType: "string",
           executeType: "all",
@@ -301,10 +293,8 @@ class DatabaseService {
     bookKeys: string[],
     dbName: string
   ): Promise<any[]> {
-    if (isElectron) {
-      let records = await window
-        .electronAPI
-        .invoke("database-command", {
+    if (isElectron || isNativeAndroid) {
+      let records = await databaseCommand({
           statement: "getByBookKeysStatement",
           statementType: "function",
           executeType: "all",
@@ -322,10 +312,8 @@ class DatabaseService {
     keys: string[],
     dbName: string
   ): Promise<any[]> {
-    if (isElectron) {
-      let records = await window
-        .electronAPI
-        .invoke("database-command", {
+    if (isElectron || isNativeAndroid) {
+      let records = await databaseCommand({
           statement: "getByKeysStatement",
           statementType: "function",
           executeType: "all",
@@ -344,12 +332,10 @@ class DatabaseService {
     dbName: string,
     isRecord = true
   ) {
-    if (isElectron) {
+    if (isElectron || isNativeAndroid) {
       for (let record of records) {
         try {
-          await window
-            .electronAPI
-            .invoke("database-command", {
+          await databaseCommand({
               statement: "updateStatement",
               statementType: "string",
               executeType: "run",
@@ -358,6 +344,7 @@ class DatabaseService {
               storagePath: getStorageLocation(),
             });
         } catch (error) {
+          if (isNativeAndroid) throw error;
           console.error("Error updating record:", error);
         }
 
@@ -408,8 +395,8 @@ class DatabaseService {
         { operation: "delete", time: Date.now() }
       );
     }
-    if (isElectron) {
-      await window.electronAPI.invoke("database-command", {
+    if (isElectron || isNativeAndroid) {
+      await databaseCommand({
         statement: "deleteByBookKeyStatement",
         statementType: "string",
         executeType: "run",

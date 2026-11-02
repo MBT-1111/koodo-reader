@@ -7,14 +7,15 @@ const JSZip = require("jszip");
 
 const appId = "xyz.koodoreader.custom.android";
 const output = path.join(__dirname, "..", "dist", "android-device");
-const title = "Android device fixture";
+const title = "Android native storage fixture";
 const report = { model: "", android: "", checks: [], passed: false };
 
 async function makeEpub() {
   const zip = new JSZip();
   zip.file("mimetype", "application/epub+zip", { compression: "STORE" });
   zip.file("META-INF/container.xml", '<?xml version="1.0"?><container version="1.0" xmlns="urn:oasis:names:tc:opendocument:xmlns:container"><rootfiles><rootfile full-path="book.opf" media-type="application/oebps-package+xml"/></rootfiles></container>');
-  zip.file("book.opf", `<?xml version="1.0"?><package xmlns="http://www.idpf.org/2007/opf" version="2.0" unique-identifier="id"><metadata xmlns:dc="http://purl.org/dc/elements/1.1/"><dc:identifier id="id">koodo-android-device-fixture-v1</dc:identifier><dc:title>${title}</dc:title><dc:language>en</dc:language><dc:creator>Test</dc:creator></metadata><manifest><item id="chapter" href="chapter.xhtml" media-type="application/xhtml+xml"/><item id="ncx" href="toc.ncx" media-type="application/x-dtbncx+xml"/></manifest><spine toc="ncx"><itemref idref="chapter"/></spine></package>`);
+  zip.file("book.opf", `<?xml version="1.0"?><package xmlns="http://www.idpf.org/2007/opf" version="2.0" unique-identifier="id"><metadata xmlns:dc="http://purl.org/dc/elements/1.1/"><dc:identifier id="id">koodo-android-native-storage-fixture-v2</dc:identifier><dc:title>${title}</dc:title><dc:language>en</dc:language><dc:creator>Test</dc:creator><meta name="cover" content="cover"/></metadata><manifest><item id="chapter" href="chapter.xhtml" media-type="application/xhtml+xml"/><item id="cover" href="cover.png" media-type="image/png"/><item id="ncx" href="toc.ncx" media-type="application/x-dtbncx+xml"/></manifest><spine toc="ncx"><itemref idref="chapter"/></spine></package>`);
+  zip.file("cover.png", Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aX1kAAAAASUVORK5CYII=", "base64"));
   zip.file("toc.ncx", `<?xml version="1.0"?><ncx xmlns="http://www.daisy.org/z3986/2005/ncx/" version="2005-1"><head><meta name="dtb:uid" content="koodo-android-device-fixture-v1"/></head><docTitle><text>${title}</text></docTitle><navMap><navPoint id="chapter" playOrder="1"><navLabel><text>Device chapter</text></navLabel><content src="chapter.xhtml"/></navPoint></navMap></ncx>`);
   const paragraphs = Array.from({ length: 100 }, (_, i) => `<p>Paragraph ${i + 1}. This synthetic EPUB verifies reading, Android Back and progress after a process restart. No personal books are used.</p>`).join("");
   zip.file("chapter.xhtml", `<?xml version="1.0"?><html xmlns="http://www.w3.org/1999/xhtml"><head><title>Device chapter</title></head><body><h1>Device chapter</h1>${paragraphs}</body></html>`);
@@ -70,7 +71,7 @@ async function main() {
     checked("native Back closes navigation");
 
     await page.locator(".import-from-local").click();
-    await expect.poll(focus, { timeout: 15000 }).not.toContain(appId);
+    await expect.poll(focus, { timeout: 15000 }).toMatch(/documentsui|myfiles/i);
     // The picker remembers its last folder; Back first navigates to its parents.
     for (let i = 0; i < 6 && !(await focus()).includes(appId); i++) {
       assert.match(await focus(), /documentsui|myfiles/i, "Only cancel the test file picker");
@@ -91,6 +92,13 @@ async function main() {
     await card().locator(".book-item-cover").click();
     await expect(page).toHaveURL(/#\/epub\//);
     const key = new URL(page.url()).hash.split("?")[0].split("/").pop();
+    const native = (request) => page.evaluate(async (data) => (await window.Capacitor.Plugins.KoodoStorage.execute(data)).value, request);
+    assert.equal(await native({ channel: "file-command", action: "exists", group: "book", name: `${key}.epub` }), true);
+    const covers = await native({ channel: "file-command", action: "list", group: "cover" });
+    assert.ok(covers.some((name) => name.startsWith(`${key}.`)), "Imported cover must be a native file");
+    const record = await native({ channel: "database-command", dbName: "books", statement: "getStatement", data: key });
+    assert.equal(record.cover, "", "Book metadata must reference the native cover instead of embedding it");
+    checked("book bytes, cover and metadata use native storage");
     await expect(page.frameLocator("#page-area iframe").first().locator("body")).toContainText("Paragraph");
     const background = await page.locator(".background").first().evaluate((element) => getComputedStyle(element).backgroundColor);
     const foreground = await page.frameLocator("#page-area iframe").first().locator("p").first().evaluate((element) => getComputedStyle(element).color);
@@ -114,6 +122,10 @@ async function main() {
     await device.shell("input keyevent KEYCODE_BACK");
     await expect(page).toHaveURL(/#\/manager\/home/);
     checked("native Back exits reader");
+    const preferences = await native({ channel: "preferences", action: "read" });
+    assert.ok(preferences.version > 0);
+    assert.equal(JSON.parse(preferences.values.recordLocation)[key].percentage, advanced.percentage);
+    checked("reader exit flushes progress to native preferences");
 
     await card().locator(".book-item-cover").click();
     await expect(page.frameLocator("#page-area iframe").first().locator("body")).toContainText("Paragraph");

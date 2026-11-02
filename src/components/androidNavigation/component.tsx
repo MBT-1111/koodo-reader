@@ -3,11 +3,22 @@ import { useLocation, useNavigate } from "react-router-dom";
 import { Capacitor } from "@capacitor/core";
 import { App } from "@capacitor/app";
 import { useAppStore } from "../../store/useAppStore";
-import { closeAndroidReader } from "../../custom/android/navigation";
+import { closeAndroidReader, dismissAndroidReaderOverlay } from "../../custom/android/navigation";
+import { useTranslation } from "react-i18next";
+import toast from "react-hot-toast";
+import { ANDROID_STORAGE_ERROR_EVENT, hasNativeStorageError } from "../../custom/android/bootstrap";
 
 const AndroidNavigation = () => {
+  const { t } = useTranslation();
   const location = useLocation();
   const navigate = useNavigate();
+
+  useEffect(() => {
+    const report = () => { if (hasNativeStorageError()) toast.error(t("android.storage.writeFailed"), { id: "android-storage" }); };
+    window.addEventListener(ANDROID_STORAGE_ERROR_EVENT, report);
+    report();
+    return () => window.removeEventListener(ANDROID_STORAGE_ERROR_EVENT, report);
+  }, [t]);
 
   useEffect(() => {
     if (Capacitor.getPlatform() !== "android") return;
@@ -22,6 +33,7 @@ const AndroidNavigation = () => {
       } else if (state.viewArea.isOpenMenu) {
         state.handleOpenMenu(false);
       } else if (!location.pathname.startsWith("/manager")) {
+        if (dismissAndroidReaderOverlay()) return;
         closing = true;
         try {
           await closeAndroidReader();
