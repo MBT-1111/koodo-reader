@@ -1,4 +1,5 @@
 import { useLatest } from "../../utils/hooks/useLatest";
+import { beginReaderSelection, endReaderSelection } from "../../utils/reader/selectionGuard";
 import { useEffect, useRef, useState } from "react";
 import { flushSync } from "react-dom";
 import BookUtil from "../../utils/file/bookUtil";
@@ -71,6 +72,7 @@ export interface ViewerProps {
 
   handleLeaveReader: (position: string) => void;
   handleEnterReader: (position: string) => void;
+  handleCloseDialogs: () => void;
 }
 
 export interface ViewerState {
@@ -167,6 +169,7 @@ const Viewer = (props: ViewerProps) => {
     handleScale,
     handleBackgroundColor,
     handleLeaveReader: props.handleLeaveReader,
+    handleCloseDialogs: props.handleCloseDialogs,
   };
   const propsRef = useLatest(connected);
   const [state, setState] = useState<ViewerState>({
@@ -405,6 +408,7 @@ const Viewer = (props: ViewerProps) => {
       ocrQueue = task.catch(() => undefined);
       return task;
     };
+    const isEinkMode = ConfigService.getReaderConfig("isEinkMode") === "yes";
     let rendition = BookHelper.getRendition(
       result,
       {
@@ -414,7 +418,7 @@ const Viewer = (props: ViewerProps) => {
           : "no",
         readerMode: propsRef.current.readerMode,
         charset: propsRef.current.currentBook.charset,
-        animation: ConfigService.getReaderConfig("animation") || "none",
+        animation: isEinkMode ? "none" : ConfigService.getReaderConfig("animation") || "none",
         convertChinese: ConfigService.getReaderConfig("convertChinese"),
         bookLayout: ConfigService.getReaderConfig("bookLayout") || "",
         textRules: getTextRules(propsRef.current.currentBook.key),
@@ -433,11 +437,11 @@ const Viewer = (props: ViewerProps) => {
             : "no",
         textOrientation: ConfigService.getReaderConfig("textOrientation"),
         isDarkMode:
-          ConfigService.getReaderConfig("backgroundColor") ===
+          !isEinkMode && ConfigService.getReaderConfig("backgroundColor") ===
           "rgba(44,47,49,1)"
             ? "yes"
             : "no",
-        backgroundColor: ConfigService.getReaderConfig("backgroundColor"),
+        backgroundColor: isEinkMode ? "#ffffff" : ConfigService.getReaderConfig("backgroundColor"),
         isMobile: "no",
         isIndent: ConfigService.getReaderConfig("isIndent"),
         isHyphenation: ConfigService.getReaderConfig("isHyphenation"),
@@ -757,13 +761,17 @@ const Viewer = (props: ViewerProps) => {
       let doc = docs[i];
       if (!doc || gestureBoundDocs.has(doc)) continue;
       gestureBoundDocs.add(doc);
+      doc.addEventListener("pointerdown", () => beginReaderSelection(doc));
+      doc.addEventListener("pointercancel", () => endReaderSelection(doc));
       doc.addEventListener("click", () => {
+        propsRef.current.handleCloseDialogs();
         propsRef.current.handleLeaveReader("left");
         propsRef.current.handleLeaveReader("right");
         propsRef.current.handleLeaveReader("top");
         propsRef.current.handleLeaveReader("bottom");
       });
       doc.addEventListener("pointerup", (event) => {
+        endReaderSelection(doc);
         if (isPaginatedBook(propsRef.current.currentBook)) {
           let ownerDoc = (event.target as HTMLElement).ownerDocument;
           let targetIframe = ownerDoc?.defaultView?.frameElement;
@@ -772,15 +780,6 @@ const Viewer = (props: ViewerProps) => {
           updateState({ chapterDocIndex });
         }
 
-        if (stateRef.current.isDisablePopup) {
-          if (doc!.getSelection()!.toString().trim().length === 0) {
-            let rect = doc!
-              .getSelection()!
-              .getRangeAt(0)
-              .getBoundingClientRect();
-            updateState({ rect });
-          }
-        }
         if (stateRef.current.isDisablePopup) return;
         let selection = doc!.getSelection();
         if (!selection || selection.rangeCount === 0) return;
@@ -867,7 +866,13 @@ const Viewer = (props: ViewerProps) => {
     });
     resizeHandlerRef.current = resizeHandler;
     window.addEventListener("resize", resizeHandler);
+    const releaseSelection = () => endReaderSelection();
+    window.addEventListener("pointerup", releaseSelection);
+    window.addEventListener("pointercancel", releaseSelection);
     return () => {
+      window.removeEventListener("pointerup", releaseSelection);
+      window.removeEventListener("pointercancel", releaseSelection);
+      endReaderSelection();
       if (resizeHandlerRef.current) {
         window.removeEventListener("resize", resizeHandlerRef.current);
         resizeHandlerRef.current = null;
@@ -984,7 +989,7 @@ const Viewer = (props: ViewerProps) => {
         }
       ></div>
       <PageWidget />
-      {isHideBackground ||
+      {ConfigService.getReaderConfig("isEinkMode") === "yes" || isHideBackground ||
       textOrientation === "vertical" ||
       isShowPageBorder ||
       ((isParagraphMode || isReadingRuler || isSpeedReading) &&

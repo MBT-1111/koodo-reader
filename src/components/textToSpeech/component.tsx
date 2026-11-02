@@ -30,6 +30,8 @@ import EmotionSelect from "../../custom/tts/EmotionSelect";
 import type { PluginVoice } from "../../utils/plugins/types";
 import { personalMode } from "../../custom/personal";
 import { hasReadingAI, readingAIErrorKey } from "../../custom/ai/reader";
+import { getIframeDoc } from "../../utils/reader/docUtil";
+import { hasReaderSelection } from "../../utils/reader/selectionGuard";
 
 export interface TextToSpeechState {
   isAudioOn: boolean;
@@ -134,6 +136,7 @@ const TextToSpeech = () => {
   const nativeVoicesRef = useRef<any>([]);
   const previewPlayerRef = useRef<Howl | null>(null);
   const speechGenerationRef = useRef(0);
+  const audioLoadingRef = useRef<number | null>(null);
   const roleRequestRef = useRef<AbortController | null>(null);
   const highlightUtilRef = useRef<any>(null);
   if (!highlightUtilRef.current) {
@@ -244,6 +247,8 @@ const TextToSpeech = () => {
     return () => {
       isMounted = false;
       speechGenerationRef.current++;
+      stateRef.current = { ...stateRef.current, isAudioOn: false };
+      void TTSUtil.stopAudio();
       roleRequestRef.current?.abort();
       if (speechIntervalRef.current !== undefined) {
         clearInterval(speechIntervalRef.current);
@@ -499,6 +504,7 @@ const TextToSpeech = () => {
     handleStartSpeech();
   };
   const handlePauseAudio = async () => {
+    setState({ isPaused: true });
     if (window.speechSynthesis) {
       if (window.speechSynthesis.speaking) {
         // 在句子中途暂停，保留 utterance 状态以便从暂停位置恢复
@@ -508,7 +514,6 @@ const TextToSpeech = () => {
       }
     }
     await TTSUtil.pauseAudio();
-    setState({ isPaused: true });
   };
   const handleStop = async () => {
     speechGenerationRef.current++;
@@ -521,13 +526,17 @@ const TextToSpeech = () => {
   };
   const handlePauseResume = () => {
     const currentNode = nodeListRef.current[stateRef.current.currentIndex];
-    if (!currentNode) return;
-
     setState({ isPaused: false });
+    TTSUtil.isPaused = false;
+    if (!currentNode) return;
     if (currentNode.voiceEngine !== "system") {
+      // A quick pause/resume should continue the existing pending load rather
+      // than start another loop competing for the same cache entry.
+      if (audioLoadingRef.current === speechGenerationRef.current) return;
       // 尝试从自定义音频暂停位置恢复，失败则从句首重新播放
       const resumed = TTSUtil.resumeAudio();
       if (!resumed) {
+        speechGenerationRef.current++;
         handleCustomRead(stateRef.current.currentIndex);
       }
     } else {
@@ -535,12 +544,14 @@ const TextToSpeech = () => {
       if (window.speechSynthesis && window.speechSynthesis.paused) {
         window.speechSynthesis.resume();
       } else {
+        speechGenerationRef.current++;
         handleSystemRead(stateRef.current.currentIndex);
       }
     }
   };
   const handlePrevSentence = async () => {
     if (!stateRef.current.isAudioOn || nodeListRef.current.length === 0) return;
+    speechGenerationRef.current++;
     let prevIndex = Math.max(0, stateRef.current.currentIndex - 1);
     window.speechSynthesis && window.speechSynthesis.cancel();
     await TTSUtil.pauseAudio();
@@ -554,6 +565,7 @@ const TextToSpeech = () => {
   };
   const handleNextSentence = async () => {
     if (!stateRef.current.isAudioOn || nodeListRef.current.length === 0) return;
+    speechGenerationRef.current++;
     let nextIndex = stateRef.current.currentIndex + 1;
     window.speechSynthesis && window.speechSynthesis.cancel();
     await TTSUtil.pauseAudio();
@@ -578,6 +590,7 @@ const TextToSpeech = () => {
     _previousEngine: string
   ) => {
     if (!stateRef.current.isAudioOn || nodeListRef.current.length === 0) return;
+    speechGenerationRef.current++;
 
     const currentIndex = stateRef.current.currentIndex;
 
@@ -629,6 +642,7 @@ const TextToSpeech = () => {
   };
   const handleStartSpeech = () => {
     speechGenerationRef.current++;
+    TTSUtil.isPaused = false;
     roleRequestRef.current?.abort();
     setState({ isAudioOn: true, isPaused: false, currentIndex: 0 });
     handleAudio();
@@ -653,7 +667,7 @@ const TextToSpeech = () => {
   };
   const handleGetText = async () => {
     const generation = speechGenerationRef.current;
-    if ((ConfigService.getReaderConfig("animation") || "none") !== "none") {
+    if (ConfigService.getReaderConfig("isEinkMode") !== "yes" && (ConfigService.getReaderConfig("animation") || "none") !== "none") {
       await sleep(1000);
     }
     let nodeList = [];
@@ -806,32 +820,46 @@ const TextToSpeech = () => {
     }
     return nodeList;
   };
+  const selectionProtected = () => useAppStore.getState().viewArea.isOpenMenu || hasReaderSelection(getIframeDoc(currentBook));
+  const highlightSpeech = (text: string) => {
+    // The engine rebuilds text nodes and clears native selection when highlighting.
+    if (selectionProtected()) return;
+    const style = highlightUtilRef.current.buildTtsHighlightStyle(
+      isReadingRawPDF(currentBook), ConfigService.getReaderConfig("textOrientation") === "vertical"
+    );
+    htmlBook.rendition.highlightAudioNode(text, style);
+  };
+  const waitForSelection = async (generation: number) => {
+    while (generation === speechGenerationRef.current && stateRef.current.isAudioOn && !stateRef.current.isPaused && selectionProtected()) {
+      await sleep(100);
+    }
+  };
   const handleCustomRead = async (nodeIndex: number) => {
+    const generation = speechGenerationRef.current;
+    if (stateRef.current.isPaused || !stateRef.current.isAudioOn) return;
+    TTSUtil.isPaused = false;
     let speed = parseFloat(ConfigService.getReaderConfig("voiceSpeed")) || 1;
     if (!stateRef.current.isAudioOn) {
       TTSUtil.setAudioPaths();
     }
 
     for (let index = nodeIndex; index < nodeListRef.current.length; index++) {
-      if (stateRef.current.isPaused || !stateRef.current.isAudioOn) return;
+      if (generation !== speechGenerationRef.current || stateRef.current.isPaused || !stateRef.current.isAudioOn) return;
       setState({ currentIndex: index });
       let node = nodeListRef.current[index];
-      let style = highlightUtilRef.current.buildTtsHighlightStyle(
-        isReadingRawPDF(currentBook),
-        ConfigService.getReaderConfig("textOrientation") === "vertical"
-      );
-      htmlBook.rendition.highlightAudioNode(node.text, style);
+      highlightSpeech(node.text);
       if (index === nodeIndex) {
-        let result = await TTSUtil.cacheAudio(
-          index,
-          speed * 100 - 100,
-          plugins,
-          nodeListRef.current,
-          10,
-          true,
-          node.voiceEngine === "official-ai-voice-plugin"
-        );
-        if (result === "cancelled") return;
+        audioLoadingRef.current = generation;
+        let result: string | undefined;
+        try {
+          result = await TTSUtil.cacheAudio(
+            index, speed * 100 - 100, plugins, nodeListRef.current, 10, true,
+            node.voiceEngine === "official-ai-voice-plugin"
+          );
+        } finally {
+          if (audioLoadingRef.current === generation) audioLoadingRef.current = null;
+        }
+        if (result === "cancelled" || generation !== speechGenerationRef.current || stateRef.current.isPaused || !stateRef.current.isAudioOn) return;
         toast.dismiss("tts-load");
         if (result === "error") {
           toast.error(t("Audio loading failed, stopped playback"));
@@ -842,7 +870,7 @@ const TextToSpeech = () => {
       }
       if (nodeListRef.current[index].voiceEngine === "system") {
         await handleSystemRead(index);
-        break;
+        return;
       }
 
       TTSUtil.cacheAudio(
@@ -855,6 +883,7 @@ const TextToSpeech = () => {
         node.voiceEngine === "official-ai-voice-plugin"
       );
       let res = await handleSpeech(index);
+      if (generation !== speechGenerationRef.current || stateRef.current.isPaused || !stateRef.current.isAudioOn) return;
       if (res === "error") {
         toast.error(t("Audio loading failed, stopped playback"));
         setState({ isAudioOn: false });
@@ -863,6 +892,7 @@ const TextToSpeech = () => {
       }
       if (stateRef.current.isPaused || !stateRef.current.isAudioOn) return;
       let visibleTextList = await htmlBook.rendition.visibleText();
+      if (generation !== speechGenerationRef.current || stateRef.current.isPaused || !stateRef.current.isAudioOn) return;
       let lastVisibleTextList = visibleTextList;
 
       let rawNodeList = visibleTextList.map((text) => {
@@ -882,6 +912,8 @@ const TextToSpeech = () => {
       }
 
       if (isReachPageEnd) {
+        await waitForSelection(generation);
+        if (generation !== speechGenerationRef.current || stateRef.current.isPaused || !stateRef.current.isAudioOn) return;
         if (isReadingRawPDF(currentBook)) {
           let currentPosition = htmlBook.rendition.getPosition();
           await htmlBook.rendition.goToChapterIndex(
@@ -900,7 +932,7 @@ const TextToSpeech = () => {
         break;
       }
     }
-    if (stateRef.current.isAudioOn && isReading) {
+    if (generation === speechGenerationRef.current && stateRef.current.isAudioOn && !stateRef.current.isPaused && isReading) {
       // 重置内存缓存；磁盘 tts 缓存按内容哈希命名，保留复用
       TTSUtil.setAudioPaths();
       let position = htmlBook.rendition.getPosition();
@@ -914,6 +946,7 @@ const TextToSpeech = () => {
     }
   }
   const handleSystemRead = async (index) => {
+    const generation = speechGenerationRef.current;
     if (stateRef.current.isPaused || !stateRef.current.isAudioOn) return;
     if (index >= nodeListRef.current.length) {
       nodeListRef.current = [];
@@ -922,11 +955,7 @@ const TextToSpeech = () => {
     }
     setState({ currentIndex: index });
     let node = nodeListRef.current[index];
-    let style = highlightUtilRef.current.buildTtsHighlightStyle(
-      isReadingRawPDF(currentBook),
-      ConfigService.getReaderConfig("textOrientation") === "vertical"
-    );
-    htmlBook.rendition.highlightAudioNode(node.text, style);
+    highlightSpeech(node.text);
     toast.dismiss("tts-load");
     let res = await handleSystemSpeech(
       index,
@@ -934,8 +963,10 @@ const TextToSpeech = () => {
       parseFloat(ConfigService.getReaderConfig("voiceSpeed")) || 1
     );
 
+    if (generation !== speechGenerationRef.current || stateRef.current.isPaused || !stateRef.current.isAudioOn) return;
     if (res === "start") {
       let visibleTextList = await htmlBook.rendition.visibleText();
+      if (generation !== speechGenerationRef.current || stateRef.current.isPaused || !stateRef.current.isAudioOn) return;
 
       let lastVisibleTextList = visibleTextList;
 
@@ -955,6 +986,8 @@ const TextToSpeech = () => {
         isReachPageEnd = true;
       }
       if (isReachPageEnd) {
+        await waitForSelection(generation);
+        if (generation !== speechGenerationRef.current || stateRef.current.isPaused || !stateRef.current.isAudioOn) return;
         if (isReadingRawPDF(currentBook)) {
           let currentPosition = htmlBook.rendition.getPosition();
           await htmlBook.rendition.goToChapterIndex(
@@ -985,6 +1018,7 @@ const TextToSpeech = () => {
         return;
       }
       index++;
+      if (generation !== speechGenerationRef.current || stateRef.current.isPaused || !stateRef.current.isAudioOn) return;
       if (
         nodeListRef.current[index] &&
         nodeListRef.current[index].voiceEngine !== "system"
@@ -999,8 +1033,14 @@ const TextToSpeech = () => {
   }
   const handleSpeech = async (index: number) => {
     return new Promise<string>(async (resolve) => {
-      let res = await TTSUtil.readAloud(index);
-      if (res === "loaderror") {
+      const generation = speechGenerationRef.current;
+      audioLoadingRef.current = generation;
+      let res: string;
+      try { res = await TTSUtil.readAloud(index); }
+      finally { if (audioLoadingRef.current === generation) audioLoadingRef.current = null; }
+      if (res === "cancelled") {
+        resolve("end");
+      } else if (res === "loaderror") {
         resolve("error");
       } else {
         let player = TTSUtil.getPlayer();
@@ -1086,15 +1126,12 @@ const TextToSpeech = () => {
       <>
         <div className="tts-player-container">
           <div className="tts-player-controls">
-            <span
+            <button type="button"
               className="tts-player-btn"
               title={t("Previous")}
+              aria-label={t("Previous")}
+              disabled={!state.isAudioOn}
               onClick={() => handlePrevSentence()}
-              style={
-                !stateRef.current.isAudioOn
-                  ? { opacity: 0.3, cursor: "not-allowed" }
-                  : {}
-              }
             >
               <svg
                 viewBox="0 0 24 24"
@@ -1104,9 +1141,10 @@ const TextToSpeech = () => {
               >
                 <path d="M6 6h2v12H6zm3.5 6l8.5 6V6z" />
               </svg>
-            </span>
-            <span
+            </button>
+            <button type="button"
               className="tts-player-btn tts-player-btn-main"
+              aria-label={!state.isAudioOn ? t("Play") : state.isPaused ? t("Resume") : t("Pause")}
               title={
                 !stateRef.current.isAudioOn
                   ? t("Play")
@@ -1143,16 +1181,14 @@ const TextToSpeech = () => {
                   <path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z" />
                 </svg>
               )}
-            </span>
-            <span
+              <span>{!state.isAudioOn ? t("Play") : state.isPaused ? t("Resume") : t("Pause")}</span>
+            </button>
+            <button type="button"
               className="tts-player-btn"
               title={t("Next")}
+              aria-label={t("Next")}
+              disabled={!state.isAudioOn}
               onClick={() => handleNextSentence()}
-              style={
-                !stateRef.current.isAudioOn
-                  ? { opacity: 0.3, cursor: "not-allowed" }
-                  : {}
-              }
             >
               <svg
                 viewBox="0 0 24 24"
@@ -1162,16 +1198,13 @@ const TextToSpeech = () => {
               >
                 <path d="M6 18l8.5-6L6 6v12zM16 6v12h2V6h-2z" />
               </svg>
-            </span>
-            <span
+            </button>
+            <button type="button"
               className="tts-player-btn"
               title={t("Stop")}
+              aria-label={t("Stop")}
+              disabled={!state.isAudioOn}
               onClick={() => handleStop()}
-              style={
-                !stateRef.current.isAudioOn
-                  ? { opacity: 0.3, cursor: "not-allowed" }
-                  : {}
-              }
             >
               <svg
                 viewBox="0 0 24 24"
@@ -1181,7 +1214,7 @@ const TextToSpeech = () => {
               >
                 <path d="M6 6h12v12H6z" />
               </svg>
-            </span>
+            </button>
           </div>
           {stateRef.current.isAudioOn && nodeListRef.current.length > 0 && (
             <div className="tts-player-info">

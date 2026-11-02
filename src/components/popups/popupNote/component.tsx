@@ -250,12 +250,7 @@ const PopupNote = (props: PopupNoteProps) => {
           width: "calc(100% - 40px)",
         }}
       >
-        <NoteTag
-          {...({
-            handleTag: handleTag,
-            tag: noteKey && note ? note.tag : [],
-          } as any)}
-        />
+        <NoteTag handleTag={handleTag} tag={tag} isEdit={!!noteKey} isCard={false} />
       </div>
 
       <div className="note-button-container">

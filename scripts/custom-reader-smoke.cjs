@@ -1,0 +1,208 @@
+// Start `yarn start`, then pass an installed Custom executable. The renderer
+// under test comes from localhost; the installed application files stay intact.
+const { _electron: electron } = require('@playwright/test');
+const fs = require('fs'), path = require('path');
+const assert = require('assert/strict');
+const { isInside } = require('../src/utils/main/custom/runtime');
+(async () => {
+  const executablePath = process.argv[2];
+  assert.ok(executablePath && path.isAbsolute(executablePath) && fs.existsSync(executablePath), 'Pass the absolute path to Koodo Reader Custom.exe');
+  assert.equal(path.basename(executablePath).toLowerCase(), 'koodo reader custom.exe');
+  const output = path.resolve(__dirname, '../dist'); fs.mkdirSync(output, { recursive: true });
+  let app;
+  const root = fs.mkdtempSync(path.join(require('os').tmpdir(), 'krc-test-reader-'));
+  try {
+    const env = { ...process.env, KRC_TEST_PROFILE: root, ELECTRON_IS_DEV: '0' }; delete env.ELECTRON_RUN_AS_NODE;
+    app = await electron.launch({ executablePath, env, timeout: 60000 });
+    const locations = await app.evaluate(({ app }) => ['userData', 'sessionData', 'temp', 'logs', 'crashDumps'].map(name => app.getPath(name)));
+    assert.ok(locations.every(location => isInside(root, location)), 'Every writable profile location must be isolated');
+    await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().forEach(window => { window.webContents.setBackgroundThrottling(false); window.showInactive(); }));
+    // Playwright's launch arguments are not a book-open request.
+    await app.evaluate(({ ipcMain }) => { ipcMain.removeAllListeners('get-file-data'); ipcMain.on('get-file-data', event => { event.returnValue = ''; }); });
+  const context = app.context();
+  await context.route('**/*', route => {
+    const protocol = new URL(route.request().url()).protocol, hostname = new URL(route.request().url()).hostname;
+    return ['data:', 'blob:'].includes(protocol) || ['127.0.0.1','localhost'].includes(hostname) ? route.continue() : route.abort();
+  });
+  await context.addInitScript(() => {
+    window.__speech = { speaking: false, paused: false, utterances: [], getVoices: () => [{ name: 'FixtureVoice', lang: 'en-US', localService: true, default: true }],
+      speak(msg) { this.utterances.push(msg); this.speaking = true; }, cancel() { this.speaking = false; this.paused = false; }, pause() { this.paused = true; }, resume() { this.paused = false; } };
+    Object.defineProperty(window, 'speechSynthesis', { value: window.__speech });
+    window.SpeechSynthesisUtterance = class { text = ''; };
+  });
+  const page = await app.firstWindow(), errors = [];
+  page.on('pageerror', error => { errors.push(error.message); console.error('PAGE_ERROR', error.message); });
+    await page.goto('http://127.0.0.1:3000/');
+    await page.waitForTimeout(1000);
+    await page.evaluate(async () => {
+      const { ConfigService } = await import('/src/assets/lib/kookit-extra-browser.min.js');
+      const { default: BookUtil } = await import('/src/utils/file/bookUtil.ts');
+      const { default: DatabaseService } = await import('/src/utils/storage/databaseService.ts');
+      const text = '<!doctype html><html><head><title>Synthetic reader check</title></head><body><h1>Synthetic reader check</h1>' + Array.from({length: 25}, (_, i) => `<p>Paragraph ${i + 1}. Reading while selecting text should preserve this selection. This is a synthetic book for reader interaction checks.</p>`).join('') + '</body></html>';
+      const bytes = new TextEncoder().encode(text);
+      const book = { key: 'reader-fixture', name: 'Synthetic reader check', author: 'Test', description: '', md5: 'fixture', cover: '', format: 'HTML', publisher: '', size: bytes.length, page: 1, path: '', charset: 'utf-8', published: '', modified: '', identifier: '', language: 'en', subject: '', rights: '', isbn: '', layout: '' };
+      ConfigService.setReaderConfig('readerMode', 'single'); ConfigService.setReaderConfig('animation', 'none');
+      ConfigService.setReaderConfig('voiceEngine', 'system'); ConfigService.setReaderConfig('voiceName', 'FixtureVoice'); ConfigService.setReaderConfig('voiceLocale', 'en-US');
+      ConfigService.setItem('isFirst', 'no'); ConfigService.setItem('isFirstRun', 'no');
+      ConfigService.setListConfig('Fixture tag', 'noteTags');
+      await BookUtil.addBook(book.key, 'html', bytes.buffer);
+      await DatabaseService.saveRecord(book, 'books');
+    });
+    await page.goto('http://127.0.0.1:3000/#/html/reader-fixture?title=Synthetic');
+    await page.waitForFunction(async () => (await import('/src/store/useAppStore.ts')).useAppStore.getState().reader.htmlBook?.rendition?.audioText);
+    await page.waitForTimeout(1800);
+    const openSpeech = () => page.locator('.icon-earphone-line').evaluate(node => node.closest('.reader-setting-icon-container').click());
+    await openSpeech();
+    await page.locator('.tts-player-btn-main').waitFor();
+    await page.locator('.tts-player-btn-main').evaluate(node => node.click());
+    await page.waitForFunction(() => window.__speech.utterances.length > 0 && window.__speech.speaking);
+    const count = await page.evaluate(() => window.__speech.utterances.length);
+    console.log('PASS playback started');
+    await page.locator('.speech-dialog-close').evaluate(node => node.click());
+    await page.locator('.tts-player-btn-main').waitFor({ state: 'hidden' });
+    await openSpeech();
+    assert.match(await page.locator('.tts-player-btn-main').innerText(), /Pause|暂停/);
+    assert.equal(await page.locator('.tts-player-btn').last().isDisabled(), false);
+    assert.equal(await page.evaluate(() => window.__speech.speaking), true);
+    console.log('PASS playback and controls survive panel hide/reopen');
+    await page.locator('.tts-player-btn-main').evaluate(node => node.click());
+    assert.equal(await page.evaluate(() => window.__speech.paused), true);
+    assert.match(await page.locator('.tts-player-btn-main').innerText(), /Resume|继续/);
+    await page.locator('.tts-player-btn-main').evaluate(node => node.click());
+    assert.equal(await page.evaluate(() => window.__speech.paused), false);
+    assert.equal(await page.evaluate(() => window.__speech.utterances.length), count);
+    console.log('PASS pause/resume without restarting the utterance');
+    const selected = await page.evaluate(async () => {
+      const { useAppStore } = await import('/src/store/useAppStore.ts');
+      const { getIframeDoc } = await import('/src/utils/reader/docUtil.ts');
+      const state = useAppStore.getState(), doc = getIframeDoc(state.book.currentBook)[0], paragraph = doc.querySelectorAll('p')[1];
+      paragraph.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true }));
+      const range = doc.createRange(); range.selectNodeContents(paragraph);
+      const selection = doc.getSelection(); selection.removeAllRanges(); selection.addRange(range);
+      paragraph.dispatchEvent(new PointerEvent('pointerup', { bubbles: true }));
+      paragraph.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      window.__speech.utterances.at(-1).onend();
+      return selection.toString();
+    });
+    await page.waitForTimeout(350);
+    assert.ok(selected.length > 20);
+    await page.locator('.popup-menu-container .popup-menu-box').first().waitFor();
+    const quote = await page.evaluate(async () => {
+      const { useAppStore } = await import('/src/store/useAppStore.ts');
+      const { getIframeDoc } = await import('/src/utils/reader/docUtil.ts');
+      return getIframeDoc(useAppStore.getState().book.currentBook)[0].getSelection().toString();
+    });
+    assert.equal(quote, selected);
+    console.log('PASS selection and popup survive completion of a spoken sentence');
+    await page.locator('.note-option').evaluate(node => node.click());
+    await page.locator('.note-editor').waitFor();
+    await page.locator('.tag-list-item').filter({ hasText: 'Fixture tag' }).locator('.center').evaluate(node => node.click());
+    await page.locator('.tag-list-item.active-tag').waitFor();
+    assert.match(await page.locator('.tag-list-item.active-tag').innerText(), /Fixture tag/);
+    await page.locator('.editor-box').fill('A synthetic note');
+    await page.locator('.note-button-container .book-manage-title').last().evaluate(node => node.click());
+    await page.locator('.note-editor').waitFor({ state: 'detached' });
+    const notes = await page.evaluate(async () => (await import('/src/utils/storage/databaseService.ts')).default.getRecordsByBookKey('reader-fixture', 'notes'));
+    assert.equal(notes.length, 1); assert.deepEqual(notes[0].tag, ['Fixture tag']);
+    console.log('PASS first-click tag feedback and saved note');
+    await page.evaluate(async key => {
+      const state = (await import('/src/store/useAppStore.ts')).useAppStore.getState();
+      state.handleNoteKey(key); state.handleMenuMode('note'); state.handleOpenMenu(true);
+    }, notes[0].key);
+    await page.locator('.tag-list-item.active-tag').waitFor();
+    const tag = page.locator('.tag-list-item').filter({ hasText: 'Fixture tag' }).locator('.center');
+    await tag.evaluate(node => node.click());
+    assert.equal(await page.locator('.tag-list-item.active-tag').count(), 0);
+    await tag.evaluate(node => node.click());
+    await page.locator('.tag-list-item.active-tag').waitFor();
+    await page.locator('.note-button-container .book-manage-title').last().evaluate(node => node.click());
+    await page.locator('.note-editor').waitFor({ state: 'detached' });
+    console.log('PASS existing-note tag selection updates immediately');
+    await openSpeech();
+    await page.locator('.tts-player-btn').last().evaluate(node => node.click());
+    assert.equal(await page.evaluate(() => window.__speech.speaking), false);
+    console.log('PASS stop after panel reopen');
+    await page.evaluate(async () => {
+      const { ConfigService } = await import('/src/assets/lib/kookit-extra-browser.min.js');
+      const { useAppStore } = await import('/src/store/useAppStore.ts');
+      const { default: Plugin } = await import('/src/models/Plugin.ts');
+      const { default: TTS } = await import('/src/utils/reader/ttsUtil.ts');
+      const voice = { name: 'FixtureCustomVoice', locale: 'en-US', language: 'en-US', plugin: 'fixture-voice-plugin', config: {} };
+      useAppStore.getState().handlePlugins([new Plugin('fixture-voice-plugin', 'voice', 'Fixture', '', '1', '', {}, [], [voice])]);
+      ConfigService.setReaderConfig('voiceEngine', voice.plugin); ConfigService.setReaderConfig('voiceName', voice.name);
+      const bytes = new Uint8Array(44 + 8000 * 8 * 2), view = new DataView(bytes.buffer);
+      const ascii = (offset, value) => [...value].forEach((character, i) => view.setUint8(offset + i, character.charCodeAt(0)));
+      ascii(0, 'RIFF'); view.setUint32(4, bytes.length - 8, true); ascii(8, 'WAVE'); ascii(12, 'fmt '); view.setUint32(16, 16, true);
+      view.setUint16(20, 1, true); view.setUint16(22, 1, true); view.setUint32(24, 8000, true); view.setUint32(28, 16000, true); view.setUint16(32, 2, true); view.setUint16(34, 16, true);
+      ascii(36, 'data'); view.setUint32(40, bytes.length - 44, true);
+      const url = URL.createObjectURL(new Blob([bytes], { type: 'audio/wav' })) + '#fixture.wav';
+      window.__customRequests = 0;
+      TTS.getAudioPath = async () => { const first = ++window.__customRequests === 1; if (first) await new Promise(resolve => setTimeout(resolve, 450)); return url; };
+    });
+    await page.locator('.tts-player-btn-main').evaluate(node => node.click());
+    await page.waitForFunction(() => window.__customRequests > 0);
+    await page.locator('.tts-player-btn-main').evaluate(node => node.click());
+    await page.waitForTimeout(850);
+    assert.equal(await page.evaluate(async () => { const { default: TTS } = await import('/src/utils/reader/ttsUtil.ts'); return !!TTS.getPlayer()?.playing(); }), false);
+    assert.match(await page.locator('.tts-player-btn-main').innerText(), /Resume|继续/);
+    console.log('PASS pause during custom voice generation does not play late audio');
+    await page.locator('.tts-player-btn-main').evaluate(node => node.click());
+    await page.waitForFunction(async () => (await import('/src/utils/reader/ttsUtil.ts')).default.getPlayer()?.playing());
+    await page.waitForTimeout(150);
+    await page.locator('.tts-player-btn-main').evaluate(node => node.click());
+    const pausedAt = await page.evaluate(async () => { const player = (await import('/src/utils/reader/ttsUtil.ts')).default.getPlayer(); window.__pausedPlayer = player; return player.seek(); });
+    await page.locator('.speech-dialog-close').evaluate(node => node.click());
+    await page.locator('.tts-player-btn-main').waitFor({ state: 'hidden' });
+    await openSpeech();
+    assert.match(await page.locator('.tts-player-btn-main').innerText(), /Resume|继续/);
+    await page.locator('.tts-player-btn-main').evaluate(node => node.click());
+    const resumed = await page.evaluate(async () => { const player = (await import('/src/utils/reader/ttsUtil.ts')).default.getPlayer(); return { same: player === window.__pausedPlayer, position: player.seek(), playing: player.playing() }; });
+    assert.equal(resumed.same, true); assert.equal(resumed.playing, true); assert.ok(resumed.position >= pausedAt);
+    await page.locator('.tts-player-btn').last().evaluate(node => node.click());
+    console.log('PASS real Howler audio pauses and resumes at the same position after panel reopen');
+    await page.evaluate(() => { window.__customRequests = 0; });
+    await page.locator('.tts-player-btn-main').evaluate(node => node.click());
+    await page.waitForFunction(() => window.__customRequests > 0);
+    await page.locator('.tts-player-btn-main').evaluate(node => node.click());
+    await page.locator('.tts-player-btn-main').evaluate(node => node.click());
+    await page.waitForFunction(async () => (await import('/src/utils/reader/ttsUtil.ts')).default.getPlayer()?.playing());
+    await page.locator('.tts-player-btn').last().evaluate(node => node.click());
+    console.log('PASS immediate pause/resume during generation reuses the pending load');
+    await page.evaluate(async () => {
+      const { ConfigService } = await import('/src/assets/lib/kookit-extra-browser.min.js');
+      ConfigService.setReaderConfig('appSkin', 'night'); ConfigService.setReaderConfig('backgroundColor', 'rgba(44,47,49,1)');
+      ConfigService.setReaderConfig('textColor', 'rgba(255,255,255,1)'); ConfigService.setReaderConfig('animation', 'slide');
+      ConfigService.setReaderConfig('isEinkMode', 'yes');
+    });
+    await page.reload();
+    await page.waitForFunction(async () => (await import('/src/store/useAppStore.ts')).useAppStore.getState().reader.htmlBook?.rendition?.audioText);
+    await page.waitForTimeout(1500);
+    const appearance = await page.evaluate(async () => {
+      const { ConfigService } = await import('/src/assets/lib/kookit-extra-browser.min.js');
+      const { useAppStore } = await import('/src/store/useAppStore.ts');
+      const { getIframeDoc } = await import('/src/utils/reader/docUtil.ts');
+      const doc = getIframeDoc(useAppStore.getState().book.currentBook)[0];
+      return { enabled: document.documentElement.dataset.eink, background: getComputedStyle(doc.body).backgroundColor, color: getComputedStyle(doc.querySelector('p')).color,
+        grayscale: getComputedStyle(document.getElementById('root')).filter, savedBackground: ConfigService.getReaderConfig('backgroundColor'), savedAnimation: ConfigService.getReaderConfig('animation') };
+    });
+    assert.equal(appearance.enabled, 'true'); assert.equal(appearance.background, 'rgb(255, 255, 255)'); assert.equal(appearance.color, 'rgb(0, 0, 0)');
+    assert.equal(appearance.grayscale, 'grayscale(1)'); assert.equal(appearance.savedBackground, 'rgba(44,47,49,1)'); assert.equal(appearance.savedAnimation, 'slide');
+    console.log('PASS monochrome reader body and unchanged saved appearance preferences');
+    await page.screenshot({ path: path.join(output, 'reader-eink.png') });
+    const ended = await page.evaluate(() => new Promise(resolve => {
+      const style = document.createElement('style'); style.textContent = '@keyframes fixture-animation { from { opacity: 0; } to { opacity: 1; } }'; document.head.append(style);
+      const element = document.createElement('div'); element.style.animation = 'fixture-animation 1s'; element.addEventListener('animationend', () => { element.remove(); style.remove(); resolve(true); }, { once: true }); document.body.append(element);
+      setTimeout(() => resolve(false), 500);
+    }));
+    assert.equal(ended, true); console.log('PASS imperceptible animations still release dialog lifecycle callbacks');
+    await page.evaluate(async () => (await import('/src/assets/lib/kookit-extra-browser.min.js')).ConfigService.setReaderConfig('isEinkMode', 'no'));
+    await page.reload(); await page.waitForTimeout(1800);
+    assert.equal(await page.evaluate(() => document.documentElement.dataset.theme), 'dark');
+    console.log('PASS disabling E-ink restores the saved dark theme');
+    assert.deepEqual(errors, [], 'The source renderer must not raise uncaught errors');
+    fs.writeFileSync(path.join(output, 'custom-reader-smoke.json'), JSON.stringify({ passed: true, mode: 'isolated Windows runtime with localhost source renderer', checks: ['selection-during-speech', 'new-note-tag-feedback', 'existing-note-tag-feedback', 'speech-panel-reopen', 'system-pause-resume', 'custom-loading-pause', 'custom-position-resume', 'custom-fast-pause-resume', 'stop-after-reopen', 'monochrome-book-style', 'eink-theme-restoration', 'dialog-animation-lifecycle'] }, null, 2));
+  } finally {
+    if (app) await app.close();
+    if (root && path.dirname(path.resolve(root)) === path.resolve(require('os').tmpdir()) && path.basename(root).startsWith('krc-test-reader-')) fs.rmSync(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
+  }
+})().catch(error => { console.error(error.message); process.exitCode = 1; });

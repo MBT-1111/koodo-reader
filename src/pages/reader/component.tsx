@@ -646,6 +646,7 @@ const Reader = () => {
   const showCustomWindowControls =
     isSeparateElectronWindow && (!isMacOS || isMergeWord);
   const renditionProps = {
+    handleCloseDialogs: closeSettingDialogs,
     handleLeaveReader: handleLeaveReader,
     handleEnterReader: handleEnterReader,
     isShow:
@@ -848,10 +849,14 @@ const Reader = () => {
           )}
           <div
             className="reader-setting-icon-container"
-            {...handleDialogButtonHover(
-              handleSpeechDialog,
-              ".speech-dialog-container"
-            )}
+            aria-label={t("Text to speech")}
+            onClick={(event) => {
+              dialogAnchorIconRef.current = event.currentTarget;
+              const open = !isSpeechOpen;
+              closeSettingDialogs();
+              handleSpeechDialog(open);
+              window.requestAnimationFrame(updateSettingDialogPosition);
+            }}
           >
             <span
               className={`icon-earphone-line reader-setting-icon`}
@@ -1127,24 +1132,21 @@ const Reader = () => {
       </div>
 
       {currentBook.key && <Viewer {...(renditionProps as any)} />}
-      {((readerMode === "scroll" || readerMode === "single") && isScaleOpen) ||
-      isConvertOpen ||
-      isPdfCropOpen ||
-      isStudyLangOpen ||
-      isAssistReadOpen ||
-      isSpeechOpen ? (
-        <div className="reader-setting-dialog-anchor">
-          {(readerMode === "scroll" || readerMode === "single") &&
-            isScaleOpen && <ScalePageDialog />}
-          {isConvertOpen && <ConvertDialog />}
-          {isPdfCropOpen && <PdfCropDialog />}
-          {isStudyLangOpen && <StudyLangDialog />}
-          {isAssistReadOpen && <AssistReadDialog />}
-          <div style={{ display: isSpeechOpen ? "block" : "none" }}>
-            <SpeechDialog />
-          </div>
+      <div className="reader-setting-dialog-anchor" style={{
+        display: ((readerMode === "scroll" || readerMode === "single") && isScaleOpen) ||
+          isConvertOpen || isPdfCropOpen || isStudyLangOpen || isAssistReadOpen || isSpeechOpen
+          ? undefined : "none",
+      }}>
+        {(readerMode === "scroll" || readerMode === "single") &&
+          isScaleOpen && <ScalePageDialog />}
+        {isConvertOpen && <ConvertDialog />}
+        {isPdfCropOpen && <PdfCropDialog />}
+        {isStudyLangOpen && <StudyLangDialog />}
+        {isAssistReadOpen && <AssistReadDialog />}
+        <div style={{ display: isSpeechOpen ? "block" : "none" }}>
+          {currentBook.key && <SpeechDialog key={currentBook.key} />}
         </div>
-      ) : null}
+      </div>
       {isAnnotationOpen && <AnnotationDialog />}
       <SupportDialog />
       {isOpenPopupOptionDialog && (

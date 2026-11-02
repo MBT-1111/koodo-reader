@@ -16,12 +16,6 @@ const SpeechDialog = () => {
   return (
     <div
       className="sort-dialog-container speech-dialog-container"
-      onMouseEnter={() => {
-        handleSpeechDialog(true);
-      }}
-      onMouseLeave={() => {
-        handleSpeechDialog(false);
-      }}
       style={{
         width: "280px",
         overflowY: "auto",

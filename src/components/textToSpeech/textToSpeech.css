@@ -58,6 +58,11 @@
   gap: 10px;
 }
 .tts-player-btn {
+  border: none;
+  padding: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -76,12 +81,21 @@
   background: rgba(128, 128, 128, 0.15);
 }
 .tts-player-btn-main {
-  width: 46px;
+  width: auto;
+  min-width: 100px;
+  gap: 4px;
+  padding: 0 12px;
   height: 46px;
   opacity: 1;
   border-radius: 50%;
   background: rgba(128, 128, 128, 0.12);
 }
+.tts-player-btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.35;
+}
+.tts-player-btn:disabled:hover { background: transparent; }
+.tts-player-btn:focus-visible { outline: 2px solid currentColor; outline-offset: 2px; }
 .tts-player-btn-main:hover {
   background: rgba(128, 128, 128, 0.25);
 }

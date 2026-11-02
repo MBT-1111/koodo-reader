@@ -841,7 +841,7 @@
   "Open console": "打开控制台",
   "Appearance": "外观",
   "E-ink mode": "E-ink 模式（墨水屏）",
-  "Use a black-and-white interface with clear borders and no shadows or animations. Your regular theme is restored when turned off.": "使用黑白界面和清晰边框，关闭阴影与动画。关闭后恢复原来的主题。",
+  "Use a black-and-white interface with clear borders and no shadows or animations. Your regular theme is restored when turned off.": "界面和正文使用黑白配色，封面与插图转为灰阶，边框清晰，翻页无动效。关闭后恢复原先的颜色和翻页效果。",
   "Light mode": "白天模式",
   "Night mode": "黑夜模式",
   "Follow OS": "追随系统",

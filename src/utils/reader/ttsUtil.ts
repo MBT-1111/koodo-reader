@@ -22,6 +22,7 @@ class TTSUtil {
   static processingIndexes: Set<number> = new Set();
   static cacheGeneration = 0;
   static async readAloud(currentIndex: number) {
+    const generation = this.cacheGeneration;
     // 清理比当前 index 小 10 的已朗读缓存
     this.audioPaths = this.audioPaths.filter(
       (item) => item.index >= currentIndex - 10
@@ -41,7 +42,13 @@ class TTSUtil {
           resolve("loaderror");
         },
         onload: async () => {
-          this.player.play();
+          if (generation !== this.cacheGeneration || this.player !== sound) {
+            sound.unload();
+            resolve("cancelled");
+            return;
+          }
+          if (this.isPaused) this.pausedMidSentence = true;
+          else sound.play();
           resolve("load");
         },
       });
@@ -62,7 +69,6 @@ class TTSUtil {
     isOfficialAIVoice: boolean
   ) {
     const generation = this.cacheGeneration;
-    this.isPaused = false;
 
     if (isOfficialAIVoice) {
       const cacheCount = Math.min(
@@ -221,13 +227,14 @@ class TTSUtil {
     }
   }
   static async pauseAudio() {
-    if (this.player) {
+    this.isPaused = true;
+    this.pausedMidSentence = !!this.player?.playing?.();
+    if (this.player && this.pausedMidSentence) {
       this.player.pause();
-      this.isPaused = true;
-      this.pausedMidSentence = true;
     }
   }
   static resumeAudio(): boolean {
+    this.isPaused = false;
     if (this.player && this.pausedMidSentence) {
       this.player.play();
       this.isPaused = false;
@@ -240,6 +247,8 @@ class TTSUtil {
     if (this.player && this.player.stop) {
       this.player.stop();
     }
+    this.player?.unload?.();
+    this.player = undefined;
     this.isPaused = true;
     // Invalidate in-flight work immediately; retain the persistent disk cache.
     this.setAudioPaths();

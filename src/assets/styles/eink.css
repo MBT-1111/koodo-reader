@@ -32,7 +32,10 @@ html[data-eink="true"] *::before,
 html[data-eink="true"] *::after {
   box-shadow: none !important;
   text-shadow: none !important;
-  animation: none !important;
+  /* Retain animationend so closing dialogs are actually removed from the DOM. */
+  animation-duration: .001ms !important;
+  animation-delay: 0s !important;
+  animation-iteration-count: 1 !important;
   transition: none !important;
   scroll-behavior: auto !important;
   backdrop-filter: none !important;
@@ -40,6 +43,7 @@ html[data-eink="true"] *::after {
 
 html[data-eink="true"] #root {
   background-image: none !important;
+  filter: grayscale(1);
 }
 
 html[data-eink="true"] :is(
@@ -67,4 +71,34 @@ html[data-eink="true"] .single-control-button {
 
 html[data-eink="true"] :is(.spine-shadow-left, .spine-shadow-right) {
   display: none;
+}
+
+html[data-eink="true"] :is(.book-cover, .book-item-cover, .book-cover-item-cover, .book-cover img, .book-item-cover img) {
+  filter: grayscale(1) contrast(1.1);
+  border-radius: 0;
+}
+html[data-eink="true"] :is(button, input, select, textarea, .tts-player-btn, .tag-list-item) {
+  border: 1px solid #000;
+  border-radius: 2px;
+}
+html[data-eink="true"] :is(.setting-dialog-container, .sort-dialog-container, .popup-menu-container, .popup-box-container, .vex-content) {
+  background: #fff !important;
+  color: #000 !important;
+  border: 1px solid #000;
+  border-radius: 3px;
+}
+html[data-eink="true"] :is(.setting-option-subtitle, .tts-player-info, .book-subcontent-name, .speech-dialog-close) {
+  color: #000 !important;
+  opacity: 1;
+}
+html[data-eink="true"] :is(.tts-player-btn, .tag-list-item) { opacity: 1; }
+html[data-eink="true"] .tts-player-btn:disabled { opacity: .4; }
+html[data-eink="true"] .tag-list-item.active-tag {
+  background: #000 !important;
+  color: #fff !important;
+}
+html[data-eink="true"] .vex { filter: grayscale(1); }
+html[data-eink="true"] :is(.background, .background-image) {
+  background: #fff !important;
+  background-image: none !important;
 }

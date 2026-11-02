@@ -22,7 +22,7 @@ vi.mock("../../assets/lib/kookit-extra-browser.min", () => ({ ConfigService: {
 vi.mock("../file/backgroundUtil", () => ({ default: {} }));
 vi.mock("../file/fontUtil", () => ({ default: {} }));
 vi.mock("./docUtil", () => ({ getOuterDoc: () => null }));
-vi.mock("../../assets/lib/kookit.min", () => ({ StyleHelper: {} }));
+vi.mock("../../assets/lib/kookit.min", () => ({ StyleHelper: { getDefaultCss: () => "saved-book-css" } }));
 vi.mock("./themeUtil", () => ({ applyThemeColor: vi.fn(), removeThemeColor: vi.fn() }));
 
 beforeEach(() => {
@@ -38,6 +38,15 @@ beforeEach(() => {
 afterEach(() => vi.unstubAllGlobals());
 
 describe("E-ink application theme", () => {
+  it("applies monochrome styling inside the book and restores the saved book CSS when disabled", () => {
+    settings.set("isEinkMode", "yes");
+    settings.set("textColor", "saved-text-color");
+    expect(StyleUtil.getDefaultCss("fixture")).toContain("filter: grayscale(1)");
+    expect(StyleUtil.getDefaultCss("fixture")).toContain("background: #fff !important");
+    expect(settings.get("textColor")).toBe("saved-text-color");
+    settings.set("isEinkMode", "no");
+    expect(StyleUtil.getDefaultCss("fixture")).toBe("saved-book-css");
+  });
   it("uses a light black-and-white interface while preserving saved theme and book colors", () => {
     settings.set("appSkin", "night");
     settings.set("themeColor", "#0179CA");

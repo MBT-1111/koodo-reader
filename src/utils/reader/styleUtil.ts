@@ -4,6 +4,16 @@ import { applyThemeColor, removeThemeColor } from "./themeUtil";
 import { StyleHelper } from "../../assets/lib/kookit.min";
 import FontUtil from "../file/fontUtil";
 
+export const einkReaderCss = `
+html, body { background: #fff !important; background-image: none !important; color: #000 !important; }
+body { filter: grayscale(1); }
+/* The ID branch raises specificity above the engine's long :not(...) color rules without changing book IDs. */
+:is(html, #koodo-eink-reader) :is(body, p, span, div, section, article, li, a, h1, h2, h3, h4, h5, h6, td, th, blockquote, pre, code) { color: #000 !important; text-shadow: none !important; }
+*, *::before, *::after { animation-duration: .001ms !important; animation-iteration-count: 1 !important; animation-delay: 0s !important; transition: none !important; scroll-behavior: auto !important; box-shadow: none !important; }
+::selection { background: #000 !important; color: #fff !important; }
+a { text-decoration: underline; }
+`;
+
 class styleUtil {
   // add default css for iframe
   static addDefaultCss(bookKey: string) {
@@ -43,7 +53,8 @@ class styleUtil {
   }
   // get default css for iframe
   static getDefaultCss(bookKey: string) {
-    return StyleHelper.getDefaultCss(ConfigService, bookKey);
+    const css = StyleHelper.getDefaultCss(ConfigService, bookKey);
+    return ConfigService.getReaderConfig("isEinkMode") === "yes" ? `${css}\n${einkReaderCss}` : css;
   }
 
   static async applyReaderFonts(rendition: any): Promise<void> {
