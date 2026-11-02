@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, type ComponentType } from "react";
 import "./settingDialog.css";
 import { useAppStore } from "../../../store/useAppStore";
 import { Trans } from "react-i18next";
@@ -21,6 +21,16 @@ import ShortcutSetting from "../../../containers/settings/shortcutSetting";
 import { isElectron } from "react-device-detect";
 import { personalMode } from "../../../custom/personal";
 import { isAndroid } from "../../../utils/platform";
+import AndroidSettings from "../../androidSettings";
+
+const settingPages: Record<string, ComponentType> = {
+  general: GeneralSetting, reading: ReadingSetting, shortcut: ShortcutSetting,
+  appearance: AppearanceSetting, sync: SyncSetting,
+  account: personalMode ? AISetting : AccountSetting,
+  data: DataSetting, about: AboutSetting, ai: AISetting, background: BackgroundSetting,
+  font: FontSetting, chapter: ChapterSetting, text: TextSetting, dict: DictSetting,
+  more: MoreSetting, plugins: PluginSetting,
+};
 const SettingDialog = () => {
   const settingMode = useAppStore((s) => s.manager.settingMode);
   const handleSetting = useAppStore((s) => s.handleSetting);
@@ -72,6 +82,8 @@ const SettingDialog = () => {
     switch (settingMode) {
       case "general":
         return "General";
+      case "data":
+        return "Data";
       case "reading":
         return "Reading";
       case "shortcut":
@@ -104,6 +116,13 @@ const SettingDialog = () => {
         return "Setting";
     }
   };
+
+  const CurrentPage = settingPages[settingMode] || PluginSetting;
+  if (isAndroid) return (
+    <AndroidSettings title={getCurrentPageTitle()} contentRef={contentRef}>
+      <CurrentPage />
+    </AndroidSettings>
+  );
 
   return (
       <div className="setting-dialog-container">
@@ -209,39 +228,7 @@ const SettingDialog = () => {
           </div>
 
           <div className="setting-dialog-info" ref={contentRef}>
-            {settingMode === "general" ? (
-              <GeneralSetting />
-            ) : settingMode === "reading" ? (
-              <ReadingSetting />
-            ) : settingMode === "shortcut" ? (
-              <ShortcutSetting />
-            ) : settingMode === "appearance" ? (
-              <AppearanceSetting />
-            ) : settingMode === "sync" ? (
-              <SyncSetting />
-            ) : settingMode === "account" ? (
-              personalMode ? <AISetting /> : <AccountSetting />
-            ) : settingMode === "data" ? (
-              <DataSetting />
-            ) : settingMode === "about" ? (
-              <AboutSetting />
-            ) : settingMode === "ai" ? (
-              <AISetting />
-            ) : settingMode === "background" ? (
-              <BackgroundSetting />
-            ) : settingMode === "font" ? (
-              <FontSetting />
-            ) : settingMode === "chapter" ? (
-              <ChapterSetting />
-            ) : settingMode === "text" ? (
-              <TextSetting />
-            ) : settingMode === "dict" ? (
-              <DictSetting />
-            ) : settingMode === "more" ? (
-              <MoreSetting />
-            ) : (
-              <PluginSetting />
-            )}
+            <CurrentPage />
           </div>
         </div>
       </div>

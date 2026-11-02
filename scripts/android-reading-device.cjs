@@ -1,3 +1,4 @@
+const { showReadingTools, hideReadingTools } = require("../e2e/android/fixtures.cjs");
 const assert = require("node:assert/strict");
 const fs = require("node:fs/promises");
 const path = require("node:path");
@@ -12,10 +13,20 @@ const shared = "/sdcard/Download/KoodoReaderCustomTest";
 const pickerDump = "/data/local/tmp/koodo-reading-picker.xml";
 const quote = (value) => `'${value.replace(/'/g, "'\\''")}'`;
 
+const visiblePdfText = (page) => page.evaluate(() => {
+  const frame = document.querySelector("#page-area > iframe");
+  if (!frame?.contentDocument) return "";
+  const outer = frame.getBoundingClientRect();
+  return [...frame.contentDocument.querySelectorAll('iframe[id^="pdf-iframe-"]')].filter((page) => {
+    const rect = page.getBoundingClientRect();
+    return outer.top + rect.bottom > 56 && outer.top + rect.top < innerHeight - 64;
+  }).map((page) => page.contentDocument?.body?.textContent || "").join("\n");
+});
+
 async function main() {
   await fs.mkdir(output, { recursive: true });
   const devices = await android.devices({ omitDriverInstall: true });
-  const report = { checks: [], passed: false };
+  const report = { checks: [], progress: {}, passed: false };
   let device, page, rotation;
   try {
     const selected = devices.filter((candidate) => !process.env.ANDROID_SERIAL || candidate.serial() === process.env.ANDROID_SERIAL);
@@ -42,17 +53,34 @@ async function main() {
     const native = (request) => page.evaluate(async (data) => (await window.Capacitor.Plugins.KoodoStorage.execute(data)).value, request);
     const position = () => page.evaluate(() => JSON.parse(localStorage.getItem("recordLocation") || "{}")[location.hash.split("?")[0].split("/").pop()]);
     const close = async () => {
+      await hideReadingTools(page);
       await device.shell("input keyevent KEYCODE_BACK");
       await expect(page).toHaveURL(/#\/manager\/home/);
     };
     const card = (fixture) => page.locator(".book-list-item").filter({ hasText: fixture.title }).first();
+    const tapWeb = async (locator) => {
+      await locator.scrollIntoViewIfNeeded();
+      const webview = (await nodes()).find((node) => node.class === "android.webkit.WebView");
+      assert.ok(webview);
+      const [left, top, right] = webview.bounds.match(/\d+/g).map(Number);
+      await expect.poll(() => locator.evaluate((element) => {
+        const rect = element.getBoundingClientRect();
+        const hit = element.ownerDocument.elementFromPoint(rect.x + rect.width / 2, rect.y + rect.height / 2);
+        return hit === element || element.contains(hit);
+      })).toBe(true);
+      const bounds = await locator.boundingBox();
+      const scale = (right - left) / await page.evaluate(() => innerWidth);
+      await device.shell(`input tap ${Math.round(left + (bounds.x + bounds.width / 2) * scale)} ${Math.round(top + (bounds.y + bounds.height / 2) * scale)}`);
+    };
     const open = async (fixture) => {
-      await card(fixture).locator(".book-item-cover").click();
+      await tapWeb(card(fixture).locator(".book-item-cover"));
       await expect(page).toHaveURL(new RegExp(`#/${fixture.format}/`));
       await expect.poll(position).toBeTruthy();
+      await expect(page.locator("#page-area")).toHaveAttribute("aria-busy", "false");
+      await showReadingTools(page);
       const body = page.frameLocator("#page-area > iframe");
       if (fixture.format === "pdf") {
-        await expect(body.frameLocator('iframe[id^="pdf-iframe-"]').first().locator("body")).toContainText("PDF page");
+        await expect.poll(() => visiblePdfText(page)).toContain("PDF page");
       } else {
         await expect(body.locator("body")).toContainText(fixture.format === "txt" ? /安卓中文文本样本|手机旋转后继续阅读/ : "安卓手机离线阅读样本");
       }
@@ -71,6 +99,7 @@ async function main() {
       await device.shell(long ? `input touchscreen swipe ${x} ${y} ${x} ${y} 700` : `input tap ${x} ${y}`);
     };
 
+    await device.shell(`am force-stop ${appId}`);
     await start();
     const fixtures = await readingFixtures();
     await device.shell(`mkdir -p ${shared}`);
@@ -106,6 +135,8 @@ async function main() {
       await page.locator(Number(before.percentage) < 0.9 ? ".next-chapter-single-container" : ".previous-chapter-single-container").click();
       await expect.poll(async () => (await position()).percentage).not.toBe(before.percentage);
       saved.set(fixture.format, { key, position: await position() });
+      report.progress[fixture.format] = { saved: await position() };
+      if (fixture.format === "pdf") assert.doesNotMatch((await position()).text || "", /安卓中文文本样本|手机旋转后继续阅读/);
       await close();
       const prefs = await native({ channel: "preferences", action: "read" });
       assert.equal(JSON.parse(prefs.values.recordLocation)[key].percentage, saved.get(fixture.format).position.percentage);
@@ -114,21 +145,48 @@ async function main() {
 
     const epub = fixtures[0];
     const epubKey = await open(epub);
-    for (const index of [1, 2]) {
-      await page.locator(".android-reader-toolbar button").nth(index).click();
+    await device.shell("input keyevent KEYCODE_BACK");
+    await expect(page.locator(".android-reader-toolbar")).toBeHidden();
+    await expect(page).toHaveURL(/#\/epub\//);
+    const frame = page.locator("#page-area > iframe");
+    const frameBounds = await frame.boundingBox();
+    const bodyBefore = await page.frameLocator("#page-area > iframe").locator("body").elementHandle();
+    await tapWeb(frame);
+    await expect(page.locator(".android-reader-toolbar")).toBeVisible();
+    assert.deepEqual(await frame.boundingBox(), frameBounds);
+    assert.equal(await bodyBefore.evaluate((body) => body.isConnected), true);
+    await fs.writeFile(path.join(output, "reader-tools.png"), await device.screenshot());
+    await tapWeb(frame);
+    await expect(page.locator(".android-reader-toolbar")).toBeHidden();
+    checked("physical body taps and native Back toggle tools without reflow");
+    await showReadingTools(page);
+    await tapWeb(page.locator(".android-reader-progress .input-progress"));
+    await expect.poll(async () => Number((await position()).percentage)).toBeGreaterThan(0.35);
+    const sliderPosition = await position();
+    await close();
+    const sliderPreferences = await native({ channel: "preferences", action: "read" });
+    assert.equal(JSON.parse(sliderPreferences.values.recordLocation)[epubKey].percentage, sliderPosition.percentage);
+    await open(epub);
+    await expect.poll(position).toMatchObject({ percentage: sliderPosition.percentage });
+    checked("physical progress slider persists and restores its target");
+    for (const label of ["Chapters", "Settings"]) {
+      await page.getByRole("button", { name: label, exact: true }).click();
       await expect(page.locator(".android-reader-backdrop")).toBeVisible();
+      if (label === "Chapters") await fs.writeFile(path.join(output, "reader-chapters-sheet.png"), await device.screenshot());
       await device.shell("input keyevent KEYCODE_BACK");
       await expect(page.locator(".android-reader-backdrop")).toBeHidden();
       await expect(page).toHaveURL(/#\/epub\//);
     }
     checked("hardware Back dismisses chapters and reader settings before exiting");
-    await page.locator(".android-reader-toolbar button").nth(1).click();
+    await page.getByRole("button", { name: "Chapters", exact: true }).click();
     await page.locator(".content-chapter-title").filter({ hasText: "第二章" }).click();
     await expect(page.frameLocator("#page-area > iframe").locator("body")).toContainText("第二章");
     await expect.poll(async () => Number((await position()).count)).toBe(0);
-    await page.locator(".android-reader-backdrop").click({ position: { x: await page.evaluate(() => innerWidth - 12), y: 300 } });
-    checked("chapter selection and tapping outside return to reading");
+    await expect(page.locator(".android-reader-backdrop")).toBeHidden();
+    checked("chapter selection closes its bottom sheet");
 
+    // Chapter navigation briefly holds the engine's page lock; measure a fresh gesture after it settles.
+    await page.waitForTimeout(300);
     const initial = await position();
     await page.locator(".next-chapter-single-container").click();
     await expect.poll(async () => (await position()).percentage).not.toBe(initial.percentage);
@@ -144,10 +202,10 @@ async function main() {
     await expect.poll(position).toMatchObject({ percentage: onePage.percentage });
     checked("one slow Android touch gesture turns exactly one page and saves it");
 
-    await page.locator(".android-reader-toolbar button").nth(3).click();
     if (!(await native({ channel: "database-command", statement: "getByBookKeyStatement", dbName: "bookmarks", data: epubKey })).length) {
       await page.locator(".add-bookmark-button").click();
     }
+    await page.getByRole("button", { name: "Bookmark", exact: true }).click();
     await expect.poll(async () => (await native({ channel: "database-command", statement: "getByBookKeyStatement", dbName: "bookmarks", data: epubKey })).length).toBeGreaterThan(0);
     await expect(page.locator(".android-reader-backdrop")).toBeVisible();
     await device.shell("input keyevent KEYCODE_BACK");
@@ -172,12 +230,14 @@ async function main() {
     await close();
     const persisted = await native({ channel: "preferences", action: "read" });
     saved.set("epub", { key: epubKey, position: JSON.parse(persisted.values.recordLocation)[epubKey] });
+    report.progress.epub.beforeRestart = saved.get("epub").position;
     await device.shell(`am force-stop ${appId}`);
     await expect.poll(() => device.webViews().filter((view) => view.pkg() === appId).length).toBe(0);
     await start();
     for (const fixture of fixtures) {
       await open(fixture);
       await page.evaluate(() => window.dispatchEvent(new Event("android-reader-close")));
+      report.progress[fixture.format].restored = await position();
       await expect.poll(position).toMatchObject({ percentage: saved.get(fixture.format).position.percentage });
       await close();
     }

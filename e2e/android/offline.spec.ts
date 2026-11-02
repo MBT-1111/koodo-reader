@@ -1,3 +1,4 @@
+import { showReadingTools } from "./fixtures.cjs";
 import { expect, test, type Page } from "@playwright/test";
 import JSZip from "jszip";
 
@@ -43,6 +44,7 @@ test("imports, reads and reopens an EPUB in the same phone window", async ({ pag
   });
   await expect(page.locator(".book-item-title").first()).toContainText("Android offline fixture");
   await page.locator(".book-item-cover").first().click();
+  await showReadingTools(page);
   await expect(page).toHaveURL(/#\/epub\//);
   await expect(page.locator("#page-area iframe").first()).toBeAttached();
   await expect.poll(() => savedPosition(page)).toBeTruthy();
@@ -55,11 +57,13 @@ test("imports, reads and reopens an EPUB in the same phone window", async ({ pag
   await page.locator(".next-chapter-single-container").click();
   await expect.poll(async () => (await savedPosition(page))?.percentage).not.toBe(initial?.percentage);
   const advanced = await savedPosition(page);
+  await showReadingTools(page);
   await page.getByRole("button", { name: "Exit reader", exact: true }).click();
   await expect(page).toHaveURL(/#\/manager\/home/);
   await page.reload();
   await expect(page.locator(".book-item-title").first()).toContainText("Android offline fixture");
   await page.locator(".book-item-cover").first().click();
+  await showReadingTools(page);
   await expect(page.locator("#page-area iframe").first()).toBeAttached();
   await expect(page.frameLocator("#page-area iframe").first().locator("body")).toContainText("Paragraph");
   await page.evaluate(() => window.dispatchEvent(new Event("android-reader-close")));
@@ -71,11 +75,12 @@ test("imports, reads and reopens an EPUB in the same phone window", async ({ pag
 
 test("keeps phone navigation and settings within the viewport", async ({ page }, testInfo) => {
   await page.goto("/");
-  const navigation = page.getByRole("button", { name: "Navigation menu" });
-  await navigation.click();
-  await expect(page.locator(".sidebar")).toBeVisible();
-  await page.locator(".android-nav-backdrop").click({ position: { x: 380, y: 100 } });
-  await expect(page.locator(".sidebar")).toBeHidden();
+  const navigation = page.getByRole("navigation", { name: "Navigation menu" });
+  await expect(navigation.getByRole("button")).toHaveCount(4);
+  await navigation.getByRole("button", { name: "Shelf", exact: true }).click();
+  await expect(page.locator(".android-shelves")).toBeVisible();
+  await navigation.getByRole("button", { name: "Home", exact: true }).click();
+  await expect(page.locator(".android-shelves")).toBeHidden();
   await page.screenshot({ path: testInfo.outputPath("phone-library.png") });
   await page.getByRole("button", { name: "Settings", exact: true }).click();
   await expect(page.locator(".setting-dialog-container")).toHaveCSS("width", "393px");

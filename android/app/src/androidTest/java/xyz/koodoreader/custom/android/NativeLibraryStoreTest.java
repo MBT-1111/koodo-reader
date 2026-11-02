@@ -110,6 +110,19 @@ public class NativeLibraryStoreTest {
         assertEquals("fixture.epub", list.getString(0));
     }
 
+    @Test public void persistsFontsSeparatelyAndRejectsFontPathTraversal() throws Exception {
+        JSONObject request = new JSONObject().put("channel", "file-command").put("group", "font")
+            .put("name", "中文字体.ttf").put("action", "write").put("data", "AQID");
+        assertEquals(3, ((JSONObject) store.execute(request)).getInt("size"));
+        store.close();
+        store = new NativeLibraryStore(directory);
+        assertEquals("AQID", store.execute(request.put("action", "read")));
+        assertEquals(JSONObject.NULL, file("read", "中文字体.ttf", null));
+        assertThrows(Exception.class, () -> store.execute(new JSONObject(request.toString()).put("name", "../escape.ttf")));
+        store.execute(request.put("action", "remove"));
+        assertEquals(JSONObject.NULL, store.execute(request.put("action", "read")));
+    }
+
     @Test public void rejectsStalePreferencesAndRetainsTheNewerProgress() throws Exception {
         assertEquals(JSONObject.NULL, preferences("read", null));
         preferences("write", snapshot(2));

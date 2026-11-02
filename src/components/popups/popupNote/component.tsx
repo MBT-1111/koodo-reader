@@ -1,5 +1,5 @@
 import { useTranslation } from "react-i18next";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import "./popupNote.css";
 import { isReadingRawPDF } from "../../../utils/common";
 import Note from "../../../models/Note";
@@ -16,6 +16,7 @@ import DatabaseService from "../../../utils/storage/databaseService";
 import ColorOption from "../../colorOption";
 import copy from "copy-text-to-clipboard";
 import { useAppStore } from "../../../store/useAppStore";
+import { isAndroid } from "../../../utils/platform";
 
 export interface PopupNoteProps {
   isDockedRight: boolean;
@@ -41,10 +42,22 @@ const PopupNote = (props: PopupNoteProps) => {
   const [tag, setTag] = useState<string[]>([]);
   const [text, setText] = useState("");
   const [note, setNote] = useState<Note | null>(null);
+  const draftLocation = useRef<Pick<Note, "cfi" | "range" | "percentage"> | null>(null);
+
+  const captureLocation = async () => {
+    const location = ConfigService.getObjectConfig(currentBook.key, "recordLocation", {});
+    return {
+      cfi: JSON.stringify(isReadingRawPDF(currentBook)
+        ? htmlBook.rendition.getPositionByChapter(props.chapterDocIndex)
+        : location),
+      range: JSON.stringify(await htmlBook.rendition.getHighlightCoords(props.chapterDocIndex)),
+      percentage: location.percentage || "0",
+    };
+  };
 
   useEffect(() => {
-    let textArea: any = document.querySelector(".editor-box");
-    textArea && textArea.focus();
+    const textArea = document.querySelector<HTMLTextAreaElement>(".editor-box");
+    if (!isAndroid) textArea?.focus();
     (async () => {
       if (noteKey) {
         let loadedNote: Note = await DatabaseService.getRecord(
@@ -64,6 +77,7 @@ const PopupNote = (props: PopupNoteProps) => {
           styleType,
           color,
         });
+        if (isAndroid) textArea?.focus();
       } else {
         let docs = getIframeDoc(currentBook);
         let selectedText = "";
@@ -83,6 +97,11 @@ const PopupNote = (props: PopupNoteProps) => {
         selectedText = selectedText.replace(/\t/g, "");
         selectedText = selectedText.replace(/\f/g, "");
         setText(selectedText);
+        if (isAndroid) {
+          // The keyboard can replace the book iframe; keep the quote's original anchor.
+          draftLocation.current = await captureLocation();
+          textArea?.focus();
+        }
       }
     })();
   }, []);
@@ -122,37 +141,10 @@ const PopupNote = (props: PopupNoteProps) => {
         }
       });
     } else {
-      let cfi = JSON.stringify(
-        ConfigService.getObjectConfig(
-          currentBook.key,
-          "recordLocation",
-          {}
-        )
-      );
-      if (isReadingRawPDF(currentBook)) {
-        let bookLocation = htmlBook.rendition.getPositionByChapter(
-          props.chapterDocIndex
-        );
-        cfi = JSON.stringify(bookLocation);
-      }
+      const location = isAndroid ? draftLocation.current : await captureLocation();
+      if (!location) return;
+      const { cfi, range, percentage } = location;
       let bookKey = currentBook.key;
-      let range = JSON.stringify(
-        await htmlBook.rendition.getHighlightCoords(
-          props.chapterDocIndex
-        )
-      );
-
-      let percentage = ConfigService.getObjectConfig(
-        currentBook.key,
-        "recordLocation",
-        {}
-      ).percentage
-        ? ConfigService.getObjectConfig(
-            currentBook.key,
-            "recordLocation",
-            {}
-          ).percentage
-        : "0";
 
       let color =
         highlightUtil.formatHighlightValue(highlight) ||
@@ -174,10 +166,9 @@ const PopupNote = (props: PopupNoteProps) => {
         handleOpenMenu(false);
         handleFetchNotes();
         handleMenuMode("");
-        await htmlBook.rendition.createOneNote(
-          newNote,
-          handleNoteClick
-        );
+        // Saving is also valid while a keyboard resize is replacing the rendition.
+        const rendition = isAndroid ? useAppStore.getState().reader.htmlBook?.rendition : htmlBook.rendition;
+        await rendition?.createOneNote(newNote, handleNoteClick);
         let noteSyncManager = new NoteSyncManager(
           DatabaseService,
           ConfigService,
@@ -283,7 +274,7 @@ const PopupNote = (props: PopupNoteProps) => {
           }}
         >
           <Trans>Confirm</Trans>
-          <span> (CTRL + ↵)</span>
+          {!isAndroid && <span> (CTRL + ↵)</span>}
         </span>
       </div>
     </div>

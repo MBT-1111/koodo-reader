@@ -12,6 +12,8 @@ import { ConfigService } from "../../../assets/lib/kookit-extra-browser.min";
 import DatabaseService from "../../../utils/storage/databaseService";
 import Note from "../../../models/Note";
 import { useAppStore } from "../../../store/useAppStore";
+import { isAndroid } from "../../../utils/platform";
+import { throttle } from "../../../utils/common";
 
 export interface CardListProps {
   cards: NoteModel[];
@@ -29,8 +31,9 @@ const CardList = (props: CardListProps) => {
   const handleNoteKey = useAppStore((s) => s.handleNoteKey);
   const { t } = useTranslation();
   const containerRef = useRef<HTMLDivElement>(null);
-  const scrollTimerRef = useRef<any>(null);
-  const [state, setState] = useState<Record<string, any>>({
+  const generationRef = useRef(0);
+  const loadingRef = useRef(false);
+  const [state, setState] = useState<{ displayedCards: Note[]; currentPage: number; itemsPerPage: number; isLoading: boolean }>({
     displayedCards: [],
     currentPage: 1,
     itemsPerPage: 16,
@@ -40,12 +43,11 @@ const CardList = (props: CardListProps) => {
   const propsRef = useLatest(props);
 
   const loadInitialCards = async () => {
+    const generation = ++generationRef.current;
+    loadingRef.current = true;
+    setState((prev) => ({ ...prev, displayedCards: [], isLoading: true }));
     let sortedCards = [...props.cards];
-    const { itemsPerPage } = stateRef.current;
-
-    const screenHeight = window.innerHeight;
-    const adaptiveItemsPerPage =
-      screenHeight > 800 ? itemsPerPage + 8 : itemsPerPage;
+    const adaptiveItemsPerPage = window.innerHeight > 800 ? 24 : 16;
     let initialCards = sortedCards.slice(0, adaptiveItemsPerPage);
     let initialDisplayedCards: Note[] = [];
     for (let i = 0; i < initialCards.length; i++) {
@@ -55,6 +57,8 @@ const CardList = (props: CardListProps) => {
       }
     }
 
+    if (generation !== generationRef.current) return;
+    loadingRef.current = false;
     setState({
       displayedCards: initialDisplayedCards,
       currentPage: 1,
@@ -63,69 +67,64 @@ const CardList = (props: CardListProps) => {
     });
   };
 
-  const loadMoreCards = () => {
+  const loadMoreCards = async () => {
+    const generation = generationRef.current;
     let sortedCards = [...propsRef.current.cards];
     const { displayedCards, currentPage, itemsPerPage, isLoading } =
       stateRef.current;
 
-    if (isLoading || displayedCards.length >= sortedCards.length) {
+    if (loadingRef.current || isLoading || displayedCards.length >= sortedCards.length) {
       return;
     }
 
+    loadingRef.current = true;
     setState((prev) => ({ ...prev, isLoading: true }));
 
-    setTimeout(async () => {
-      const nextPage = currentPage + 1;
-      const startIndex = currentPage * itemsPerPage;
-      const endIndex = nextPage * itemsPerPage;
-      let newCards = sortedCards.slice(startIndex, endIndex);
-      let newDisplayedCards: Note[] = [];
-      for (let i = 0; i < newCards.length; i++) {
-        let card = await DatabaseService.getRecord(newCards[i].key, "notes");
-        if (card) {
-          newDisplayedCards.push(card);
-        }
+    const nextPage = currentPage + 1;
+    const startIndex = currentPage * itemsPerPage;
+    const endIndex = nextPage * itemsPerPage;
+    let newCards = sortedCards.slice(startIndex, endIndex);
+    let newDisplayedCards: Note[] = [];
+    for (let i = 0; i < newCards.length; i++) {
+      let card = await DatabaseService.getRecord(newCards[i].key, "notes");
+      if (card) {
+        newDisplayedCards.push(card);
       }
+    }
 
-      setState((prev) => ({
-        ...prev,
-        displayedCards: [...prev.displayedCards, ...newDisplayedCards],
-        currentPage: nextPage,
-        isLoading: false,
-      }));
-    }, 200);
+    if (generation !== generationRef.current) return;
+    loadingRef.current = false;
+    setState((prev) => ({
+      ...prev,
+      displayedCards: [...prev.displayedCards, ...newDisplayedCards],
+      currentPage: nextPage,
+      isLoading: false,
+    }));
   };
 
   const handleScroll = () => {
-    if (scrollTimerRef.current) {
-      clearTimeout(scrollTimerRef.current);
+    const container = containerRef.current;
+    if (!container) return;
+
+    const { scrollTop, scrollHeight, clientHeight } = container;
+
+    if (scrollHeight - scrollTop - clientHeight < 100) {
+      void loadMoreCards();
     }
-
-    scrollTimerRef.current = setTimeout(() => {
-      const container = containerRef.current;
-      if (!container) return;
-
-      const { scrollTop, scrollHeight, clientHeight } = container;
-
-      if (scrollHeight - scrollTop - clientHeight < 100) {
-        loadMoreCards();
-      }
-    }, 100);
   };
 
   useEffect(() => {
     loadInitialCards();
     const container = containerRef.current;
+    const scrollHandler = throttle(handleScroll, 100);
     if (container) {
-      container.addEventListener("scroll", handleScroll);
+      container.addEventListener("scroll", scrollHandler);
     }
     return () => {
       if (container) {
-        container.removeEventListener("scroll", handleScroll);
+        container.removeEventListener("scroll", scrollHandler);
       }
-      if (scrollTimerRef.current) {
-        clearTimeout(scrollTimerRef.current);
-      }
+      generationRef.current++;
     };
   }, []);
 
@@ -184,12 +183,21 @@ const CardList = (props: CardListProps) => {
     return <Navigate to="/manager/empty" replace />;
   }
 
-  const renderCardListItem = (notes: any[]) => {
-    return notes.map((item: NoteModel, index: number) => {
+  const renderCardListItem = (notes: NoteModel[]) => {
+    return notes.map((item) => {
+      if (isAndroid) return (
+        <article className="android-note-card" role="listitem" key={item.key}>
+          <header><time>{formatTimestamp(item.key)}</time><button type="button" aria-label={t("Edit")} onClick={() => { handleNoteKey(item.key); handleShowPopupNote(true); }}><span className="icon-edit-line" aria-hidden="true" /></button></header>
+          {props.mode === "note" && <p className="android-note-content">{item.notes}</p>}
+          <blockquote>{item.text}</blockquote>
+          {!!item.tag?.length && <div className="android-note-tags">{item.tag.map((tag) => <span key={tag}>{tag}</span>)}</div>}
+          <button type="button" className="android-note-source" aria-label={t("Show in the book")} onClick={() => void handleJump(item)}><span className="icon-bookshelf-line" aria-hidden="true" /><span>{props.bookNamesMap[item.bookKey] || t("Unknown book")}{item.chapter && ` · ${item.chapter}`}</span></button>
+        </article>
+      );
       return (
         <li
           className="card-list-item"
-          key={index}
+          key={item.key}
           style={
             props.mode === "note" && !isCollapsed
               ? { height: "250px" }
@@ -293,7 +301,7 @@ const CardList = (props: CardListProps) => {
   };
 
   return (
-    <div className="card-list-container" ref={containerRef}>
+    <div className="card-list-container" ref={containerRef} role={isAndroid ? "list" : undefined}>
       {renderCardListItem(displayedCards)}
       {isLoading && (
         <div className="card-list-loading">

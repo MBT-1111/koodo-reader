@@ -31,17 +31,19 @@ import {
 } from "../../utils/reader/discordRPC";
 import SupportDialog from "../../components/dialogs/supportDialog";
 import WindowControls from "../../components/windowControls";
-import { READING_PANEL_TOGGLE_EVENT } from "../../utils/reader/mouseEvent";
+import { READING_PANEL_TOGGLE_EVENT, toggleNavTab } from "../../utils/reader/mouseEvent";
 import { isPaginatedBook, isReadingRawPDF, throttle } from "../../utils/common";
 import { getOuterDoc } from "../../utils/reader/docUtil";
 import { useAppStore } from "../../store/useAppStore";
 import { isAndroid } from "../../utils/platform";
 import { ANDROID_READER_CLOSE_EVENT, ANDROID_READER_DISMISS_EVENT, closeAndroidReader, dismissAndroidReaderOverlay } from "../../custom/android/navigation";
 import "../../components/androidHeader/android.css";
+import AndroidReaderControls from "../../components/androidReaderControls";
 
 const QUICK_BUTTON_EDGE_DISTANCE = 60;
 
 export interface ReaderState {
+  androidControlsOpen: boolean;
   loadedBookKey: string;
   isOpenRightPanel: boolean;
   isOpenTopPanel: boolean;
@@ -111,6 +113,7 @@ const Reader = () => {
   const isSettingLocked = useAppStore((s) => s.reader.isSettingLocked);
   const isDockedRight = useAppStore((s) => s.reader.isDockedRight);
   const isSettingOpen = useAppStore((s) => s.manager.isSettingOpen);
+  const isOpenMenu = useAppStore((s) => s.viewArea.isOpenMenu);
   const handleFetchBooks = useAppStore((s) => s.handleFetchBooks);
   const handleReadingBook = useAppStore((s) => s.handleReadingBook);
   const handleFetchPercentage = useAppStore((s) => s.handleFetchPercentage);
@@ -166,12 +169,13 @@ const Reader = () => {
   };
   const propsRef = useLatest(currentProps);
   const [state, setState] = useState<ReaderState>({
+    androidControlsOpen: false,
     loadedBookKey: "",
     isOpenTopPanel: false,
     isOpenBottomPanel: false,
     hoverPanel: "",
-    isOpenLeftPanel: isNavLocked,
-    isOpenRightPanel: isSettingLocked,
+    isOpenLeftPanel: !isAndroid && isNavLocked,
+    isOpenRightPanel: !isAndroid && isSettingLocked,
     totalDuration: 0,
     currentDuration: 0,
     isTouch: ConfigService.getReaderConfig("isTouch") === "yes",
@@ -180,6 +184,11 @@ const Reader = () => {
     isNearEdge: false,
   });
   const stateRef = useLatest(state);
+  const [androidSettingTab, setAndroidSettingTab] = useState<"theme" | "font">("font");
+  useEffect(() => {
+    if (isAndroid && isOpenMenu) setState((prev) => ({ ...prev, androidControlsOpen: false,
+      isOpenLeftPanel: false, isOpenRightPanel: false, isOpenTopPanel: false, isOpenBottomPanel: false }));
+  }, [isOpenMenu]);
   const updateState = (patch: Partial<ReaderState>) =>
     setState((prev) => ({ ...prev, ...patch }));
   const messageTimerRef = useRef<NodeJS.Timeout | undefined>(undefined);
@@ -287,6 +296,16 @@ const Reader = () => {
   const handleEnterReader = (position: string) => {
     cancelEnterReader(position);
     cancelLeaveReader(position);
+    if (isAndroid) {
+      updateState({
+        androidControlsOpen: true,
+        isOpenLeftPanel: position === "left",
+        isOpenRightPanel: position === "right",
+        isOpenTopPanel: false,
+        isOpenBottomPanel: false,
+      });
+      return;
+    }
     switch (position) {
       case "right":
         updateState({
@@ -314,6 +333,10 @@ const Reader = () => {
   };
   const handleLeaveReader = (position: string) => {
     cancelLeaveReader(position);
+    if (isAndroid && PANEL_POSITIONS.includes(position as PanelPosition)) {
+      updateState({ [PANEL_OPEN_STATE[position as PanelPosition]]: false });
+      return;
+    }
     switch (position) {
       case "right":
         if (propsRef.current.isSettingLocked) {
@@ -452,6 +475,8 @@ const Reader = () => {
     pageY <= QUICK_BUTTON_EDGE_DISTANCE ||
     window.innerHeight - pageY <= QUICK_BUTTON_EDGE_DISTANCE;
   const handleLocation = () => {
+    if (isAndroid && (!propsRef.current.htmlBook ||
+      propsRef.current.htmlBook.key !== propsRef.current.currentBook.key)) return;
     let position = propsRef.current.htmlBook.rendition.getPosition();
 
     ConfigService.setObjectConfig(
@@ -555,6 +580,8 @@ const Reader = () => {
           cancelLeaveReader(position);
         });
         updateState({ isOpenLeftPanel: false, isOpenRightPanel: false, isOpenTopPanel: false, isOpenBottomPanel: false });
+      } else if (stateRef.current.androidControlsOpen) {
+        updateState({ androidControlsOpen: false });
       } else {
         return;
       }
@@ -685,72 +712,49 @@ const Reader = () => {
   const renditionProps = {
     handleLeaveReader: handleLeaveReader,
     handleEnterReader: handleEnterReader,
+    handleToggleControls: () => updateState({ androidControlsOpen: !stateRef.current.androidControlsOpen }),
     isShow:
       state.isOpenLeftPanel ||
       state.isOpenTopPanel ||
       state.isOpenBottomPanel ||
       state.isOpenRightPanel,
   };
+  const handleTurnPage = async (next: boolean) => {
+    if (lock || !htmlBook?.rendition) return;
+    lock = true;
+    const reverse = ConfigService.getReaderConfig("revertDirection") === "yes" &&
+      ConfigService.getReaderConfig("textOrientation") !== "vertical";
+    try {
+      if (next !== reverse) await htmlBook.rendition.next();
+      else await htmlBook.rendition.prev();
+      handleLocation();
+    } finally {
+      setTimeout(() => (lock = false), throttleTime);
+    }
+  };
   return (
     <div
-      className={"viewer" + (state.isNearEdge ? " quick-buttons-shown" : "")}
+      className={"viewer" + (isAndroid ? " android-reader" : "") + (state.isNearEdge ? " quick-buttons-shown" : "")}
     >
       <Tooltip id="my-tooltip" style={{ zIndex: 25 }} />
       {isAndroid && renditionProps.isShow && (
         <button type="button" className="android-reader-backdrop" aria-label={t("Close")} onClick={dismissAndroidReaderOverlay} />
       )}
       {isAndroid && (
-        <nav className="android-reader-toolbar">
-          <button type="button" aria-label={t("Exit reader")} onClick={() => closeAndroidReader()}>
-            <span className="icon-exit" />
-          </button>
-          <span className="android-reader-title">{currentBook.name}</span>
-          <button type="button" aria-label={t("Chapters")} onClick={() => {
-            const open = stateRef.current.isOpenLeftPanel;
-            PANEL_POSITIONS.forEach(handleLeaveReader);
-            if (!open) handleEnterReader("left");
-          }}>
-            <span className="icon-menu" />
-          </button>
-          <button type="button" aria-label={t("Setting")} onClick={() => {
-            const open = stateRef.current.isOpenRightPanel;
-            PANEL_POSITIONS.forEach(handleLeaveReader);
-            if (!open) handleEnterReader("right");
-          }}>
-            <span className="icon-setting" />
-          </button>
-          <button type="button" aria-label={t("Bookmark")} onClick={() => {
-            const open = stateRef.current.isOpenTopPanel;
-            PANEL_POSITIONS.forEach(handleLeaveReader);
-            if (!open) handleEnterReader("top");
-          }}>
-            <span className="icon-grid" />
-          </button>
-        </nav>
+        <AndroidReaderControls visible={state.androidControlsOpen} currentDuration={state.currentDuration}
+          onToggle={renditionProps.handleToggleControls} onNavigate={toggleNavTab}
+          onSettings={(tab) => { setAndroidSettingTab(tab); handleEnterReader("right"); }}
+          onPage={(next) => void handleTurnPage(next)} />
       )}
       {isSeparateElectronWindow && (
         <div className="reader-window-drag-region" />
       )}
 
-      <div
+      {!isAndroid && <><div
         className="previous-chapter-single-container reader-quick-buttons"
         onMouseEnter={showQuickButtons}
         onMouseLeave={hideQuickButtons}
-        onClick={async () => {
-          if (lock) return;
-          lock = true;
-          // RTL direction handling
-          if (
-            ConfigService.getReaderConfig("revertDirection") === "yes" &&
-            ConfigService.getReaderConfig("textOrientation") !== "vertical"
-          ) {
-            await htmlBook.rendition.next();
-          } else {
-            await htmlBook.rendition.prev();
-          }
-          handleLocation();
-          setTimeout(() => (lock = false), throttleTime);
-        }}
+        onClick={() => void handleTurnPage(false)}
         style={{
           left: isNavLocked ? 315 : 15,
           opacity: state.isNearEdge ? undefined : 0,
@@ -778,26 +782,12 @@ const Reader = () => {
       >
         <div
           className="next-chapter-single-container"
-          onClick={async () => {
-            if (lock) return;
-            lock = true;
-            // RTL direction handling
-            if (
-              ConfigService.getReaderConfig("revertDirection") === "yes" &&
-              ConfigService.getReaderConfig("textOrientation") !== "vertical"
-            ) {
-              await htmlBook.rendition.prev();
-            } else {
-              await htmlBook.rendition.next();
-            }
-            handleLocation();
-            setTimeout(() => (lock = false), throttleTime);
-          }}
+          onClick={() => void handleTurnPage(true)}
           style={{ position: "static" }}
         >
           <span className="icon-dropdown next-chapter-single"></span>
         </div>
-      </div>
+      </div></>}
 
       <div
         className="reader-quick-buttons"
@@ -1001,6 +991,8 @@ const Reader = () => {
         </>
       )}
       <Toaster
+        position={isAndroid ? "bottom-center" : "top-center"}
+        containerStyle={isAndroid ? { bottom: "calc(88px + env(safe-area-inset-bottom, 0px))" } : undefined}
         toastOptions={{
           style: {
             padding: "8px 10px",
@@ -1088,6 +1080,10 @@ const Reader = () => {
 
       <div
         className="setting-panel-container"
+        role={isAndroid ? "dialog" : undefined}
+        aria-label={isAndroid ? t("Reading option") : undefined}
+        aria-modal={isAndroid && state.isOpenRightPanel ? true : undefined}
+        inert={isAndroid && !state.isOpenRightPanel ? true : undefined}
         onMouseEnter={() => {
           cancelLeaveReader("right");
         }}
@@ -1095,17 +1091,22 @@ const Reader = () => {
           scheduleLeaveReader("right");
         }}
         style={
-          state.isOpenRightPanel
+          isAndroid ? { transform: state.isOpenRightPanel ? undefined : "translateY(110%)", visibility: state.isOpenRightPanel ? "visible" : "hidden" } : state.isOpenRightPanel
             ? {}
             : {
                 transform: "translateX(309px)",
               }
         }
       >
-        <SettingPanel />
+        {isAndroid && state.isOpenRightPanel && <div className="android-reader-sheet-heading"><span>{t("Reading option")}</span><button type="button" aria-label={t("Close")} onClick={dismissAndroidReaderOverlay}><span className="icon-close" aria-hidden="true" /></button></div>}
+        {isAndroid ? state.isOpenRightPanel && <SettingPanel key={androidSettingTab} initialTab={androidSettingTab} /> : <SettingPanel />}
       </div>
       <div
         className="navigation-panel-container"
+        role={isAndroid ? "dialog" : undefined}
+        aria-label={isAndroid ? t("Chapters") : undefined}
+        aria-modal={isAndroid && state.isOpenLeftPanel ? true : undefined}
+        inert={isAndroid && !state.isOpenLeftPanel ? true : undefined}
         onMouseEnter={() => {
           cancelLeaveReader("left");
         }}
@@ -1113,13 +1114,14 @@ const Reader = () => {
           scheduleLeaveReader("left");
         }}
         style={
-          state.isOpenLeftPanel
+          isAndroid ? { transform: state.isOpenLeftPanel ? undefined : "translateY(110%)", visibility: state.isOpenLeftPanel ? "visible" : "hidden" } : state.isOpenLeftPanel
             ? {}
             : {
                 transform: "translateX(-309px)",
               }
         }
       >
+        {isAndroid && <div className="android-reader-sheet-heading"><span>{t("Content")}</span><button type="button" aria-label={t("Close")} onClick={dismissAndroidReaderOverlay}><span className="icon-close" aria-hidden="true" /></button></div>}
         <NavigationPanel
           {...({
             totalDuration: state.totalDuration,
@@ -1155,7 +1157,7 @@ const Reader = () => {
               }
         }
       >
-        <ProgressPanel />
+        {!isAndroid && <ProgressPanel />}
       </div>
       <div
         className="operation-panel-container"
@@ -1186,7 +1188,7 @@ const Reader = () => {
               }
         }
       >
-        {htmlBook && (
+        {!isAndroid && htmlBook && (
           <OperationPanel
             {...({
               currentDuration: state.currentDuration,

@@ -7,6 +7,7 @@ import i18n from "../../../i18n";
 import _ from "underscore";
 import { useAppStore } from "../../../store/useAppStore";
 import { isAndroid } from "../../../utils/platform";
+import { dismissAndroidReaderOverlay } from "../../../custom/android/navigation";
 
 export interface ContentListState {
   chapters: any;
@@ -230,6 +231,7 @@ const ContentList = () => {
     if (isAndroid) {
       await htmlBook.rendition.record();
       ConfigService.setObjectConfig(currentBook.key, htmlBook.rendition.getPosition(), "recordLocation");
+      dismissAndroidReaderOverlay();
     }
     handleCurrentChapter(item.label);
     handleCurrentChapterIndex(item.index);

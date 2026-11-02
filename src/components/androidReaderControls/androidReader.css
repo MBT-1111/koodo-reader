@@ -1,0 +1,69 @@
+.android-reader {
+  --reader-surface: #fff;
+  --reader-text: #243336;
+  --reader-muted: #758487;
+  --reader-accent: #237b70;
+  --reader-tint: #e6f1ed;
+}
+html[data-theme="dark"] .android-reader {
+  --reader-surface: #222c32;
+  --reader-text: #e2e9e9;
+  --reader-muted: #9cacae;
+  --reader-accent: #86c5b7;
+  --reader-tint: #2c423e;
+}
+.android-reader button { font-family: inherit; cursor: pointer; }
+.android-reader button:focus-visible, .android-reader input:focus-visible { outline: 2px solid var(--reader-accent); outline-offset: -2px; }
+.android-reader .android-reader-toolbar { inset: 0 0 auto; height: 56px; padding: 0 8px; gap: 6px; z-index: 20; background: var(--reader-surface); color: var(--reader-text); box-shadow: 0 1px 10px #0001; }
+.android-reader .android-reader-toolbar[hidden], .android-reader-bottom[hidden] { display: none; }
+.android-reader .android-reader-toolbar .add-bookmark-button { position: static; width: 44px; height: 44px; margin: 0; box-shadow: none; background: transparent; border-radius: 50%; }
+.android-reader .android-reader-title { font-size: 14px; font-weight: 600; }
+.android-reader-menu-toggle { position: absolute; right: 16px; bottom: 8px; z-index: 20; width: 44px; height: 44px; border: 0; border-radius: 50%; background: var(--reader-surface); color: var(--reader-muted); box-shadow: 0 2px 12px #0001; font-size: 20px; }
+.android-reader-bottom { position: absolute; inset: auto 0 0; z-index: 20; background: var(--reader-surface); color: var(--reader-text); padding: 8px 12px env(safe-area-inset-bottom, 0px); box-shadow: 0 -2px 12px #0001; }
+.android-reader-bottom nav { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); }
+.android-reader-bottom nav button { min-height: 72px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 7px; border: 0; padding: 8px 2px; background: transparent; color: inherit; font-size: 11px; }
+.android-reader-bottom nav button > span:first-child { color: var(--reader-accent); font-size: 22px; }
+.android-reader-progress-row { display: flex; align-items: center; gap: 8px; }
+.android-reader-progress-row > button { position: static; flex-shrink: 0; width: 44px !important; height: 44px !important; border: 0; border-radius: 50%; background: var(--reader-tint); color: var(--reader-accent); margin: 0; display: flex; align-items: center; justify-content: center; transform: none; opacity: 1; }
+.android-reader-progress-row > button span { display: block; font-size: 18px; }
+.android-reader-progress-row .previous-chapter-single { transform: rotate(90deg); }
+.android-reader-progress-row .next-chapter-single { transform: rotate(-90deg); }
+.android-reader-progress { flex: 1; min-width: 0; display: flex; align-items: center; gap: 10px; color: var(--reader-muted); font-size: 12px; }
+.android-reader-progress .input-progress { flex: 1; min-width: 0; width: 100%; height: 44px; margin: 0; accent-color: var(--reader-accent); }
+.android-reader > .progress-panel-container, .android-reader > .operation-panel-container { display: none; }
+.android-reader .android-reader-backdrop { inset: 0; background: #0005; z-index: 21; }
+html[data-platform="android"] .android-reader .navigation-panel-container,
+html[data-platform="android"] .android-reader .setting-panel-container {
+  inset: auto 0 0;
+  width: 100%;
+  max-width: 100%;
+  height: min(74%, 600px);
+  border-radius: 24px 24px 0 0;
+  overflow: hidden;
+  z-index: 22;
+  background: var(--reader-surface);
+  color: var(--reader-text);
+  box-shadow: 0 -8px 30px #0002;
+  transition: transform 0.2s ease;
+}
+.android-reader-sheet-heading { height: 52px; display: flex; align-items: center; padding: 6px 12px 0 20px; box-sizing: border-box; font-size: 16px; font-weight: 600; }
+.android-reader-sheet-heading::before { content: ""; position: absolute; top: 7px; left: calc(50% - 18px); width: 36px; height: 4px; border-radius: 4px; background: var(--reader-muted); opacity: 0.3; }
+.android-reader-sheet-heading > span { flex: 1; }
+.android-reader-sheet-heading button { width: 44px; height: 44px; border: 0; border-radius: 50%; background: transparent; color: inherit; font-size: 20px; }
+.android-reader .navigation-panel, .android-reader .setting-panel-parent { position: relative; top: 0; width: 100%; height: calc(100% - 52px); background: var(--reader-surface); color: var(--reader-text); animation: none; }
+.android-reader .navigation-header { position: relative; width: 100%; height: 104px; }
+.android-reader .navigation-header > .book-cover, .android-reader .navigation-header > .book-title, .android-reader .navigation-header > .book-arthur, .android-reader .reading-duration, .android-reader .nav-lock-icon, .android-reader .lock-icon, .android-reader .setting-panel-title { display: none; }
+.android-reader .navigation-search-box { inset: 0 16px auto; }
+.android-reader .navigation-search-box .header-search-box { width: 100% !important; height: 44px !important; box-sizing: border-box; }
+.android-reader .navigation-navigation { height: 52px; align-items: center; gap: 4px; padding: 0 12px; box-sizing: border-box; }
+.android-reader .book-bookmark-title { flex: 1; max-width: none; min-height: 44px; margin: 0; padding: 0 4px; border: 0; border-radius: 14px; background: transparent; color: inherit; font-family: inherit; font-size: 13px; }
+.android-reader .book-bookmark-title[aria-pressed="true"] { background: var(--reader-tint); color: var(--reader-accent); }
+.android-reader .navigation-body-parent { top: 104px; height: calc(100% - 104px); }
+.android-reader .navigation-body { padding-bottom: 16px; box-sizing: border-box; }
+.android-reader .content-chapter-title { min-height: 44px; display: flex; align-items: center; }
+.android-reader .nav-search-list { top: 100px; height: calc(100% - 110px); box-sizing: border-box; }
+.android-reader .setting-panel-tabs { margin-top: 8px; }
+.android-reader .setting-panel-tab { height: 44px; line-height: 44px; }
+.android-reader .setting-panel { height: calc(100% - 70px); padding-bottom: 24px; }
+.android-reader .setting-panel-menu { display: none; }
+@media (prefers-reduced-motion: reduce) { .android-reader .navigation-panel-container, .android-reader .setting-panel-container { transition: none; } }

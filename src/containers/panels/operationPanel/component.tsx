@@ -16,7 +16,7 @@ import { isAndroid } from "../../../utils/platform";
 import { closeAndroidReader } from "../../../custom/android/navigation";
 
 export interface OperationPanelProps {
-  rendition: any;
+  compact?: boolean;
   currentDuration: number;
 }
 
@@ -73,11 +73,13 @@ const OperationPanel = (props: OperationPanelProps) => {
   };
 
   useEffect(() => {
+    if (!htmlBook?.rendition) return;
+    const rendition = htmlBook.rendition;
     document.addEventListener("fullscreenchange", handleFullscreenChange);
     const onPageChanged = async () => {
       speedRef.current = Date.now() - timeStampRef.current;
       timeStampRef.current = Date.now();
-      let pageProgress = await htmlBook.rendition.getProgress();
+      let pageProgress = await rendition.getProgress();
       setState((prev) => ({
         ...prev,
         timeLeft:
@@ -87,12 +89,12 @@ const OperationPanel = (props: OperationPanelProps) => {
       }));
       handleDisplayBookmark();
     };
-    htmlBook.rendition.on("page-changed", onPageChanged);
+    rendition.on("page-changed", onPageChanged);
     return () => {
       document.removeEventListener("fullscreenchange", handleFullscreenChange);
-      htmlBook.rendition.off?.("page-changed", onPageChanged);
+      rendition.off?.("page-changed", onPageChanged);
     };
-  }, []);
+  }, [htmlBook, currentBook.key]);
 
   const handleScreen = () => {
     const entering = ConfigService.getReaderConfig("isFullscreen") !== "yes";
@@ -183,6 +185,12 @@ const OperationPanel = (props: OperationPanelProps) => {
     handleFetchBookmarks();
     handleShowBookmark(true);
   };
+
+  if (props.compact) return (
+    <button type="button" className="add-bookmark-button" aria-label={t("Add a bookmark")} onClick={() => void handleAddBookmark()}>
+      <span className="icon-add" aria-hidden="true" />
+    </button>
+  );
 
   return (
     <div className="book-operation-panel">

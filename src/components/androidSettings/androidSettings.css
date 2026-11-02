@@ -1,0 +1,49 @@
+html[data-platform="android"] .android-settings.setting-dialog-container {
+  --settings-bg: #f5f7f8;
+  --settings-surface: #fff;
+  --settings-text: #243336;
+  --settings-muted: #758487;
+  --settings-accent: #237b70;
+  --settings-tint: #e6f1ed;
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  border-radius: 0;
+  background: var(--settings-bg);
+  color: var(--settings-text);
+  animation: none;
+  transform: none;
+  z-index: 30;
+}
+html[data-platform="android"][data-theme="dark"] .android-settings {
+  --settings-bg: #171e23;
+  --settings-surface: #222c32;
+  --settings-text: #e2e9e9;
+  --settings-muted: #9cacae;
+  --settings-accent: #86c5b7;
+  --settings-tint: #2c423e;
+}
+html[data-platform="android"] .android-manager > .android-settings { height: calc(100% - 72px); bottom: 72px; }
+.android-settings .setting-dialog-main { height: 100%; background: transparent; }
+.android-settings-header { flex-shrink: 0; display: flex; align-items: center; gap: 8px; min-height: 72px; padding: 0 16px; }
+.android-settings-header h1 { flex: 1; margin: 0; min-width: 0; font-size: 22px; line-height: 1.4; font-weight: 700; overflow-wrap: anywhere; }
+.android-settings-header button { flex-shrink: 0; display: flex; align-items: center; justify-content: center; width: 44px; height: 44px; border: 0; border-radius: 50%; background: var(--settings-surface); color: inherit; font-size: 20px; }
+.android-settings-header .setting-close-container { position: static; margin: 0; opacity: 1; }
+.android-settings-back { display: block; transform: rotate(90deg); }
+.android-settings .android-settings-content { flex: 1; min-height: 0; width: 100%; height: auto; padding: 0 16px 24px; margin: 0; box-sizing: border-box; overflow: auto; }
+.android-settings-group { margin-bottom: 24px; }
+.android-settings-group h2 { color: var(--settings-muted); font-size: 13px; font-weight: 600; margin: 8px 4px 12px; }
+.android-settings-group > div { overflow: hidden; border-radius: 18px; background: var(--settings-surface); }
+.android-settings-group button { display: flex; align-items: center; gap: 14px; width: 100%; min-height: 64px; padding: 12px 16px; border: 0; color: inherit; background: transparent; text-align: left; font-family: inherit; font-size: 15px; }
+.android-settings-group button > span:first-child { display: flex; align-items: center; justify-content: center; flex-shrink: 0; width: 36px; height: 36px; border-radius: 12px; background: var(--settings-tint); color: var(--settings-accent); font-size: 20px; }
+.android-settings-group button > span:nth-child(2) { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.android-settings-group button > span:last-child { color: var(--settings-muted); font-size: 24px; }
+.android-settings button, .android-settings input, .android-settings select { font-family: inherit; }
+.android-settings button:focus-visible, .android-settings select:focus-visible { outline: 2px solid var(--settings-accent); outline-offset: -2px; }
+.android-settings .setting-dialog-new-title { box-sizing: border-box; width: 100%; max-width: 100%; min-height: 56px; margin: 0 !important; padding: 12px 4px; align-items: center; gap: 12px; flex-wrap: wrap; overflow-wrap: anywhere; }
+.android-settings .setting-dialog-new-title > p { max-width: 100%; box-sizing: border-box; white-space: normal !important; overflow-wrap: anywhere; }
+.android-settings .setting-option-subtitle { margin-left: 4px; margin-right: 4px; line-height: 1.5; }
+.android-settings .lang-setting-dropdown { max-width: 100%; min-height: 44px; box-sizing: border-box; }
+.android-settings .setting-dialog-new-container { margin: 16px 0; }
+.android-settings .change-location-button { min-height: 44px; display: inline-flex; align-items: center; justify-content: center; }

@@ -10,6 +10,7 @@ import PopupAssist from "../popupAssist";
 import { isElectron } from "react-device-detect";
 import { ConfigService } from "../../../assets/lib/kookit-extra-browser.min";
 import { useAppStore } from "../../../store/useAppStore";
+import { isAndroid } from "../../../utils/platform";
 
 export interface PopupBoxProps {
   rendition: any;
@@ -386,7 +387,15 @@ const PopupBox = (props: PopupBoxProps) => {
   };
   const isAtBottom = popupBottom === 0;
 
-  const containerStyle: React.CSSProperties = isDockedRight
+  const containerStyle: React.CSSProperties = isAndroid
+    ? {
+        width: "calc(100% - 16px)",
+        height: "min(420px, calc(100% - 88px))",
+        left: "50%",
+        bottom: 0,
+        transform: "translateX(-50%)",
+      }
+    : isDockedRight
     ? {
         position: "fixed",
         right: 0,

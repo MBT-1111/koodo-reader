@@ -33,7 +33,7 @@ const panelTabs = [
   { key: "more", title: "More" },
 ];
 
-const SettingPanel = () => {
+const SettingPanel = ({ initialTab }: { initialTab?: string }) => {
   const currentBook = useAppStore((s) => s.book.currentBook);
   const backgroundColor = useAppStore((s) => s.reader.backgroundColor);
   const isSettingLocked = useAppStore((s) => s.reader.isSettingLocked);
@@ -69,6 +69,7 @@ const SettingPanel = () => {
   const [isShowMenu, setIsShowMenu] = useState(false);
   const [activeTab, setActiveTab] = useState(() => {
     const availableTabs = getAvailableTabs().map((item) => item.key);
+    if (initialTab && availableTabs.includes(initialTab)) return initialTab;
     const savedTab = ConfigService.getItem(SETTING_PANEL_TAB_KEY);
     return savedTab && availableTabs.includes(savedTab) ? savedTab : "theme";
   });

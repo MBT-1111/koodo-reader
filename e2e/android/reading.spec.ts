@@ -1,3 +1,4 @@
+import { showReadingTools } from "./fixtures.cjs";
 import { expect, test, type Page } from "@playwright/test";
 import { readingFixtures, visibleParagraphs } from "./fixtures.cjs";
 
@@ -31,6 +32,7 @@ test("imports Chinese-named TXT and PDF together and restores their positions", 
   for (const fixture of fixtures) {
     const card = () => page.locator(".book-list-item").filter({ hasText: fixture.title });
     await card().locator(".book-item-cover").click();
+    await showReadingTools(page);
     await expect(page).toHaveURL(new RegExp(`#/${fixture.format}/`));
     await expect.poll(() => position(page)).toBeTruthy();
     if (fixture.format === "pdf") {
@@ -42,21 +44,48 @@ test("imports Chinese-named TXT and PDF together and restores their positions", 
     await page.locator(".next-chapter-single-container").click();
     await expect.poll(async () => (await position(page))?.percentage).not.toBe(before?.percentage);
     const saved = await position(page);
+    await showReadingTools(page);
     await page.getByRole("button", { name: "Exit reader", exact: true }).click();
     await expect(page).toHaveURL(/#\/manager\/home/);
     await page.reload();
     await card().locator(".book-item-cover").click();
+    await showReadingTools(page);
     await expect.poll(() => position(page)).toMatchObject({ percentage: saved?.percentage });
     await page.evaluate(() => window.dispatchEvent(new Event("android-reader-close")));
     await expect.poll(() => position(page)).toMatchObject({ percentage: saved?.percentage });
+    await showReadingTools(page);
     await page.getByRole("button", { name: "Exit reader", exact: true }).click();
     await expect(page).toHaveURL(/#\/manager\/home/);
   }
 });
 
+test("a closed TXT cannot replace the PDF rendition through its delayed refresh", async ({ page }) => {
+  const fixtures = (await readingFixtures()).filter((fixture) => fixture.format !== "epub");
+  await page.locator("#import-book-box").setInputFiles(fixtures);
+  const card = (title: string) => page.locator(".book-list-item").filter({ hasText: title });
+  await card(fixtures[0].title).locator(".book-item-cover").click();
+  await showReadingTools(page);
+  await expect(page.locator("#page-area")).toHaveAttribute("aria-busy", "false");
+  await showReadingTools(page);
+  await page.getByRole("button", { name: "Exit reader", exact: true }).click();
+  await expect(page).toHaveURL(/#\/manager\/home/);
+  await card(fixtures[1].title).locator(".book-item-cover").click();
+  await showReadingTools(page);
+  await expect(page).toHaveURL(/#\/pdf\//);
+  await expect(page.locator("#page-area")).toHaveAttribute("aria-busy", "false");
+  // The old TXT refresh was scheduled one second after initial rendering.
+  await page.waitForTimeout(1200);
+  await page.locator(".next-chapter-single-container").click();
+  await expect.poll(async () => Number((await position(page))?.percentage)).toBeGreaterThan(0);
+  await page.evaluate(() => window.dispatchEvent(new Event("android-reader-close")));
+  expect((await position(page))?.text).not.toMatch(/安卓中文文本样本|手机旋转后继续阅读/);
+  await expect(page.frameLocator("#page-area > iframe").frameLocator('iframe[id^="pdf-iframe-"]').first().locator("body")).toContainText("PDF page");
+});
+
 test("dismisses reader panels and saves a bookmark from the phone toolbar", async ({ page }) => {
   await page.locator("#import-book-box").setInputFiles((await readingFixtures())[0]);
   await page.locator(".book-item-cover").first().click();
+  await showReadingTools(page);
   await expect.poll(() => position(page)).toBeTruthy();
   for (const label of ["Chapters", "Settings"]) {
     await page.getByRole("button", { name: label, exact: true }).click();
@@ -65,9 +94,8 @@ test("dismisses reader panels and saves a bookmark from the phone toolbar", asyn
     await expect(page.locator(".android-reader-backdrop")).toBeHidden();
     await expect(page).toHaveURL(/#\/epub\//);
   }
-  await page.getByRole("button", { name: "Bookmark", exact: true }).click();
-  await expect(page.getByRole("button", { name: "Chapters", exact: true })).toBeInViewport();
   await page.locator(".add-bookmark-button").click();
+  await page.getByRole("button", { name: "Bookmark", exact: true }).click();
   await expect.poll(() => page.evaluate(async () => {
     const db = await new Promise<IDBDatabase>((resolve) => { const request = indexedDB.open("localforage"); request.onsuccess = () => resolve(request.result); });
     const count = await new Promise<number>((resolve) => { const request = db.transaction("keyvaluepairs").objectStore("keyvaluepairs").get("bookmarks"); request.onsuccess = () => resolve(request.result?.length || 0); });
@@ -76,7 +104,7 @@ test("dismisses reader panels and saves a bookmark from the phone toolbar", asyn
   })).toBe(1);
   await page.waitForTimeout(700); // Touch panels must outlive the desktop hover-close delay.
   await expect(page.locator(".android-reader-backdrop")).toBeVisible();
-  await page.locator(".android-reader-backdrop").click({ position: { x: 380, y: 400 } });
+  await page.locator(".android-reader-backdrop").click({ position: { x: 380, y: 80 } });
   await expect(page.locator(".android-reader-backdrop")).toBeHidden();
   await expect(page).toHaveURL(/#\/epub\//);
 });
@@ -84,11 +112,12 @@ test("dismisses reader panels and saves a bookmark from the phone toolbar", asyn
 test("keeps the current chapter and position across phone rotation", async ({ page }, testInfo) => {
   await page.locator("#import-book-box").setInputFiles((await readingFixtures())[0]);
   await page.locator(".book-item-cover").first().click();
+  await showReadingTools(page);
   await expect(page.frameLocator("#page-area iframe").first().locator("body")).toContainText("第一章");
   await page.getByRole("button", { name: "Chapters", exact: true }).click();
   await page.locator(".content-chapter-title").filter({ hasText: "第二章" }).click();
   await expect(page.frameLocator("#page-area iframe").first().locator("body")).toContainText("第二章");
-  await page.getByRole("button", { name: "Chapters", exact: true }).click();
+  await expect(page.locator(".android-reader-backdrop")).toBeHidden();
   await expect.poll(async () => (await position(page))?.chapterDocIndex).toBe("1");
   const chapterStart = await position(page);
   await page.locator(".next-chapter-single-container").click();
@@ -113,6 +142,7 @@ test("keeps the current chapter and position across phone rotation", async ({ pa
 test("a slow touch swipe turns one page", async ({ page }) => {
   await page.locator("#import-book-box").setInputFiles((await readingFixtures())[0]);
   await page.locator(".book-item-cover").first().click();
+  await showReadingTools(page);
   await expect.poll(() => position(page)).toBeTruthy();
   const initial = await position(page);
   await page.locator(".next-chapter-single-container").click();

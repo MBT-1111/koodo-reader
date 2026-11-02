@@ -6,8 +6,10 @@ import { ConfigService } from "../../../assets/lib/kookit-extra-browser.min";
 import { isPaginatedBook, scrollContents } from "../../../utils/common";
 import { useAppStore } from "../../../store/useAppStore";
 import { isAndroid } from "../../../utils/platform";
+import { useTranslation } from "react-i18next";
 
-const ProgressPanel = () => {
+const ProgressPanel = ({ compact = false }: { compact?: boolean }) => {
+  const { t } = useTranslation();
   const currentBook = useAppStore((s) => s.book.currentBook);
   const percentage = useAppStore((s) => s.progressPanel.percentage);
   const htmlBook = useAppStore((s) => s.reader.htmlBook);
@@ -57,7 +59,7 @@ const ProgressPanel = () => {
   };
 
   useEffect(() => {
-    if (!htmlBook) return;
+    if (!htmlBook || (isAndroid && htmlBook.key !== currentBook.key)) return;
     const rendition = htmlBook.rendition;
     (async () => {
       await handlePageNum(rendition);
@@ -132,8 +134,17 @@ const ProgressPanel = () => {
   };
 
   if (!htmlBook) {
-    return <div className="progress-panel">Loading</div>;
+    return compact ? null : <div className="progress-panel">Loading</div>;
   }
+  if (compact) return (
+    <div className="android-reader-progress">
+      <input className="input-progress" aria-label={t("Reading progress")} value={state.currentPercentage} type="range" min="0" max="100" step="1"
+        onPointerUp={(event) => void onProgressChange(event)}
+        onKeyUp={(event) => { if (["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) void onProgressChange(event); }}
+        onChange={(event) => setState((prev) => ({ ...prev, currentPercentage: Number(event.target.value) }))} />
+      <span>{Math.round(state.currentPercentage)}%</span>
+    </div>
+  );
   let readerMode = isPaginatedBook(currentBook)
     ? ConfigService.getReaderConfig("pdfReaderMode") || "scroll"
     : ConfigService.getReaderConfig("readerMode") || "double";

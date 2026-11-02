@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { migrateLegacyLibrary, NATIVE_TABLES } from "./migration";
+import { migrateLegacyFonts, migrateLegacyLibrary, NATIVE_TABLES } from "./migration";
 
 const cover = "data:image/png;base64,AQID";
 function fixture() {
@@ -70,5 +70,48 @@ describe("Android legacy library migration", () => {
     source.set("books", "corrupt");
     await expect(migrateLegacyLibrary(legacy, target)).rejects.toThrow("ANDROID_STORAGE_LEGACY_TABLE");
     expect(target.replaceTable).not.toHaveBeenCalled();
+  });
+});
+
+describe("Android legacy font migration", () => {
+  it("copies Unicode font names and data URLs without removing the source", async () => {
+    const { source, legacy } = fixture();
+    source.set("font_中文字体", "data:font/ttf;base64,AQID");
+    source.set("font_binary", new Uint8Array([4, 5]));
+    const write = vi.fn(async (_name: string, _bytes: ArrayBuffer) => {});
+    await migrateLegacyFonts(legacy, { 中文字体: { type: "ttf" }, binary: { type: "woff" } }, write);
+    expect(write.mock.calls.map(([name, bytes]) => [name, [...new Uint8Array(bytes)]])).toEqual([
+      ["中文字体.ttf", [1, 2, 3]], ["binary.woff", [4, 5]],
+    ]);
+    expect(source.get("font_中文字体")).toBe("data:font/ttf;base64,AQID");
+  });
+
+  it("retains the source after a failed write and retries the copy", async () => {
+    const { source, legacy } = fixture();
+    source.set("font_fixture", "data:font/otf;base64,AQID");
+    const write = vi.fn(async (_name: string, _bytes: ArrayBuffer) => {});
+    write.mockRejectedValueOnce(new Error("disk full"));
+    await expect(migrateLegacyFonts(legacy, { fixture: { type: "otf" } }, write)).rejects.toThrow("disk full");
+    expect(source.has("font_fixture")).toBe(true);
+    await migrateLegacyFonts(legacy, { fixture: { type: "otf" } }, write);
+    expect(write).toHaveBeenCalledTimes(2);
+  });
+
+  it("rejects malformed metadata and font data", async () => {
+    const { source, legacy } = fixture();
+    const write = vi.fn(async (_name: string, _bytes: ArrayBuffer) => {});
+    await expect(migrateLegacyFonts(legacy, [], write)).rejects.toThrow("ANDROID_STORAGE_LEGACY_FONTS");
+    await expect(migrateLegacyFonts(legacy, { bad: { type: "exe" } }, write)).rejects.toThrow("ANDROID_STORAGE_LEGACY_FONT_TYPE");
+    source.set("font_bad", "data:font/ttf;base64,broken!");
+    await expect(migrateLegacyFonts(legacy, { bad: { type: "ttf" } }, write)).rejects.toThrow("ANDROID_STORAGE_LEGACY_FONT_DATA");
+    expect(write).not.toHaveBeenCalled();
+  });
+
+  it("retains missing-font metadata and tolerates an empty font library", async () => {
+    const { legacy } = fixture();
+    const write = vi.fn(async (_name: string, _bytes: ArrayBuffer) => {});
+    await migrateLegacyFonts(legacy, null, write);
+    await migrateLegacyFonts(legacy, { missing: { type: "ttf" } }, write);
+    expect(write).not.toHaveBeenCalled();
   });
 });

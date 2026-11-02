@@ -1,3 +1,4 @@
+const { showReadingTools, hideReadingTools } = require("../e2e/android/fixtures.cjs");
 const assert = require("node:assert/strict");
 const fs = require("node:fs/promises");
 const path = require("node:path");
@@ -58,17 +59,17 @@ async function main() {
     assert.equal(await page.evaluate(() => window.Capacitor.getPlatform()), "android");
     checked("native WebView startup");
 
-    await page.locator(".android-header > button").nth(1).click();
+    await page.locator(".android-bottom-nav").getByRole("button", { name: "Settings", exact: true }).click();
     await expect(page.locator(".setting-dialog-container")).toBeVisible();
     await device.shell("input keyevent KEYCODE_BACK");
     await expect(page.locator(".setting-dialog-container")).toBeHidden();
     checked("native Back closes settings");
 
-    await page.locator(".android-header > button").first().click();
-    await expect(page.locator(".sidebar")).toBeVisible();
+    await page.locator(".android-bottom-nav").getByRole("button", { name: "Shelf", exact: true }).click();
+    await expect(page.locator(".android-shelves")).toBeVisible();
     await device.shell("input keyevent KEYCODE_BACK");
-    await expect(page.locator(".sidebar")).toBeHidden();
-    checked("native Back closes navigation");
+    await expect(page).toHaveURL(/#\/manager\/home/);
+    checked("native Back returns from shelves to Home");
 
     await page.locator(".import-from-local").click();
     await expect.poll(focus, { timeout: 15000 }).toMatch(/documentsui|myfiles/i);
@@ -90,6 +91,7 @@ async function main() {
     await expect(card()).toBeVisible();
     checked("synthetic EPUB imports in native WebView");
     await card().locator(".book-item-cover").click();
+    await showReadingTools(page);
     await expect(page).toHaveURL(/#\/epub\//);
     const key = new URL(page.url()).hash.split("?")[0].split("/").pop();
     const native = (request) => page.evaluate(async (data) => (await window.Capacitor.Plugins.KoodoStorage.execute(data)).value, request);
@@ -119,6 +121,7 @@ async function main() {
     const advanced = await position(page, key);
     await page.screenshot({ path: path.join(output, "native-reader.png") });
     checked("native EPUB pagination saves progress");
+    await hideReadingTools(page);
     await device.shell("input keyevent KEYCODE_BACK");
     await expect(page).toHaveURL(/#\/manager\/home/);
     checked("native Back exits reader");
@@ -128,6 +131,8 @@ async function main() {
     checked("reader exit flushes progress to native preferences");
 
     await card().locator(".book-item-cover").click();
+
+    await showReadingTools(page);
     await expect(page.frameLocator("#page-area iframe").first().locator("body")).toContainText("Paragraph");
     await page.evaluate(() => window.dispatchEvent(new Event("android-reader-close")));
     await expect.poll(() => position(page, key)).toMatchObject({ percentage: advanced.percentage });
@@ -138,10 +143,12 @@ async function main() {
     page.on("pageerror", (error) => errors.push(error.message));
     await expect(card()).toBeVisible();
     await card().locator(".book-item-cover").click();
+    await showReadingTools(page);
     await expect(page.frameLocator("#page-area iframe").first().locator("body")).toContainText("Paragraph");
     await page.evaluate(() => window.dispatchEvent(new Event("android-reader-close")));
     await expect.poll(() => position(page, key)).toMatchObject({ percentage: advanced.percentage });
     checked("library and progress survive force-stop and restart");
+    await showReadingTools(page);
     await page.locator(".android-reader-toolbar button").first().click();
     await expect(page).toHaveURL(/#\/manager\/home/);
     await page.screenshot({ path: path.join(output, "native-library.png") });

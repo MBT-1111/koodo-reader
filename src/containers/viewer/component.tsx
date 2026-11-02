@@ -72,10 +72,12 @@ export interface ViewerProps {
 
   handleLeaveReader: (position: string) => void;
   handleEnterReader: (position: string) => void;
+  handleToggleControls?: () => void;
 }
 
 export interface ViewerState {
   isTouch: boolean;
+  isRendering: boolean;
 
   isDisablePopup: boolean;
   chapter: string;
@@ -169,9 +171,11 @@ const Viewer = (props: ViewerProps) => {
     handleScale,
     handleBackgroundColor,
     handleLeaveReader: props.handleLeaveReader,
+    handleToggleControls: props.handleToggleControls,
   };
   const propsRef = useLatest(connected);
   const [state, setState] = useState<ViewerState>({
+    isRendering: true,
     rect: null,
     isDisablePopup: ConfigService.getReaderConfig("isDisablePopup") === "yes",
     isTouch: ConfigService.getReaderConfig("isTouch") === "yes",
@@ -189,6 +193,11 @@ const Viewer = (props: ViewerProps) => {
     setState((prev) => ({ ...prev, ...patch }));
   const resizeHandlerRef = useRef<(() => void) | null>(null);
   const pendingRerenderRef = useRef(false);
+  const disposedRef = useRef(false);
+  const viewerBookKeyRef = useRef(currentBook.key);
+  const textRefreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const isCurrentViewer = () => !isAndroid || (!disposedRef.current &&
+    useAppStore.getState().book.currentBook.key === viewerBookKeyRef.current);
   const prevWidthPropsRef = useRef({
     margin,
     scale,
@@ -205,6 +214,7 @@ const Viewer = (props: ViewerProps) => {
       propsRef.current.currentBook.key,
       "notes"
     );
+    if (!isCurrentViewer()) return;
     if (!highlighters) return;
     let highlightersByChapter = highlighters.filter((item: Note) => {
       let cfi = JSON.parse(item.cfi);
@@ -274,7 +284,18 @@ const Viewer = (props: ViewerProps) => {
     propsRef.current.handleOpenMenu(true);
   };
   const handleRenderBook = async () => {
-    if (renderLockedRef.current) return;
+    if (!isCurrentViewer()) return;
+    const menu = useAppStore.getState().viewArea;
+    if (isAndroid && menu.isOpenMenu && menu.menuMode === "note") {
+      // Replacing the iframe while typing steals focus and dismisses the Android keyboard.
+      pendingRerenderRef.current = true;
+      return;
+    }
+    if (renderLockedRef.current) {
+      if (isAndroid) pendingRerenderRef.current = true;
+      return;
+    }
+    if (isAndroid) updateState({ isRendering: true });
     let { key, path, format, name } = propsRef.current.currentBook;
     if (ConfigService.getAllListConfig("seperateStyleBooks").includes(key)) {
       window.currentBookKey = key;
@@ -407,6 +428,7 @@ const Viewer = (props: ViewerProps) => {
       ocrQueue = task.catch(() => undefined);
       return task;
     };
+    if (!isCurrentViewer()) return;
     let rendition = BookHelper.getRendition(
       result,
       {
@@ -566,7 +588,9 @@ const Viewer = (props: ViewerProps) => {
       await rendition.renderTo(document.getElementById("page-area"));
     }
 
+    if (!isCurrentViewer()) return;
     await handleRest(rendition);
+    if (!isCurrentViewer()) return;
     if (
       ConfigService.getReaderConfig("isAutoReading") === "yes" &&
       propsRef.current.readerMode === "scroll"
@@ -588,6 +612,7 @@ const Viewer = (props: ViewerProps) => {
   };
 
   const handleRest = async (rendition: any) => {
+    if (!isCurrentViewer()) return;
     htmlMouseEvent(
       rendition,
       propsRef.current.currentBook,
@@ -615,6 +640,7 @@ const Viewer = (props: ViewerProps) => {
       StyleUtil.addDefaultCss(propsRef.current.currentBook.key);
       await StyleUtil.applyReaderFonts(rendition);
     }
+    if (!isCurrentViewer()) return;
 
     let bookLocation: {
       text: string;
@@ -656,6 +682,7 @@ const Viewer = (props: ViewerProps) => {
       }
     }
     rendition.on("rendered", async () => {
+      if (!isCurrentViewer()) return;
       // Reflow can round the visible page backwards. Keep the saved anchor until
       // resizing settles; user page/gesture handlers still record new positions.
       if (!isAndroid || !useAppStore.getState().reader.isReflowing) handleLocation();
@@ -708,8 +735,11 @@ const Viewer = (props: ViewerProps) => {
         await StyleUtil.applyReaderFonts(rendition);
       }
       // rendition.tranformText();
+      if (!isCurrentViewer()) return;
       handleBindGesture();
       await handleHighlight(rendition);
+      if (!isCurrentViewer()) return;
+      if (isAndroid) updateState({ isRendering: false });
       renderLockedRef.current = true;
       if (renderUnlockTimerRef.current) clearTimeout(renderUnlockTimerRef.current);
       renderUnlockTimerRef.current = setTimeout(() => {
@@ -734,8 +764,11 @@ const Viewer = (props: ViewerProps) => {
       ) {
         return;
       }
-      setTimeout(async () => {
+      textRefreshTimerRef.current = setTimeout(async () => {
+        textRefreshTimerRef.current = null;
+        if (!isCurrentViewer()) return;
         await rendition.refreshContent();
+        if (!isCurrentViewer()) return;
         let chapters = rendition.getChapter();
         let flattenChapters = rendition.flatChapter(chapters);
         propsRef.current.handleHtmlBook({
@@ -748,8 +781,17 @@ const Viewer = (props: ViewerProps) => {
     }
   };
 
+  useEffect(() => {
+    if (isAndroid && pendingRerenderRef.current && !(isOpenMenu && menuMode === "note")) {
+      pendingRerenderRef.current = false;
+      handleRenderBook();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isOpenMenu, menuMode]);
+
   const handleLocation = () => {
-    if (!propsRef.current.htmlBook) {
+    if (!propsRef.current.htmlBook || !isCurrentViewer() ||
+      (isAndroid && propsRef.current.htmlBook.key !== viewerBookKeyRef.current)) {
       return;
     }
     let position = propsRef.current.htmlBook.rendition.getPosition();
@@ -765,13 +807,39 @@ const Viewer = (props: ViewerProps) => {
       let doc = docs[i];
       if (!doc || gestureBoundDocs.has(doc)) continue;
       gestureBoundDocs.add(doc);
-      doc.addEventListener("click", () => {
+      let pointer: { id: number; x: number; y: number; time: number; multiple: boolean } | null = null;
+      let isTap = false;
+      if (isAndroid) {
+        doc.addEventListener("pointerdown", (event) => {
+          isTap = false;
+          if (!event.isPrimary) {
+            if (pointer) pointer.multiple = true;
+            return;
+          }
+          pointer = { id: event.pointerId, x: event.clientX, y: event.clientY, time: Date.now(), multiple: false };
+        });
+        doc.addEventListener("pointercancel", () => { pointer = null; isTap = false; });
+      }
+      doc.addEventListener("click", (event) => {
+        if (isAndroid) {
+          const target = event.target as Element | null;
+          if (!isTap || doc.getSelection()?.toString().trim() ||
+            target?.closest?.("a, button, input, textarea, select, [contenteditable], [role='button']")) return;
+          isTap = false;
+          propsRef.current.handleToggleControls?.();
+          return;
+        }
         propsRef.current.handleLeaveReader("left");
         propsRef.current.handleLeaveReader("right");
         propsRef.current.handleLeaveReader("top");
         propsRef.current.handleLeaveReader("bottom");
       });
       doc.addEventListener("pointerup", (event) => {
+        if (isAndroid) {
+          isTap = !!pointer && pointer.id === event.pointerId && !pointer.multiple &&
+            Date.now() - pointer.time < 450 && Math.hypot(event.clientX - pointer.x, event.clientY - pointer.y) < 12;
+          pointer = null;
+        }
         if (isPaginatedBook(propsRef.current.currentBook)) {
           let ownerDoc = (event.target as HTMLElement).ownerDocument;
           let targetIframe = ownerDoc?.defaultView?.frameElement;
@@ -831,6 +899,7 @@ const Viewer = (props: ViewerProps) => {
   };
 
   useEffect(() => {
+    disposedRef.current = false;
     propsRef.current.handleFetchBookmarks();
     propsRef.current.handleFetchNotes();
     propsRef.current.handleFetchBooks();
@@ -877,6 +946,8 @@ const Viewer = (props: ViewerProps) => {
     resizeHandlerRef.current = resizeHandler;
     window.addEventListener("resize", resizeHandler);
     return () => {
+      disposedRef.current = true;
+      if (isAndroid && textRefreshTimerRef.current) clearTimeout(textRefreshTimerRef.current);
       if (isAndroid) useAppStore.getState().handleReaderReflow(false);
       if (renderUnlockTimerRef.current) clearTimeout(renderUnlockTimerRef.current);
       if (resizeHandlerRef.current) {
@@ -944,7 +1015,7 @@ const Viewer = (props: ViewerProps) => {
           } as any)}
         />
       ) : null}
-      {htmlBook &&
+      {(htmlBook || (isAndroid && isOpenMenu && menuMode === "note")) &&
       (isDockedRight ||
         (isOpenMenu &&
           (menuMode === "dict" ||
@@ -953,7 +1024,7 @@ const Viewer = (props: ViewerProps) => {
             menuMode === "note"))) ? (
         <PopupBox
           {...({
-            rendition: htmlBook.rendition,
+            rendition: htmlBook?.rendition,
             rect: state.rect,
             chapterDocIndex: state.chapterDocIndex,
             chapter: state.chapter,
@@ -978,6 +1049,7 @@ const Viewer = (props: ViewerProps) => {
             : "html-viewer-page"
         }
         id="page-area"
+        aria-busy={isAndroid ? state.isRendering : undefined}
         style={
           readerMode === "scroll" && document.body.clientWidth >= 570
             ? {

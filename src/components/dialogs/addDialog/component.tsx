@@ -2,6 +2,9 @@ import { useTranslation } from "react-i18next";
 import React, { useState } from "react";
 import { Trans } from "react-i18next";
 import { useAppStore } from "../../../store/useAppStore";
+import { useNavigate } from "react-router-dom";
+import { isAndroid } from "../../../utils/platform";
+import { openAndroidManager } from "../../../custom/android/navigation";
 import "./addDialog.css";
 import toast from "react-hot-toast";
 import {
@@ -24,6 +27,7 @@ const AddDialog = () => {
   const handleShelf = useAppStore((s) => s.handleShelf);
   const handleSelectedBooks = useAppStore((s) => s.handleSelectedBooks);
   const { t } = useTranslation();
+  const navigate = useNavigate();
   const [isNew, setIsNew] = useState(true);
   const [selectedShelfTitle, setShelfTitle] = useState("");
   const [actionType, setActionType] = useState("copy");
@@ -99,10 +103,14 @@ const AddDialog = () => {
     handleAddDialog(false);
     toast.success(t("Addition successful"));
     handleActionDialog(false);
-    handleMode("shelf");
-    setTimeout(() => {
-      handleShelf(targetShelfTitle);
-    }, 1000);
+    if (isAndroid) {
+      openAndroidManager(navigate, "shelf", targetShelfTitle);
+    } else {
+      handleMode("shelf");
+      setTimeout(() => {
+        handleShelf(targetShelfTitle);
+      }, 1000);
+    }
   };
   const handleChange = (nextShelfTitle: string) => {
     if (nextShelfTitle === "New shelf") {

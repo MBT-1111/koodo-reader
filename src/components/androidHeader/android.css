@@ -1,61 +1,33 @@
 html[data-platform="android"] .android-header {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  height: 64px;
-  padding: 0 8px;
+  box-sizing: border-box;
+  height: var(--android-header-height, 72px);
+  padding: 0 18px;
 }
 
-.android-header > button {
+.android-title-row { display: flex; align-items: center; gap: 12px; height: 72px; }
+.android-title-row h1 { flex: 1; min-width: 0; margin: 0; font-size: 25px; font-weight: 700; letter-spacing: -0.6px; white-space: nowrap; text-overflow: ellipsis; overflow: hidden; }
+.android-title-row > button {
   flex-shrink: 0;
-  width: 48px;
-  height: 48px;
+  width: 44px;
+  height: 44px;
   border: 0;
   border-radius: 50%;
-  background: transparent;
+  background: var(--android-surface);
   color: inherit;
-  font-size: 24px;
+  font-size: 20px;
 }
 
 .android-search {
   position: relative;
   flex: 1;
   min-width: 0;
+  padding: 0 0 12px;
 }
-
-html[data-platform="android"] .sidebar {
-  position: fixed;
-  inset: 64px auto 0 0;
-  width: min(280px, 80vw);
-  z-index: 16;
-  background: var(--app-background, #fff);
-  box-shadow: 4px 0 18px #0003;
-}
-
-html[data-platform="android"] .sidebar[data-collapsed="true"] {
-  display: none;
-}
-
-html[data-platform="android"] .sidebar-list-icon,
-html[data-platform="android"] .sidebar .logo {
-  display: none;
-}
-
-html[data-platform="android"] .side-menu-container-parent {
-  top: 0;
-  width: 100%;
-  height: 100%;
-}
-
-.android-header > .android-nav-backdrop {
-  position: fixed;
-  inset: 64px 0 0;
-  width: 100%;
-  height: auto;
-  border-radius: 0;
-  background: #0006;
-  z-index: 15;
-}
+.android-search .header-search-box { box-sizing: border-box; width: 100%; height: 44px; padding-right: 44px; background: var(--android-surface); color: inherit; }
+.android-search .header-search-box::placeholder { color: var(--android-muted); }
+.android-title-row .import-from-local { position: static !important; width: auto !important; min-width: 92px; height: 44px; line-height: 44px; margin: 0; border-radius: 24px; background: var(--android-surface); color: var(--android-text); box-shadow: none; }
+.android-import-label { display: flex; align-items: center; justify-content: center; gap: 8px; padding: 0 14px; font-size: 13px; font-weight: 600; }
+.android-import-label .icon-add { font-size: 19px; }
 
 html[data-platform="android"] .book-list-container-parent,
 html[data-platform="android"] .card-list-container-parent {
@@ -242,4 +214,62 @@ html[data-platform="android"] .reader-quick-buttons {
 
 html[data-platform="android"] .header-container {
   display: none;
+}
+
+html[data-platform="android"] .popup-pin-handle,
+html[data-platform="android"] .popup-drag-handle,
+html[data-platform="android"] .popup-resize-handle {
+  display: none;
+}
+
+html[data-platform="android"] .note-editor {
+  box-sizing: border-box;
+  width: 100%;
+  height: 100%;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  overflow-y: auto;
+}
+
+html[data-platform="android"] .note-original-text {
+  flex-shrink: 0;
+  margin: 0;
+}
+
+html[data-platform="android"] .editor-box-parent {
+  flex: 1;
+  min-height: 70px;
+  height: auto;
+}
+
+html[data-platform="android"] .editor-box {
+  box-sizing: border-box;
+  width: 100%;
+  height: 100% !important;
+  min-height: 70px;
+}
+
+html[data-platform="android"] .note-editor .color-option-container-edit,
+html[data-platform="android"] .note-editor .note-tags,
+html[data-platform="android"] .note-editor .note-button-container {
+  position: static !important;
+  width: 100% !important;
+  flex-shrink: 0;
+}
+
+html[data-platform="android"] .note-editor .color-option-container-edit {
+  flex-wrap: wrap;
+}
+
+html[data-platform="android"] .note-editor .note-tags {
+  height: auto !important;
+  min-height: 28px;
+}
+
+html[data-platform="android"] .note-button-container > .book-manage-title {
+  min-height: 44px;
+  display: flex;
+  align-items: center;
 }

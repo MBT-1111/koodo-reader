@@ -35,7 +35,7 @@ export const readNativePreferences = () =>
 export const writeNativePreferences = (snapshot: PreferencesSnapshot) =>
   nativeCommand<void>({ channel: "preferences", action: "write", snapshot });
 
-type FileGroup = "book" | "cover";
+type FileGroup = "book" | "cover" | "font";
 
 export const nativeFiles = {
   list: (group: FileGroup) => nativeCommand<string[]>({ channel: "file-command", action: "list", group }),

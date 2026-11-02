@@ -8,6 +8,7 @@ import {
 import ConfigUtil from "../../utils/file/configUtil";
 import BookUtil from "../../utils/file/bookUtil";
 import { useAppStore } from "../../store/useAppStore";
+import { isAndroid } from "../../utils/platform";
 
 export interface SearchBoxProps {
   isNavSearch?: boolean;
@@ -178,6 +179,7 @@ const SearchBox = (props: SearchBoxProps) => {
             : {}
         }
         onCompositionStart={() => {
+          if (isAndroid && !isReading && !props.isNavSearch) return;
           if (props.mode === "nav") {
             props.handleNavSearchState?.("focused");
           }
@@ -189,6 +191,7 @@ const SearchBox = (props: SearchBoxProps) => {
           }
         }}
         onCompositionEnd={() => {
+          if (isAndroid && !isReading && !props.isNavSearch) return;
           if (ConfigService.getReaderConfig("isTempLocked") === "yes") {
             ConfigService.setReaderConfig("isNavLocked", "");
             ConfigService.setReaderConfig("isTempLocked", "");

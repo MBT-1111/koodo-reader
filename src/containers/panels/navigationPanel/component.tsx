@@ -19,6 +19,8 @@ import {
   READING_PANEL_TOGGLE_EVENT,
 } from "../../../utils/reader/mouseEvent";
 import { useAppStore } from "../../../store/useAppStore";
+import { isAndroid } from "../../../utils/platform";
+import { useTranslation } from "react-i18next";
 
 export interface NavigationPanelProps {
   totalDuration: number;
@@ -97,6 +99,7 @@ export const groupSearchResults = (searchList: any[]): SearchResultGroup[] => {
 };
 
 const NavigationPanel = (props: NavigationPanelProps) => {
+  const { t } = useTranslation();
   const currentBook = useAppStore((s) => s.book.currentBook);
   const htmlBook = useAppStore((s) => s.reader.htmlBook);
   const backgroundColor = useAppStore((s) => s.reader.backgroundColor);
@@ -432,7 +435,14 @@ const NavigationPanel = (props: NavigationPanelProps) => {
               <SearchBox {...(searchProps as any)} />
             </div>
 
-            <div className="navigation-navigation">
+            {isAndroid ? <nav className="navigation-navigation" aria-label={t("android.reader.tools")}>
+              {[
+                { tab: "contents", label: "Content" },
+                { tab: "bookmarks", label: "Bookmark" },
+                { tab: "notes", label: "Note" },
+                { tab: "highlights", label: "Highlight" },
+              ].map((item) => <button key={item.tab} type="button" className="book-bookmark-title" aria-pressed={state.currentTab === item.tab} onClick={() => handleChangeTab(item.tab)}>{t(item.label)}</button>)}
+            </nav> : <div className="navigation-navigation">
               <span
                 className="book-bookmark-title"
                 onClick={() => {
@@ -469,7 +479,7 @@ const NavigationPanel = (props: NavigationPanelProps) => {
               >
                 <Trans>Highlight</Trans>
               </span>
-            </div>
+            </div>}
           </div>
           <div className="navigation-body-parent">
             <div className="navigation-body">

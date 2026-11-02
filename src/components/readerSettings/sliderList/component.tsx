@@ -216,7 +216,7 @@ const SliderList = (props: SliderListProps) => {
             onChange={(event) => {
               onValueInput(event, props.item.mode);
             }}
-            onMouseUp={() => {
+            onPointerUp={() => {
               handleRest(props.item.mode);
             }}
             style={{

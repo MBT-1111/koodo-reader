@@ -5,6 +5,8 @@ import "./manager.css";
 import Sidebar from "../../containers/sidebar";
 import Header from "../../containers/header";
 import AndroidHeader from "../../components/androidHeader";
+import AndroidBottomNav from "../../components/androidBottomNav";
+import "./androidManager.css";
 import { isAndroid } from "../../utils/platform";
 import DeleteDialog from "../../components/dialogs/deleteDialog";
 import EditDialog from "../../components/dialogs/editDialog";
@@ -38,6 +40,7 @@ import Footer from "../../components/footer";
 import ProtectionOverlay from "../../components/protection";
 import { useAppStore } from "../../store/useAppStore";
 import { scheduleCustomSync } from "../../custom/sync/service";
+import AndroidBookList from "../../containers/lists/bookList";
 
 export interface ManagerState {
   totalBooks: number;
@@ -215,7 +218,7 @@ const Manager = () => {
   };
   return (
     <div
-      className="manager"
+      className={isAndroid ? "manager android-manager" : "manager"}
       onDragEnter={(e) => {
         if (isExternalFileDragEvent(e)) {
           handleDrag(true);
@@ -227,11 +230,15 @@ const Manager = () => {
       {isShowPopupNote && (
         <div
           className="popup-box-container"
+          role={isAndroid ? "dialog" : undefined}
+          aria-label={isAndroid ? t("Edit") : undefined}
+          aria-modal={isAndroid ? true : undefined}
           style={{
             marginLeft: 0,
             height: "360px",
           }}
         >
+          {isAndroid && <header className="android-note-editor-header"><h2>{t("Edit")}</h2><button type="button" aria-label={t("Close")} onClick={() => { handleShowPopupNote(false); useAppStore.getState().handleNoteKey(""); }}><span className="icon-close" aria-hidden="true" /></button></header>}
           <PopupNote {...(PopupProps as any)} />
         </div>
       )}
@@ -333,7 +340,7 @@ const Manager = () => {
           handleDrag(false);
         }}
         style={
-          isSettingOpen ||
+          (!isAndroid && isSettingOpen) ||
           isOpenImportDialog ||
           isOpenOPDSDialog ||
           isOpenAutoImportDialog ||
@@ -365,8 +372,10 @@ const Manager = () => {
           </div>
         )}
       </div>
-      <Sidebar />
+      {!isAndroid && <Sidebar />}
       <Toaster
+        position={isAndroid ? "bottom-center" : "top-center"}
+        containerStyle={isAndroid ? { bottom: "calc(88px + env(safe-area-inset-bottom, 0px))" } : undefined}
         toastOptions={{
           style: {
             padding: "8px 10px",
@@ -401,7 +410,7 @@ const Manager = () => {
         <Routes>
           {routes.map((ele) => (
             <Route
-              element={<ele.component />}
+              element={isAndroid && ele.path === "empty" ? <AndroidBookList /> : <ele.component />}
               key={ele.path}
               path={ele.path}
             />
@@ -409,6 +418,7 @@ const Manager = () => {
         </Routes>
       )}
       <Footer />
+      {isAndroid && <AndroidBottomNav />}
     </div>
   );
 };

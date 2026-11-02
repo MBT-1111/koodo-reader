@@ -1,0 +1,34 @@
+.android-notes { position: absolute; inset: calc(var(--android-header-height) + 56px) 0 72px; display: flex; flex-direction: column; }
+.android-notes-toolbar { flex-shrink: 0; display: flex; align-items: center; justify-content: space-between; min-height: 56px; padding: 0 16px 6px; color: var(--android-muted); font-size: 13px; }
+.android-notes-toolbar button, .android-notes-filter-summary button { min-height: 44px; border: 0; border-radius: 14px; padding: 10px 14px; background: transparent; color: var(--android-accent); display: inline-flex; align-items: center; gap: 8px; font-size: 13px; }
+.android-notes-toolbar button[data-active="true"] { background: var(--android-tint); }
+.android-notes .card-list-container { flex: 1; min-height: 0; height: auto; display: block; box-sizing: border-box; overflow-x: hidden; padding: 0 16px 24px; }
+.android-note-card { margin-bottom: 14px; padding: 16px; border-radius: 18px; background: var(--android-surface); color: var(--android-text); overflow-wrap: anywhere; }
+.android-note-card > header { display: flex; align-items: center; justify-content: space-between; gap: 12px; color: var(--android-muted); font-size: 11px; }
+.android-note-card > header button { width: 44px; height: 44px; border: 0; border-radius: 50%; font-size: 19px; color: var(--android-accent); background: var(--android-tint); }
+.android-note-card blockquote { margin: 14px 0; padding-left: 12px; border-left: 3px solid var(--android-accent); font-size: 14px; line-height: 1.65; color: var(--android-muted); white-space: pre-wrap; }
+.android-note-content { font-size: 15px; line-height: 1.65; margin: 14px 0; white-space: pre-wrap; }
+.android-note-source { width: 100%; display: flex; align-items: center; gap: 9px; min-height: 44px; border: 0; background: transparent; color: var(--android-accent); text-align: left; font-size: 12px; padding: 8px 0; }
+.android-note-source > span:last-child { min-width: 0; overflow-wrap: anywhere; }
+.android-note-tags { display: flex; flex-wrap: wrap; gap: 6px; }
+.android-note-tags span { padding: 5px 10px; border-radius: 10px; background: var(--android-tint); color: var(--android-accent); font-size: 11px; }
+.android-notes-filter-summary { padding: 0 16px 10px; display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--android-muted); }
+.android-notes-filter-summary > span { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.android-notes-filter-summary button { flex-shrink: 0; padding-right: 0; }
+.android-notes-empty { text-align: center; padding: 70px 28px; color: var(--android-muted); line-height: 1.7; overflow-y: auto; }
+.android-notes-empty > span { font-size: 44px; color: var(--android-accent); }
+.android-notes-empty h2 { color: var(--android-text); font-size: 18px; margin: 22px 0 10px; }
+.android-notes-empty p { font-size: 14px; }
+.android-notes-filter-backdrop { position: fixed; inset: 0; z-index: 27; width: 100%; height: 100%; border: 0; background: #0005; }
+.android-notes-filter { position: fixed; inset: auto 0 0; z-index: 28; max-height: 74%; overflow-y: auto; padding: 12px 20px 24px; box-sizing: border-box; border-radius: 24px 24px 0 0; background: var(--android-surface); color: var(--android-text); }
+.android-notes-filter header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
+.android-notes-filter h2 { font-size: 18px; }
+.android-notes-filter header button { border: 0; width: 44px; height: 44px; border-radius: 50%; background: transparent; color: inherit; font-size: 20px; }
+.android-notes-filter label, .android-notes-filter legend { font-size: 13px; color: var(--android-muted); margin-bottom: 10px; }
+.android-notes-filter label { display: block; }
+.android-notes-filter select { width: 100%; min-height: 48px; border: 1px solid var(--android-border); border-radius: 12px; padding: 10px; background: var(--android-bg); color: inherit; font-family: inherit; font-size: 15px; }
+.android-notes-filter fieldset { margin: 22px 0 14px; padding: 0; border: 0; }
+.android-notes-tag-options { display: flex; flex-wrap: wrap; gap: 8px; }
+.android-notes-tag-options button, .android-notes-reset { min-height: 44px; padding: 10px 16px; border: 0; border-radius: 14px; background: var(--android-bg); color: inherit; font-size: 13px; }
+.android-notes-tag-options button[aria-pressed="true"] { background: var(--android-tint); color: var(--android-accent); }
+.android-notes-reset { color: var(--android-accent); background: transparent; }

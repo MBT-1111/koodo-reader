@@ -43,4 +43,15 @@ async function visibleParagraphs(page) {
   });
 }
 
-module.exports = { readingFixtures, visibleParagraphs };
+async function showReadingTools(page) {
+  await page.locator(".android-reader").waitFor();
+  const toggle = page.getByRole("button", { name: "Show reading tools", exact: true });
+  if (await toggle.isVisible()) await toggle.click();
+}
+
+async function hideReadingTools(page) {
+  const toggle = page.getByRole("button", { name: "Hide reading tools", exact: true });
+  if (await toggle.isVisible()) await toggle.click();
+}
+
+module.exports = { readingFixtures, visibleParagraphs, showReadingTools, hideReadingTools };

@@ -3,7 +3,7 @@ import { useLocation, useNavigate } from "react-router-dom";
 import { Capacitor } from "@capacitor/core";
 import { App } from "@capacitor/app";
 import { useAppStore } from "../../store/useAppStore";
-import { closeAndroidReader, dismissAndroidReaderOverlay } from "../../custom/android/navigation";
+import { closeAndroidReader, dismissAndroidManagerOverlay, dismissAndroidReaderOverlay, dismissAndroidSettingsOverlay } from "../../custom/android/navigation";
 import { useTranslation } from "react-i18next";
 import toast from "react-hot-toast";
 import { ANDROID_STORAGE_ERROR_EVENT, hasNativeStorageError } from "../../custom/android/bootstrap";
@@ -29,7 +29,12 @@ const AndroidNavigation = () => {
       if (disposed || closing) return;
       const state = useAppStore.getState();
       if (state.manager.isSettingOpen) {
-        state.handleSetting(false);
+        if (dismissAndroidSettingsOverlay()) return;
+        if (location.pathname.startsWith("/manager") && state.manager.settingMode !== "index") state.handleSettingMode("index");
+        else state.handleSetting(false);
+      } else if (state.manager.isShowPopupNote) {
+        state.handleShowPopupNote(false);
+        state.handleNoteKey("");
       } else if (state.viewArea.isOpenMenu) {
         state.handleOpenMenu(false);
       } else if (!location.pathname.startsWith("/manager")) {
@@ -40,8 +45,22 @@ const AndroidNavigation = () => {
         } finally {
           closing = false;
         }
+      } else if (state.book.isOpenAddDialog) {
+        state.handleAddDialog(false);
+      } else if (state.book.isOpenDeleteDialog) {
+        state.handleDeleteDialog(false);
+      } else if (state.book.isOpenEditDialog) {
+        state.handleEditDialog(false);
+      } else if (state.book.isOpenActionDialog) {
+        state.handleActionDialog(false);
+      } else if (state.backupPage.isOpenSortShelfDialog) {
+        state.handleSortShelfDialog(false);
+      } else if (dismissAndroidManagerOverlay()) {
+        return;
       } else if (!state.sidebar.isCollapsed) {
         state.handleCollapse(true);
+      } else if (location.pathname === "/manager/shelf" && state.sidebar.shelfTitle) {
+        state.handleShelf("");
       } else if (location.pathname !== "/manager/home") {
         navigate("/manager/home", { replace: true });
       } else {

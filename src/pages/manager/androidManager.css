@@ -1,0 +1,46 @@
+.android-manager {
+  --android-header-height: 72px;
+  --android-bg: #f5f7f8;
+  --android-surface: #fff;
+  --android-text: #243336;
+  --android-muted: #758487;
+  --android-accent: #237b70;
+  --android-tint: #e6f1ed;
+  --android-border: #e7ecec;
+  position: relative;
+  background: var(--android-bg);
+  color: var(--android-text);
+}
+.android-manager:has(.android-header[data-search-open="true"]) { --android-header-height: 128px; }
+html[data-theme="dark"] .android-manager {
+  --android-bg: #171e23;
+  --android-surface: #222c32;
+  --android-text: #e2e9e9;
+  --android-muted: #9cacae;
+  --android-accent: #86c5b7;
+  --android-tint: #2c423e;
+  --android-border: #334148;
+}
+.android-manager button, .android-manager input { font-family: inherit; }
+.android-manager .add-dialog-container { max-width: calc(100% - 32px); left: 50%; translate: -50% 0; transform: none; border-radius: 18px; }
+.android-manager > .backup-page-container { max-width: calc(100% - 32px); max-height: calc(100% - 32px); left: 50%; top: 50% !important; translate: -50% -50%; transform: none; border-radius: 18px; }
+.android-manager > .backup-page-container .cloud-drive-item > span[class*="icon-"] { display: inline-flex; align-items: center; justify-content: center; min-width: 44px; min-height: 44px; margin-right: 0 !important; }
+.android-manager > .backup-page-container .backup-page-close-icon { width: 44px; height: 44px; }
+.android-manager button:focus-visible, .android-manager input:focus-visible { outline: 2px solid var(--android-accent); outline-offset: 3px; }
+.android-manager .note-list-container-parent { top: var(--android-header-height); left: 16px !important; width: calc(100% - 32px) !important; height: calc(100% - var(--android-header-height) - 84px); }
+.android-manager .note-list-header { flex-wrap: wrap; gap: 12px; height: auto; padding-bottom: 12px; }
+.android-manager .note-tags { width: 100% !important; }
+.android-manager .card-list-container-parent { top: 100px; left: 0 !important; width: 100% !important; height: calc(100% - 100px); }
+.android-manager .note-list-container-parent .empty-page-container { top: 80px; }
+.android-note-tabs { position: absolute; top: var(--android-header-height); left: 16px; right: 16px; display: flex; gap: 8px; z-index: 3; }
+.android-note-tabs button { min-height: 44px; padding: 10px 20px; border: 0; border-radius: 16px; color: var(--android-muted); background: transparent; }
+.android-note-tabs button[aria-pressed="true"] { color: var(--android-accent); background: var(--android-tint); }
+.android-manager:has(.android-note-tabs) .note-list-container-parent { top: calc(var(--android-header-height) + 56px); height: calc(100% - var(--android-header-height) - 140px); }
+
+.android-manager > .popup-box-container { display: flex; flex-direction: column; width: calc(100% - 24px); height: min(520px, calc(100% - 24px)) !important; left: 50%; bottom: 12px; transform: translateX(-50%); z-index: 31; border-radius: 18px; }
+.android-note-editor-header { display: flex; flex-shrink: 0; align-items: center; justify-content: space-between; padding: 4px 12px 0 16px; min-height: 48px; }
+.android-note-editor-header h2 { font-size: 16px; margin: 0; }
+.android-note-editor-header button { width: 44px; height: 44px; border: 0; border-radius: 50%; background: transparent; color: inherit; font-size: 20px; }
+.android-manager > .popup-box-container .note-editor { flex: 1; min-height: 0; height: auto; }
+.android-manager > .popup-box-container .note-tags { overflow-x: auto; }
+.android-manager > .popup-box-container .note-button-container { display: flex; justify-content: flex-end; flex-wrap: wrap; gap: 8px; }

@@ -5,6 +5,8 @@ import { LocalFileManager } from "./localFile";
 import localforage from "localforage";
 import { Buffer } from "buffer";
 import i18n from "../../i18n";
+import { isNativeAndroid } from "../platform";
+import { nativeFiles } from "../../custom/android/storage";
 
 declare var window: any;
 
@@ -71,7 +73,9 @@ class FontUtil {
   ): Promise<void> {
     const filename = `${fontKey}.${type}`;
 
-    if (isElectron) {
+    if (isNativeAndroid) {
+      await nativeFiles.write("font", filename, arrayBuffer);
+    } else if (isElectron) {
       const fs = window.electronAPI.fs;
       const path = window.electronAPI.path;
       const dir = path.join(getStorageLocation() || "", FONT_FOLDER);
@@ -96,6 +100,8 @@ class FontUtil {
     const meta = this.getFontMeta(fontKey);
     const ext = type || meta?.type || "ttf";
     const filename = `${fontKey}.${ext}`;
+
+    if (isNativeAndroid) return nativeFiles.read("font", filename);
 
     if (isElectron) {
       const fs = window.electronAPI.fs;
@@ -140,7 +146,10 @@ class FontUtil {
     const meta = this.getFontMeta(fontKey);
     const ext = meta?.type;
 
-    if (isElectron) {
+    if (isNativeAndroid) {
+      const extensions = ext ? [ext] : ["ttf", "otf", "woff", "woff2"];
+      for (const type of extensions) await nativeFiles.remove("font", `${fontKey}.${type}`);
+    } else if (isElectron) {
       const fs = window.electronAPI.fs;
       const path = window.electronAPI.path;
       const dir = path.join(getStorageLocation() || "", FONT_FOLDER);

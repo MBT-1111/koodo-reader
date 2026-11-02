@@ -9,8 +9,10 @@ import ConfigUtil from "../../../utils/file/configUtil";
 import BookUtil from "../../../utils/file/bookUtil";
 import Note from "../../../models/Note";
 import { useAppStore } from "../../../store/useAppStore";
+import { isAndroid } from "../../../utils/platform";
+import AndroidNotes from "../../../components/androidNotes";
 
-const NoteList = () => {
+const DesktopNoteList = () => {
   const notes = useAppStore((s) => s.reader.notes);
   const highlights = useAppStore((s) => s.reader.highlights);
   const isSearch = useAppStore((s) => s.manager.isSearch);
@@ -139,4 +141,5 @@ const NoteList = () => {
   );
 };
 
+const NoteList = () => isAndroid ? <AndroidNotes /> : <DesktopNoteList />;
 export default NoteList;

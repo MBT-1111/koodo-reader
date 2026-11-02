@@ -2,7 +2,7 @@ import localforage from "localforage";
 import { App } from "@capacitor/app";
 import { isNativeAndroid } from "../../utils/platform";
 import { nativeDatabaseCommand, nativeFiles, readNativePreferences, writeNativePreferences } from "./storage";
-import { migrateLegacyLibrary } from "./migration";
+import { migrateLegacyFonts, migrateLegacyLibrary } from "./migration";
 import { cachedValues, cachedVersion, hydratePreferences, observePreferences, PREFERENCES_VERSION_KEY } from "./preferencesPersistence";
 
 export const ANDROID_STORAGE_ERROR_EVENT = "android-storage-error";
@@ -24,6 +24,15 @@ export async function initNativeStorage(): Promise<void> {
       saveCover: (key, cover) => nativeFiles.saveCover(key, cover),
       replaceTable: async (dbName, data) => { await nativeDatabaseCommand({ dbName, statement: "replaceAllStatement", data }); },
     });
+    const version = cachedVersion(localStorage) + 1;
+    await writeNativePreferences({ schema: 1, version, values: cachedValues(localStorage) });
+    localStorage.setItem(PREFERENCES_VERSION_KEY, String(version));
+  }
+  const fontsVersionKey = "__koodo_native_fonts_version";
+  if (localStorage.getItem(fontsVersionKey) !== "1") {
+    await migrateLegacyFonts(localforage, JSON.parse(localStorage.getItem("customFonts") || "null"),
+      (name, bytes) => nativeFiles.write("font", name, bytes));
+    localStorage.setItem(fontsVersionKey, "1");
     const version = cachedVersion(localStorage) + 1;
     await writeNativePreferences({ schema: 1, version, values: cachedValues(localStorage) });
     localStorage.setItem(PREFERENCES_VERSION_KEY, String(version));

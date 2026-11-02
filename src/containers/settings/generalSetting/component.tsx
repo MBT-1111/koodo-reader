@@ -187,7 +187,7 @@ const GeneralSetting = () => {
       <>
         {renderSwitchOption(generalSettingList)}
 
-        <div className="setting-dialog-new-title">
+        {isElectron && <div className="setting-dialog-new-title">
           <Trans>Reset main window's position</Trans>
 
           <span
@@ -198,7 +198,7 @@ const GeneralSetting = () => {
           >
             <Trans>Reset</Trans>
           </span>
-        </div>
+        </div>}
 
         <div className="setting-dialog-new-title">
           <Trans>Language</Trans>

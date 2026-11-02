@@ -20,6 +20,12 @@ import { isElectron } from "react-device-detect";
 import DatabaseService from "../../../utils/storage/databaseService";
 import { throttle } from "../../../utils/common";
 import { useAppStore } from "../../../store/useAppStore";
+import { isAndroid } from "../../../utils/platform";
+import AndroidLibraryOverview from "../../../components/androidLibraryOverview";
+import AndroidShelves from "../../../components/androidShelves";
+import { openAndroidManager } from "../../../custom/android/navigation";
+import { useNavigate } from "react-router-dom";
+import "./android.css";
 
 export interface BookListState {
   favoriteBooks: number;
@@ -57,10 +63,12 @@ const BookList = () => {
   const searchResults = useAppStore((s) => s.manager.searchResults);
   const isSearch = useAppStore((s) => s.manager.isSearch);
   const isSelectBook = useAppStore((s) => s.manager.isSelectBook);
-  const viewMode = useAppStore((s) => s.manager.viewMode);
+  const storedViewMode = useAppStore((s) => s.manager.viewMode);
+  const viewMode = isAndroid ? "card" : storedViewMode;
   const handleFetchBooks = useAppStore((s) => s.handleFetchBooks);
   const handleLoadMore = useAppStore((s) => s.handleLoadMore);
   const { t } = useTranslation();
+  const navigate = useNavigate();
   const scrollContainer = useRef<HTMLUListElement | null>(null);
   const [state, setState] = useState<BookListState>(() => ({
     favoriteBooks: Object.keys(ConfigService.getAllListConfig("favoriteBooks"))
@@ -365,9 +373,9 @@ const BookList = () => {
 
     // Migrated comment
     const scrollContainerCurrent = scrollContainer.current;
-    const scrollHandler = () => {
+    const scrollHandler = throttle(() => {
       handleScrollRef.current();
-    };
+    });
     if (scrollContainerCurrent) {
       scrollContainerCurrent.addEventListener("scroll", scrollHandler);
     }
@@ -471,7 +479,7 @@ const BookList = () => {
   };
 
   const renderBookList = (books: Book[], bookMode: string) => {
-    if (books.length === 0 && !isSearch) {
+    if (books.length === 0 && !isSearch && !isAndroid) {
       return <Navigate to="/manager/empty" replace />;
     }
     if (bookMode !== currentBookMode) {
@@ -521,7 +529,7 @@ const BookList = () => {
       }
       return viewMode === "list" ? (
         <BookListItem
-          key={index}
+          key={item.key}
           {...({
             book: item,
             isSelected: selectedBooks.indexOf(item.key) > -1,
@@ -531,7 +539,7 @@ const BookList = () => {
         />
       ) : viewMode === "card" ? (
         <BookCardItem
-          key={index}
+          key={item.key}
           {...({
             book: item,
             cardScale: state.cardScale,
@@ -542,7 +550,7 @@ const BookList = () => {
         />
       ) : (
         <BookCoverItem
-          key={index}
+          key={item.key}
           {...({
             book: item,
             isSelected: selectedBooks.indexOf(item.key) > -1,
@@ -557,17 +565,19 @@ const BookList = () => {
   if (!books) {
     return null;
   }
-  if (
+  if (!isAndroid && (
     (state.favoriteBooks === 0 && mode === "favorite") ||
     !books[0]
-  ) {
+  )) {
     return <Navigate to="/manager/empty" replace />;
   }
+  if (isAndroid && mode === "shelf" && !shelfTitle) return <AndroidShelves />;
   const { books: displayedBookList, bookMode } = handleBooks();
   return (
     <>
       <div
         className="book-list-header"
+        data-selecting={isSelectBook}
         style={isCollapsed ? { width: "calc(100% - 70px)", left: "70px" } : {}}
       >
         <SelectBook />
@@ -636,6 +646,8 @@ const BookList = () => {
             ref={scrollContainer}
             style={{ "--card-scale": state.cardScale } as React.CSSProperties}
           >
+            {isAndroid && mode === "shelf" && shelfTitle && <li className="android-shelf-breadcrumb"><button type="button" onClick={() => openAndroidManager(navigate, "shelf")}>{t("android.backToShelves")}</button><h2>{shelfTitle}</h2></li>}
+            {isAndroid && <AndroidLibraryOverview count={displayedBookList.length} empty={displayedBookList.length === 0} />}
             {renderBookList(displayedBookList, bookMode)}
           </ul>
         </div>

@@ -1,0 +1,46 @@
+import { showReadingTools } from "./fixtures.cjs";
+import { expect, test } from "@playwright/test";
+import { fontFiles, fontBook, importedFontKey, openFonts, fontLoaded } from "./font-fixtures.cjs";
+
+test("imports, applies and removes an offline custom font on a phone", async ({ page, context }, testInfo) => {
+  const errors: string[] = [];
+  page.on("pageerror", (error) => errors.push(error.message));
+  await context.route("**/*", (route) => {
+    const url = new URL(route.request().url());
+    return url.hostname === "127.0.0.1" || ["blob:", "data:"].includes(url.protocol) ? route.continue() : route.abort();
+  });
+  await page.goto("/");
+  await openFonts(page);
+  await page.locator('.setting-dialog-main input[type="file"]').setInputFiles((await fontFiles())[1]);
+  const item = page.locator(".font-setting-item").filter({ hasText: importedFontKey });
+  await expect(item).toBeVisible();
+  await item.click();
+  await expect(page.locator(".font-preview-content")).toBeInViewport();
+  const preview = (await page.locator(".font-preview-content").boundingBox())!;
+  expect(preview.x).toBeGreaterThanOrEqual(0);
+  expect(preview.x + preview.width).toBeLessThanOrEqual(393);
+  const apply = page.locator(".font-preview-actions").getByText("Set as book font", { exact: true });
+  await expect(apply).toBeInViewport();
+  await apply.click();
+  await page.locator(".font-preview-actions").getByText("Set as app font", { exact: true }).click();
+  await page.locator(".font-preview-close").click();
+  await page.locator(".setting-close-container").click();
+  await page.locator("#import-book-box").setInputFiles(await fontBook());
+  await page.locator(".book-item-cover").first().click();
+  await showReadingTools(page);
+  await expect.poll(() => fontLoaded(page, importedFontKey)).toBe(true);
+  await expect(page.frameLocator("#page-area > iframe").locator("p").first()).toHaveCSS("font-family", new RegExp(importedFontKey));
+  await page.reload();
+  await expect.poll(() => fontLoaded(page, importedFontKey)).toBe(true);
+  await page.screenshot({ path: testInfo.outputPath("custom-font-reader.png") });
+  await showReadingTools(page);
+  await page.getByRole("button", { name: "Exit reader", exact: true }).click();
+  await openFonts(page);
+  await expect(item.locator(".font-setting-delete")).toBeVisible();
+  await expect(item.locator(".font-setting-delete")).toHaveCSS("opacity", "1");
+  await item.locator(".font-setting-delete").click();
+  await expect(item).toHaveCount(0);
+  expect(await page.locator("body").evaluate((body) => getComputedStyle(body).fontFamily)).not.toContain(importedFontKey);
+  expect(await page.evaluate(() => JSON.parse(localStorage.getItem("readerConfig") || "{}").fontFamily || "")).toBe("");
+  expect(errors).toEqual([]);
+});

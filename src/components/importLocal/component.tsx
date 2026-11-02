@@ -1232,6 +1232,7 @@ const ImportLocal = (props: ImportLocalProps) => {
           <div
             className="import-from-local"
             {...getRootProps()}
+            aria-label={isAndroid ? t("android.addBooks") : undefined}
             style={
               isCollapsed && document.body.clientWidth < 950
                 ? { width: "42px" }
@@ -1440,8 +1441,10 @@ const ImportLocal = (props: ImportLocalProps) => {
                 )}
               </div>
             )}
-            <div className="animation-mask-local"></div>
-            {isCollapsed && stateRef.current.width < 950 ? (
+            {!isAndroid && <div className="animation-mask-local"></div>}
+            {isAndroid ? (
+              <span className="android-import-label"><span className="icon-add" aria-hidden="true" />{t("Import")}</span>
+            ) : isCollapsed && stateRef.current.width < 950 ? (
               <span
                 className="icon-folder"
                 style={{ fontSize: "15px", fontWeight: 500 }}

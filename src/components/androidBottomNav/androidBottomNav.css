@@ -1,0 +1,26 @@
+.android-bottom-nav {
+  position: absolute;
+  inset: auto 0 0;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  min-height: 72px;
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+  background: var(--android-surface);
+  border-top: 1px solid var(--android-border);
+  z-index: 8;
+}
+.android-bottom-nav button {
+  border: 0;
+  background: transparent;
+  color: var(--android-muted);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  min-height: 72px;
+  font-size: 11px;
+}
+.android-bottom-nav button > span:first-child { font-size: 23px; padding: 3px 16px; border-radius: 18px; }
+.android-bottom-nav button[aria-current="page"] { color: var(--android-accent); font-weight: 600; }
+.android-bottom-nav button[aria-current="page"] > span:first-child { background: var(--android-tint); }

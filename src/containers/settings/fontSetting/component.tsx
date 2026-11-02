@@ -14,6 +14,8 @@ import { applyCustomSystemFont } from "../../../utils/reader/launchUtil";
 import { useAppStore } from "../../../store/useAppStore";
 
 import { FontItem } from "../../../utils/file/fontUtil";
+import { isAndroid } from "../../../utils/platform";
+import { ANDROID_SETTINGS_DISMISS_EVENT } from "../../../custom/android/navigation";
 
 export interface InstalledFont extends FontItem {
   key: string;
@@ -51,6 +53,15 @@ const FontSetting = () => {
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const stateRef = useLatest(state);
+  useEffect(() => {
+    if (!isAndroid || !state.previewFont) return;
+    const dismiss = (event: Event) => {
+      event.preventDefault();
+      setState((prev) => ({ ...prev, previewFont: null }));
+    };
+    window.addEventListener(ANDROID_SETTINGS_DISMISS_EVENT, dismiss);
+    return () => window.removeEventListener(ANDROID_SETTINGS_DISMISS_EVENT, dismiss);
+  }, [state.previewFont]);
 
   const loadAllFonts = useCallback(async () => {
     setState((prev) => ({ ...prev, isLoading: true }));
@@ -136,6 +147,8 @@ const FontSetting = () => {
       FontUtil.deleteFontMeta(font.key);
       FontUtil.removeFontId(font.key);
       FontUtil.clearFontReferences(font.key);
+      if (stateRef.current.appFontKey === font.key) await applyCustomSystemFont();
+      if (stateRef.current.readerFontKey === font.key) renderBookFunc?.();
 
       const updatedUrls = { ...stateRef.current.loadedUrls };
       if (updatedUrls[font.key]?.startsWith("blob:")) {

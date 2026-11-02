@@ -1,0 +1,19 @@
+.android-shelves { position: absolute; inset: var(--android-header-height) 0 72px; padding: 16px; overflow-y: auto; }
+.android-shelf-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 20px; }
+.android-shelf-heading h2 { font-size: 17px; font-weight: 600; }
+.android-shelf-heading h2 { flex: 1; }
+.android-shelves button { border: 0; color: var(--android-accent); background: var(--android-tint); border-radius: 14px; min-height: 44px; padding: 10px 16px; }
+.android-shelf-empty { text-align: center; padding: 80px 20px; color: var(--android-muted); line-height: 1.7; }
+.android-shelf-empty > span { font-size: 44px; color: var(--android-accent); }
+.android-shelf-empty h2 { font-size: 18px; color: var(--android-text); margin-top: 22px; }
+.android-shelf-empty p { font-size: 14px; }
+.android-shelf-form { padding: 18px; background: var(--android-surface); border-radius: 18px; margin-bottom: 20px; }
+.android-shelf-form label { display: block; font-size: 13px; margin-bottom: 10px; }
+.android-shelf-form input { box-sizing: border-box; width: 100%; height: 48px; padding: 12px; border: 1px solid var(--android-border); border-radius: 10px; color: inherit; background: transparent; font-size: 16px; }
+.android-shelf-form > div { display: flex; gap: 10px; justify-content: flex-end; margin-top: 14px; }
+.android-shelf-list { display: grid; gap: 12px; }
+.android-shelf-list > button { display: flex; align-items: center; gap: 16px; padding: 20px; min-height: 88px; background: var(--android-surface); color: var(--android-text); text-align: left; }
+.android-shelf-list > button > span:first-child { color: var(--android-accent); font-size: 25px; }
+.android-shelf-list > button > span:nth-child(2) { flex: 1; min-width: 0; }
+.android-shelf-list strong { display: block; font-size: 16px; overflow-wrap: anywhere; }
+.android-shelf-list small { display: block; margin-top: 6px; font-size: 12px; color: var(--android-muted); }

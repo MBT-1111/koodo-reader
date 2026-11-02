@@ -15,6 +15,7 @@ import {
 } from "../../../utils/reader/mouseEvent";
 import { createHighlight } from "../../../utils/reader/noteUtil";
 import { useAppStore } from "../../../store/useAppStore";
+import { isAndroid } from "../../../utils/platform";
 
 export interface PopupMenuProps {
   rendition: any;
@@ -266,6 +267,9 @@ const PopupMenu = (props: PopupMenuProps) => {
     <div>
       <div
         className="popup-menu-container"
+        onPointerDown={(event) => {
+          if (isAndroid && !(event.target as HTMLElement).closest("input, textarea, select")) event.preventDefault();
+        }}
         style={isOpenMenu ? {} : { display: "none" }}
       >
         <div

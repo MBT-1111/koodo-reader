@@ -1,3 +1,5 @@
+import { Buffer } from "buffer";
+
 export const NATIVE_TABLES = ["books", "notes", "bookmarks", "words", "plugins"] as const;
 
 interface LegacyStore { getItem(key: string): Promise<unknown> }
@@ -36,5 +38,30 @@ export async function migrateLegacyLibrary(legacy: LegacyStore, target: Migratio
       rows.push(row);
     }
     await target.replaceTable(table, rows);
+  }
+}
+
+export async function migrateLegacyFonts(
+  legacy: LegacyStore,
+  metadata: unknown,
+  write: (name: string, bytes: ArrayBuffer) => Promise<void>
+): Promise<void> {
+  if (metadata === null) return;
+  if (typeof metadata !== "object" || Array.isArray(metadata)) throw new Error("ANDROID_STORAGE_LEGACY_FONTS");
+  for (const [key, meta] of Object.entries(metadata)) {
+    if (!meta || typeof meta !== "object" || !("type" in meta) ||
+      typeof meta.type !== "string" || !["ttf", "otf", "woff", "woff2"].includes(meta.type)) {
+      throw new Error("ANDROID_STORAGE_LEGACY_FONT_TYPE");
+    }
+    const value = await legacy.getItem(`font_${key}`);
+    let bytes: ArrayBuffer | null;
+    if (typeof value === "string") {
+      const match = /^data:[^,]*;base64,([A-Za-z0-9+/]+={0,2})$/.exec(value);
+      if (!match || match[1].length % 4 !== 0) throw new Error("ANDROID_STORAGE_LEGACY_FONT_DATA");
+      bytes = Uint8Array.from(Buffer.from(match[1], "base64")).buffer;
+    } else {
+      bytes = await binary(value);
+    }
+    if (bytes) await write(`${key}.${meta.type}`, bytes);
   }
 }
