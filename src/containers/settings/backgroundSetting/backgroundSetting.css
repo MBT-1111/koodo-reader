@@ -207,3 +207,23 @@
   opacity: 0.7;
   pointer-events: none;
 }
+
+.background-import-btn { font-family: inherit; border: 0; }
+.background-preview-close { border: 0; background: transparent; }
+.background-preview-actions button { font-family: inherit; color: #fff; border: 1px solid #ffffff70; }
+.android-settings .background-setting-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); margin: 8px 0 24px; gap: 12px; }
+.android-settings .background-setting-item { width: 100%; height: auto; aspect-ratio: 3 / 2; border-radius: 14px; }
+.android-settings .background-setting-item:hover { transform: none; }
+.android-settings .background-setting-delete { width: 44px; height: 44px; top: 0; right: 0; opacity: 1; border: 0; font-size: 16px; }
+.android-settings .background-setting-badge { font-size: 12px; }
+.android-settings .background-setting-empty { grid-column: 1 / -1; }
+.android-settings .background-featured-section { margin: 0 0 80px; }
+.android-settings .background-featured-section-title { flex-wrap: wrap; }
+.android-settings .background-featured-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.android-settings .background-featured-item { background: repeating-linear-gradient(45deg, #80808014, #80808014 8px, transparent 8px, transparent 16px); }
+.android-settings .background-preview-overlay { box-sizing: border-box; padding: 64px 16px 24px; background: #000c; }
+.android-settings .background-preview-image { max-width: 100%; max-height: min(50dvh, calc(100dvh - 240px)); }
+.android-settings .background-preview-actions { width: 100%; max-width: 480px; flex-wrap: wrap; gap: 12px; }
+.android-settings .background-preview-actions .background-apple-button { width: 100%; box-sizing: border-box; min-height: 48px; height: auto !important; padding: 12px 16px !important; margin: 0; color: #fff; white-space: normal; text-align: center; border-radius: 14px; }
+.android-settings .background-preview-close { width: 44px; height: 44px; top: 8px; right: 8px; }
+.android-settings .background-import-btn { position: sticky; bottom: 0; width: 100%; min-height: 48px; margin: 16px 0 0; border-radius: 14px; background: var(--settings-tint); color: var(--settings-accent); }

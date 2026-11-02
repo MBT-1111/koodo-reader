@@ -4,6 +4,7 @@ import "./moreAction.css";
 import { Trans } from "react-i18next";
 import { useAppStore } from "../../../store/useAppStore";
 import { saveAs } from "file-saver";
+import { saveExportFile } from "../../../utils/file/saveExportFile";
 import toast from "react-hot-toast";
 import BookUtil from "../../../utils/file/bookUtil";
 import CoverUtil from "../../../utils/file/coverUtil";
@@ -240,18 +241,21 @@ const MoreAction = (
           <div
             className="action-dialog-edit"
             style={{ paddingLeft: "0px" }}
-            onClick={() => {
-              BookUtil.fetchBook(
-                currentBook.key,
-                currentBook.format.toLowerCase(),
-                true,
-                currentBook.path
-              ).then((result: any) => {
-                toast.success(t("Export successful"), {
-                  id: "exporting",
-                });
-                saveAs(new Blob([result]), getBookName(currentBook));
-              });
+            onClick={async () => {
+              try {
+                const file = await BookUtil.fetchBook(
+                  currentBook.key,
+                  currentBook.format.toLowerCase(),
+                  true,
+                  currentBook.path
+                );
+                if (!file || typeof file === "boolean") throw new Error("EXPORT_FILE_MISSING");
+                const result = await saveExportFile(new Blob([file]), getBookName(currentBook));
+                if (result === "success") toast.success(t("Export successful"), { id: "exporting" });
+                else if (result === "failed") toast.error(t("Failed to export"), { id: "exporting" });
+              } catch {
+                toast.error(t("Failed to export"), { id: "exporting" });
+              }
             }}
           >
             <p className="action-name">

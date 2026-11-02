@@ -12,6 +12,8 @@
   color: var(--android-text);
 }
 .android-manager:has(.android-header[data-search-open="true"]) { --android-header-height: 128px; }
+#root[style*="background-image"] .android-manager { background: transparent; }
+#root[style*="background-image"] .android-manager .book-list-container { background: color-mix(in srgb, var(--android-bg) 82%, transparent); border-radius: 18px; }
 html[data-theme="dark"] .android-manager {
   --android-bg: #171e23;
   --android-surface: #222c32;

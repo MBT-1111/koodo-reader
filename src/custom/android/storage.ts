@@ -9,9 +9,13 @@ export interface PreferencesSnapshot {
 
 interface StoragePlugin {
   execute(request: Record<string, unknown>): Promise<{ value: unknown }>;
+  saveDocument(request: { name: string; mime: string; data: string; size: number; sha256: string }): Promise<
+    { status: "cancel" } | { status: "success"; size: number; sha256: string }
+  >;
 }
 
 const plugin = registerPlugin<StoragePlugin>("KoodoStorage");
+export const saveNativeDocument: StoragePlugin["saveDocument"] = (request) => plugin.saveDocument(request);
 
 export async function nativeCommand<T>(request: Record<string, unknown>): Promise<T> {
   return (await plugin.execute(request)).value as T;
@@ -35,7 +39,10 @@ export const readNativePreferences = () =>
 export const writeNativePreferences = (snapshot: PreferencesSnapshot) =>
   nativeCommand<void>({ channel: "preferences", action: "write", snapshot });
 
-type FileGroup = "book" | "cover" | "font";
+export type FileGroup = "book" | "cover" | "font" | "background";
+
+export const nativeLibraryCommand = <T>(statement: string, data?: unknown, token?: string) =>
+  nativeCommand<T>({ channel: "database-command", dbName: "library", statement, data, token });
 
 export const nativeFiles = {
   list: (group: FileGroup) => nativeCommand<string[]>({ channel: "file-command", action: "list", group }),

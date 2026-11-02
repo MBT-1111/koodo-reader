@@ -22,12 +22,13 @@ import { isElectron } from "react-device-detect";
 import { personalMode } from "../../../custom/personal";
 import { isAndroid } from "../../../utils/platform";
 import AndroidSettings from "../../androidSettings";
+import AndroidData from "../../androidData";
 
 const settingPages: Record<string, ComponentType> = {
   general: GeneralSetting, reading: ReadingSetting, shortcut: ShortcutSetting,
   appearance: AppearanceSetting, sync: SyncSetting,
   account: personalMode ? AISetting : AccountSetting,
-  data: DataSetting, about: AboutSetting, ai: AISetting, background: BackgroundSetting,
+  data: isAndroid ? AndroidData : DataSetting, about: AboutSetting, ai: AISetting, background: BackgroundSetting,
   font: FontSetting, chapter: ChapterSetting, text: TextSetting, dict: DictSetting,
   more: MoreSetting, plugins: PluginSetting,
 };

@@ -123,6 +123,19 @@ public class NativeLibraryStoreTest {
         assertEquals(JSONObject.NULL, store.execute(request.put("action", "read")));
     }
 
+    @Test public void persistsBackgroundsSeparatelyAndRejectsImagePathTraversal() throws Exception {
+        JSONObject request = new JSONObject().put("channel", "file-command").put("group", "background")
+            .put("name", "测试背景.png").put("action", "write").put("data", "AQID");
+        assertEquals(3, ((JSONObject) store.execute(request)).getInt("size"));
+        store.close();
+        store = new NativeLibraryStore(directory);
+        assertEquals("AQID", store.execute(request.put("action", "read")));
+        assertEquals(JSONObject.NULL, file("read", "测试背景.png", null));
+        assertThrows(Exception.class, () -> store.execute(new JSONObject(request.toString()).put("name", "../escape.png")));
+        store.execute(request.put("action", "remove"));
+        assertEquals(JSONObject.NULL, store.execute(request.put("action", "read")));
+    }
+
     @Test public void rejectsStalePreferencesAndRetainsTheNewerProgress() throws Exception {
         assertEquals(JSONObject.NULL, preferences("read", null));
         preferences("write", snapshot(2));

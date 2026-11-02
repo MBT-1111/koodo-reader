@@ -5,6 +5,7 @@ import { getPageWidth, throttle } from "../../utils/common";
 import BackgroundUtil from "../../utils/file/backgroundUtil";
 import { useAppStore } from "../../store/useAppStore";
 import { useLatest } from "../../utils/hooks/useLatest";
+import { isAndroid } from "../../utils/platform";
 
 const Background = () => {
   const readerMode = useAppStore((s) => s.reader.readerMode);
@@ -112,6 +113,8 @@ const Background = () => {
     }
     loadReaderBackground(readerBackgroundImage ?? "");
   }, [readerBackgroundImage]);
+
+  if (isAndroid) return <div className="android-reader-background" style={{ backgroundImage: readerBackgroundUrl ? `url("${readerBackgroundUrl}")` : undefined }} />;
 
   return (
     <>

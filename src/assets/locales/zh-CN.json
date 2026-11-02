@@ -1362,5 +1362,20 @@
   "custom.ai.readingHelp": "当前页翻译使用翻译模型，生词释义使用词典模型。请在 AI 服务中配置支持 JSON 输出的 OpenAI 兼容接口或 Gemini 原生接口。",
   "custom.sync.unchanged": "没有需要更新的数据",
   "custom.sync.identityHelp": "书籍按完整文件的 SHA-256 匹配。文件名和路径可以不同，文件内容必须一致；修改内容或重新打包会改变书籍标识。",
-  "custom.sync.snapshotHelp": "云端保留每台设备最近 3 代快照，用于并发合并与恢复。没有变化的同步不上传新文件。"
+  "custom.sync.snapshotHelp": "云端保留每台设备最近 3 代快照，用于并发合并与恢复。没有变化的同步不上传新文件。",
+  "android.export.help": "在系统文件选择器中选择保存位置。所有图书会导出为 ZIP 压缩包。",
+  "android.backup.title": "完整备份",
+  "android.backup.help": "用于在安卓版本中恢复。包含图书、封面、批注、书架、进度、字体、背景和设置，包括已保存的服务密钥。",
+  "android.backup.create": "创建完整备份",
+  "android.backup.restore": "恢复完整备份",
+  "android.backup.creating": "正在创建备份…",
+  "android.backup.checking": "正在校验备份…",
+  "android.backup.saved": "备份已保存",
+  "android.backup.failed": "备份失败，请检查原始文件是否完整。",
+  "android.backup.invalid": "不支持或已损坏的安卓完整备份，当前书库未发生变化。",
+  "android.backup.restoreFailed": "恢复失败，已保留当前书库。",
+  "android.backup.replace": "替换书库并恢复",
+  "android.backup.replaceHelp": "这会使用备份替换当前书库、阅读进度和设置。",
+  "android.backup.summary": "{{books}} 本图书 · {{notes}} 条笔记/高亮 · {{files}} 个文件",
+  "android.backup.progress": "备份进度"
 }

@@ -3,6 +3,7 @@ import { ConfigService } from "../../assets/lib/kookit-extra-browser.min";
 import { applyThemeColor, removeThemeColor } from "./themeUtil";
 import { StyleHelper } from "../../assets/lib/kookit.min";
 import FontUtil from "../file/fontUtil";
+import { isAndroid } from "../platform";
 
 class styleUtil {
   // add default css for iframe
@@ -43,7 +44,10 @@ class styleUtil {
   }
   // get default css for iframe
   static getDefaultCss(bookKey: string) {
-    return StyleHelper.getDefaultCss(ConfigService, bookKey);
+    const css = StyleHelper.getDefaultCss(ConfigService, bookKey);
+    return isAndroid && ConfigService.getReaderConfig("readerBackgroundImage")
+      ? `${css}\nhtml, body { background: transparent !important; }`
+      : css;
   }
 
   static async applyReaderFonts(rendition: any): Promise<void> {

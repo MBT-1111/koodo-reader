@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { migrateLegacyFonts, migrateLegacyLibrary, NATIVE_TABLES } from "./migration";
+import { migrateLegacyBackgrounds, migrateLegacyFonts, migrateLegacyLibrary, NATIVE_TABLES } from "./migration";
 
 const cover = "data:image/png;base64,AQID";
 function fixture() {
@@ -112,6 +112,44 @@ describe("Android legacy font migration", () => {
     const write = vi.fn(async (_name: string, _bytes: ArrayBuffer) => {});
     await migrateLegacyFonts(legacy, null, write);
     await migrateLegacyFonts(legacy, { missing: { type: "ttf" } }, write);
+    expect(write).not.toHaveBeenCalled();
+  });
+});
+
+describe("Android legacy background migration", () => {
+  it("copies image bytes and keeps legacy images and metadata intact", async () => {
+    const { source, legacy } = fixture();
+    source.set("background_山水", "data:image/jpeg;base64,AQID");
+    source.set("background_vector", "data:image/svg+xml;base64,BAU=");
+    const metadata = { 山水: { extension: "jpg" }, vector: { extension: "svg" }, missing: { extension: "png" } };
+    const write = vi.fn(async (_name: string, _bytes: ArrayBuffer) => {});
+    await migrateLegacyBackgrounds(legacy, metadata, write);
+    expect(write.mock.calls.map(([name, bytes]) => [name, [...new Uint8Array(bytes)]])).toEqual([
+      ["山水.jpg", [1, 2, 3]], ["vector.svg", [4, 5]],
+    ]);
+    expect(source.get("background_山水")).toBe("data:image/jpeg;base64,AQID");
+    expect(metadata.山水.extension).toBe("jpg");
+  });
+
+  it("propagates a failed copy and permits retry without removing the source", async () => {
+    const { source, legacy } = fixture();
+    source.set("background_fixture", "data:image/png;base64,AQID");
+    const write = vi.fn(async (_name: string, _bytes: ArrayBuffer) => {});
+    write.mockRejectedValueOnce(new Error("disk full"));
+    await expect(migrateLegacyBackgrounds(legacy, { fixture: { extension: "png" } }, write)).rejects.toThrow("disk full");
+    await migrateLegacyBackgrounds(legacy, { fixture: { extension: "png" } }, write);
+    expect(write).toHaveBeenCalledTimes(2);
+    expect(source.has("background_fixture")).toBe(true);
+  });
+
+  it("rejects malformed metadata and image data, and accepts an empty library", async () => {
+    const { source, legacy } = fixture();
+    const write = vi.fn(async (_name: string, _bytes: ArrayBuffer) => {});
+    await migrateLegacyBackgrounds(legacy, null, write);
+    await expect(migrateLegacyBackgrounds(legacy, [], write)).rejects.toThrow("ANDROID_STORAGE_LEGACY_BACKGROUNDS");
+    await expect(migrateLegacyBackgrounds(legacy, { bad: { extension: "../png" } }, write)).rejects.toThrow("ANDROID_STORAGE_LEGACY_BACKGROUND_TYPE");
+    source.set("background_bad", "data:image/png;base64,broken!");
+    await expect(migrateLegacyBackgrounds(legacy, { bad: { extension: "png" } }, write)).rejects.toThrow("ANDROID_STORAGE_IMAGE_DATA");
     expect(write).not.toHaveBeenCalled();
   });
 });

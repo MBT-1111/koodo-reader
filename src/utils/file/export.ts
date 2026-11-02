@@ -3,7 +3,8 @@ import DictHistory from "../../models/DictHistory";
 import Note from "../../models/Note";
 import BookUtil from "./bookUtil";
 import JSZip from "jszip";
-import { saveAs } from "file-saver";
+import { saveExportFile, type ExportResult } from "./saveExportFile";
+export type { ExportResult } from "./saveExportFile";
 import {
   ConfigService,
   HighlightUtil,
@@ -17,7 +18,11 @@ declare var window: any;
 export const zipFilesToBlob = (buffers: ArrayBuffer[], names: string[]) => {
   var zip = new JSZip();
   for (let index = 0; index < buffers.length; index++) {
-    zip.file(names[index], buffers[index]);
+    const base = sanitizeFileName(names[index]);
+    let name = base;
+    let suffix = 2;
+    while (zip.file(name)) name = `(${suffix++}) ${base}`;
+    zip.file(name, buffers[index]);
   }
   return zip.generateAsync({ type: "blob" });
 };
@@ -31,21 +36,19 @@ const getFileTimestamp = (): string => {
 const getZipFileName = (type: string, format: string): string =>
   `KoodoReader-${type}-${getFileTimestamp()}-${format.toUpperCase()}.zip`;
 
-export type ExportResult = "success" | "failed" | "cancel";
-
 export type ExportFormat = "csv" | "md" | "txt" | "html" | "pdf" | "json";
 
 export const KDZ_MIME = "application/vnd.koodo.kdz";
 
 // 获取书籍源文件，统一处理 fetchBook 返回 false / File 的情况
-const fetchBookBuffer = async (book: Book): Promise<any> => {
+const fetchBookBuffer = async (book: Book): Promise<ArrayBuffer> => {
   const result: boolean | ArrayBuffer | File = await BookUtil.fetchBook(
     book.key,
     book.format.toLowerCase(),
     true,
     book.path
   );
-  if (!result) {
+  if (!result || typeof result === "boolean") {
     throw new Error("Book file not found");
   }
   if (result instanceof File) {
@@ -137,22 +140,18 @@ export const exportBooks = async (
     toast.dismiss("exporting");
     return failed ? "failed" : "success";
   }
-  let fetchPromises = BookUtil.fetchAllBooks(books);
-  let booksBuffers: any[] = [];
+  const booksBuffers: ArrayBuffer[] = [];
 
   try {
-    for (let index = 0; index < fetchPromises.length; index++) {
-      booksBuffers.push(await fetchPromises[index]);
-    }
+    for (const book of books) booksBuffers.push(await fetchBookBuffer(book));
     let bookNames = books.map((item) => {
       return getBookName(item);
     });
 
-    saveAs(
+    return await saveExportFile(
       await zipFilesToBlob(booksBuffers, bookNames),
       `KoodoReader-Book-${getFileTimestamp()}.zip`
     );
-    return "success";
   } catch (error) {
     console.error("Failed to export books:", error);
     toast.error(i18n.t("Failed to export"), { id: "exporting" });
@@ -286,19 +285,19 @@ export const exportBookPackage = async (
     }
     if (books.length === 1) {
       const blob = new Blob([contents[0] as BlobPart], { type: KDZ_MIME });
-      saveAs(blob, sanitizeFileName(books[0].name) + ".kdz");
+      const result = await saveExportFile(blob, sanitizeFileName(books[0].name) + ".kdz");
+      toast.dismiss("exporting");
+      return result;
     } else {
       const zip = new JSZip();
       books.forEach((book, index) => {
         zip.file(sanitizeFileName(book.name) + ".kdz", contents[index]);
       });
-      saveAs(
+      return await saveExportFile(
         await zip.generateAsync({ type: "blob" }),
         getZipFileName("Book", "kdz")
       );
     }
-    toast.dismiss("exporting");
-    return "success";
   } catch (error) {
     console.error("Failed to export book packages:", error);
     toast.dismiss("exporting");
@@ -401,11 +400,10 @@ export const exportNotes = async (
           convertNotesData(bookData, format)
         );
       });
-      saveAs(
+      return await saveExportFile(
         await zip.generateAsync({ type: "blob" }),
         getZipFileName("Note", format)
       );
-      return "success";
     } catch (error) {
       console.error("Failed to export notes:", error);
       return "failed";
@@ -424,11 +422,10 @@ export const exportNotes = async (
         const blob = await generateHTMLAsPDFBlob(convertNotesToHTML(bookData));
         zip.file(`${sanitizeFileName(bookName)}.pdf`, blob);
       }
-      saveAs(
+      return await saveExportFile(
         await zip.generateAsync({ type: "blob" }),
         getZipFileName("Note", format)
       );
-      return "success";
     } catch (error) {
       console.error("Failed to export notes:", error);
       return "failed";
@@ -437,37 +434,36 @@ export const exportNotes = async (
 
   try {
     if (format === "md") {
-      saveAs(
+      return await saveExportFile(
         toBlob(convertNotesToMarkdown(data), "md"),
         `KoodoReader-Note-${fileDate}.md`
       );
     } else if (format === "txt") {
-      saveAs(
+      return await saveExportFile(
         toBlob(convertNotesToTxt(data), "txt"),
         `KoodoReader-Note-${fileDate}.txt`
       );
     } else if (format === "html") {
-      saveAs(
+      return await saveExportFile(
         toBlob(convertNotesToHTML(data), "html"),
         `KoodoReader-Note-${fileDate}.html`
       );
     } else if (format === "pdf") {
-      await exportHTMLAsPDF(
+      return await exportHTMLAsPDF(
         convertNotesToHTML(data),
         `KoodoReader-Note-${fileDate}.pdf`
       );
     } else if (format === "json") {
-      saveAs(
+      return await saveExportFile(
         toBlob(JSON.stringify(data, null, 2), "json"),
         `KoodoReader-Note-${fileDate}.json`
       );
     } else {
-      saveAs(
+      return await saveExportFile(
         toBlob(convertArrayToCSV(data), "csv"),
         `KoodoReader-Note-${fileDate}.csv`
       );
     }
-    return "success";
   } catch (error) {
     console.error("Failed to export notes:", error);
     return "failed";
@@ -543,11 +539,10 @@ export const exportHighlights = async (
           convertHighlightsData(bookData, format)
         );
       });
-      saveAs(
+      return await saveExportFile(
         await zip.generateAsync({ type: "blob" }),
         getZipFileName("Highlight", format)
       );
-      return "success";
     } catch (error) {
       console.error("Failed to export highlights:", error);
       return "failed";
@@ -568,11 +563,10 @@ export const exportHighlights = async (
         );
         zip.file(`${sanitizeFileName(bookName)}.pdf`, blob);
       }
-      saveAs(
+      return await saveExportFile(
         await zip.generateAsync({ type: "blob" }),
         getZipFileName("Highlight", format)
       );
-      return "success";
     } catch (error) {
       console.error("Failed to export highlights:", error);
       return "failed";
@@ -581,37 +575,36 @@ export const exportHighlights = async (
 
   try {
     if (format === "md") {
-      saveAs(
+      return await saveExportFile(
         toBlob(convertHighlightsToMarkdown(data), "md"),
         `KoodoReader-Highlight-${fileDate}.md`
       );
     } else if (format === "txt") {
-      saveAs(
+      return await saveExportFile(
         toBlob(convertHighlightsToTxt(data), "txt"),
         `KoodoReader-Highlight-${fileDate}.txt`
       );
     } else if (format === "html") {
-      saveAs(
+      return await saveExportFile(
         toBlob(convertHighlightsToHTML(data), "html"),
         `KoodoReader-Highlight-${fileDate}.html`
       );
     } else if (format === "pdf") {
-      await exportHTMLAsPDF(
+      return await exportHTMLAsPDF(
         convertHighlightsToHTML(data),
         `KoodoReader-Highlight-${fileDate}.pdf`
       );
     } else if (format === "json") {
-      saveAs(
+      return await saveExportFile(
         toBlob(JSON.stringify(data, null, 2), "json"),
         `KoodoReader-Highlight-${fileDate}.json`
       );
     } else {
-      saveAs(
+      return await saveExportFile(
         toBlob(convertArrayToCSV(data), "csv"),
         `KoodoReader-Highlight-${fileDate}.csv`
       );
     }
-    return "success";
   } catch (error) {
     console.error("Failed to export highlights:", error);
     return "failed";
@@ -645,13 +638,12 @@ export const exportDictionaryHistory = async (
   let data = mapWordsToExportData(dictHistory, books);
 
   try {
-    saveAs(
+    return await saveExportFile(
       format === "json"
         ? toBlob(JSON.stringify(data, null, 2), "json")
         : new Blob([convertArrayToCSV(data)], { type: "text/csv,charset=UTF-8" }),
       `KoodoReader-Dictionary-History-${getFileTimestamp()}.${format}`
     );
-    return "success";
   } catch (error) {
     console.error("Failed to export dictionary history:", error);
     return "failed";
@@ -1066,9 +1058,9 @@ const generateHTMLAsPDFBlob = async (htmlContent: string): Promise<Blob> => {
 export const exportHTMLAsPDF = async (
   htmlContent: string,
   fileName: string
-): Promise<void> => {
+): Promise<ExportResult> => {
   const blob = await generateHTMLAsPDFBlob(htmlContent);
   // generateHTMLAsPDFBlob fallback 时返回 HTML Blob，调整文件名后缀
   const isHTML = blob.type.startsWith("text/html");
-  saveAs(blob, isHTML ? fileName.replace(/\.pdf$/, ".html") : fileName);
+  return saveExportFile(blob, isHTML ? fileName.replace(/\.pdf$/, ".html") : fileName);
 };

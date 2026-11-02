@@ -1,4 +1,5 @@
 import { Buffer } from "buffer";
+import { decodeImageDataUrl } from "./imageData";
 
 export const NATIVE_TABLES = ["books", "notes", "bookmarks", "words", "plugins"] as const;
 
@@ -63,5 +64,25 @@ export async function migrateLegacyFonts(
       bytes = await binary(value);
     }
     if (bytes) await write(`${key}.${meta.type}`, bytes);
+  }
+}
+
+export async function migrateLegacyBackgrounds(
+  legacy: LegacyStore,
+  metadata: unknown,
+  write: (name: string, bytes: ArrayBuffer) => Promise<void>
+): Promise<void> {
+  if (metadata === null) return;
+  if (typeof metadata !== "object" || Array.isArray(metadata)) throw new Error("ANDROID_STORAGE_LEGACY_BACKGROUNDS");
+  for (const [key, meta] of Object.entries(metadata)) {
+    if (!meta || typeof meta !== "object" || !("extension" in meta) ||
+      typeof meta.extension !== "string" || !["png", "jpg", "jpeg", "webp", "gif", "bmp", "svg", "avif"].includes(meta.extension)) {
+      throw new Error("ANDROID_STORAGE_LEGACY_BACKGROUND_TYPE");
+    }
+    const value = await legacy.getItem(`background_${key}`);
+    if (value === null) continue;
+    if (typeof value !== "string") throw new Error("ANDROID_STORAGE_LEGACY_BACKGROUND_DATA");
+    const { arrayBuffer } = decodeImageDataUrl(value);
+    await write(`${key}.${meta.extension}`, arrayBuffer);
   }
 }

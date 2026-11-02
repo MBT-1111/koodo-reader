@@ -5,6 +5,9 @@ import { LocalFileManager } from "./localFile";
 import localforage from "localforage";
 import { Buffer } from "buffer";
 import i18n from "../../i18n";
+import { isNativeAndroid } from "../platform";
+import { nativeFiles } from "../../custom/android/storage";
+import { decodeImageDataUrl, imageMime } from "../../custom/android/imageData";
 // @ts-ignore – no bundled type declarations
 import ColorThief from "color-thief-browser";
 
@@ -18,6 +21,7 @@ class BackgroundUtil {
     extension: string;
     arrayBuffer: ArrayBuffer;
   } {
+    if (isNativeAndroid) return decodeImageDataUrl(dataUrl);
     const mimeMatch = dataUrl.match(/^data:(image\/(\w+));base64,/);
     let extension = mimeMatch ? mimeMatch[2] : "png";
     if (extension === "jpeg") extension = "jpg";
@@ -43,7 +47,9 @@ class BackgroundUtil {
   ): Promise<void> {
     const filename = `${id}.${extension}`;
 
-    if (isElectron) {
+    if (isNativeAndroid) {
+      await nativeFiles.write("background", filename, arrayBuffer);
+    } else if (isElectron) {
       const fs = window.electronAPI.fs;
       const path = window.electronAPI.path;
       const dir = path.join(getStorageLocation() || "", BG_FOLDER);
@@ -67,6 +73,13 @@ class BackgroundUtil {
 
   /** Load image data URL by id. Returns empty string if not found. */
   static async loadImage(id: string, extension?: string): Promise<string> {
+    if (isNativeAndroid) {
+      const filename = extension ? `${id}.${extension}` :
+        (await nativeFiles.list("background")).find((name) => name.startsWith(`${id}.`));
+      if (!filename) return "";
+      const bytes = await nativeFiles.read("background", filename);
+      return bytes ? `data:${imageMime(filename.split(".").pop()!)};base64,${Buffer.from(bytes).toString("base64")}` : "";
+    }
     if (isElectron) {
       const fs = window.electronAPI.fs;
       const path = window.electronAPI.path;
@@ -99,6 +112,12 @@ class BackgroundUtil {
 
   /** Delete image file by id. */
   static async deleteImage(id: string): Promise<void> {
+    if (isNativeAndroid) {
+      for (const name of await nativeFiles.list("background")) {
+        if (name.startsWith(`${id}.`)) await nativeFiles.remove("background", name);
+      }
+      return;
+    }
     if (isElectron) {
       const fs = window.electronAPI.fs;
       const path = window.electronAPI.path;

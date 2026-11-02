@@ -15,8 +15,10 @@ const groups = [
     { mode: "reading", label: "Reading", icon: "bookshelf-line" },
     { mode: "appearance", label: "Appearance", icon: "highlight-line" },
     { mode: "font", label: "Font management", icon: "font" },
+    { mode: "background", label: "Background", icon: "image" },
   ] },
   { title: "android.settings.library", items: [
+    { mode: "data", label: "Data", icon: "save" },
     { mode: "general", label: "General", icon: "setting" },
     { mode: "chapter", label: "TXT parser", icon: "convert-text" },
     { mode: "text", label: "Text rules", icon: "edit-line" },

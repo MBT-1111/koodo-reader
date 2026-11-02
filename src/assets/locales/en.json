@@ -1360,5 +1360,20 @@
   "custom.ai.readingHelp": "Current page translation uses your translation model; word definitions use your dictionary model. Configure an OpenAI-compatible or native Gemini endpoint with JSON output in AI service.",
   "custom.sync.unchanged": "Everything is up to date",
   "custom.sync.identityHelp": "Books are matched by their complete file SHA-256. Names and paths may differ; file contents must be identical. Editing or repackaging a book changes its identity.",
-  "custom.sync.snapshotHelp": "The cloud keeps the latest three snapshots per device for concurrent merging and recovery. Syncing unchanged data does not upload a new file."
+  "custom.sync.snapshotHelp": "The cloud keeps the latest three snapshots per device for concurrent merging and recovery. Syncing unchanged data does not upload a new file.",
+  "android.export.help": "Choose a location in the system file picker. Books are exported as a ZIP archive.",
+  "android.backup.title": "Full backup",
+  "android.backup.help": "For restoring in the Android app. Includes books, covers, notes, shelves, progress, fonts, backgrounds and settings, including saved service keys.",
+  "android.backup.create": "Create full backup",
+  "android.backup.restore": "Restore full backup",
+  "android.backup.creating": "Creating backup…",
+  "android.backup.checking": "Checking backup…",
+  "android.backup.saved": "Backup saved",
+  "android.backup.failed": "Backup failed. Check that all original files are available.",
+  "android.backup.invalid": "Unsupported or damaged Android full backup. The current library has not been changed.",
+  "android.backup.restoreFailed": "Restore failed. The current library has been retained.",
+  "android.backup.replace": "Replace library and restore",
+  "android.backup.replaceHelp": "This replaces the current library, reading progress and settings with this backup.",
+  "android.backup.summary": "{{books}} books · {{notes}} notes/highlights · {{files}} files",
+  "android.backup.progress": "Backup progress"
 }

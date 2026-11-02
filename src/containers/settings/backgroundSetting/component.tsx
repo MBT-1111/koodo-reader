@@ -7,6 +7,8 @@ import toast from "react-hot-toast";
 import { applyAppBackgroundImage } from "../../../utils/reader/launchUtil";
 import BackgroundUtil from "../../../utils/file/backgroundUtil";
 import { useAppStore } from "../../../store/useAppStore";
+import { isAndroid } from "../../../utils/platform";
+import { ANDROID_SETTINGS_DISMISS_EVENT } from "../../../custom/android/navigation";
 
 export interface BackgroundImage {
   id: string;
@@ -36,6 +38,8 @@ export interface SettingInfoState {
 const FEATURED_COUNT = 100;
 
 const BackgroundSetting = () => {
+  const renderBookFunc = useAppStore((s) => s.book.renderBookFunc);
+  const handleBackgroundColor = useAppStore((s) => s.handleBackgroundColor);
   const isAuthed = useAppStore((s) => s.manager.isAuthed);
   const handleReaderBackgroundImage = useAppStore(
     (s) => s.handleReaderBackgroundImage
@@ -59,6 +63,16 @@ const BackgroundSetting = () => {
     downloadingId: "",
     downloadProgress: 0,
   });
+
+  useEffect(() => {
+    if (!isAndroid || (!state.previewImage && state.previewFeatured === null)) return;
+    const dismiss = (event: Event) => {
+      event.preventDefault();
+      setState((prev) => ({ ...prev, previewImage: null, previewFeatured: null }));
+    };
+    window.addEventListener(ANDROID_SETTINGS_DISMISS_EVENT, dismiss);
+    return () => window.removeEventListener(ANDROID_SETTINGS_DISMISS_EVENT, dismiss);
+  }, [state.previewImage, state.previewFeatured]);
 
   const setupFeaturedObserver = () => {
     if (typeof IntersectionObserver === "undefined") return;
@@ -155,16 +169,11 @@ const BackgroundSetting = () => {
       const dataUrl = ev.target?.result as string;
       if (!dataUrl) return;
 
-      const id = Date.now().toString();
-      const { extension } = BackgroundUtil.convertDataUrl(dataUrl);
-
-      // Analyse dominant color before saving metadata
-      const { backgroundColor, textColor } =
-        await BackgroundUtil.analyzeImageColors(dataUrl);
-
-      const meta = { name: file.name, extension, backgroundColor, textColor };
-
       try {
+        const id = Date.now().toString();
+        const { extension } = BackgroundUtil.convertDataUrl(dataUrl);
+        const { backgroundColor, textColor } = await BackgroundUtil.analyzeImageColors(dataUrl);
+        const meta = { name: file.name, extension, backgroundColor, textColor };
         await BackgroundUtil.saveImage(id, dataUrl);
         BackgroundUtil.saveImageMeta(id, meta);
         BackgroundUtil.addImageId(id);
@@ -222,17 +231,24 @@ const BackgroundSetting = () => {
     }
     setState((prev) => ({ ...prev, readerBackgroundId: image.id }));
     handleReaderBackgroundImage?.(image.id);
+    if (isAndroid) {
+      handleBackgroundColor(image.backgroundColor || "");
+      renderBookFunc?.();
+    }
     toast.success(t("Change successful"));
   };
 
   const handleClearReaderBackground = () => {
     ConfigService.setReaderConfig("readerBackgroundImage", "");
     setState((prev) => ({ ...prev, readerBackgroundId: "" }));
-    handleReaderBackgroundImage?.(
-"");
+    handleReaderBackgroundImage?.("");
     toast.success(t("Change successful"));
     ConfigService.setReaderConfig("textColor", "");
     ConfigService.setReaderConfig("backgroundColor", "");
+    if (isAndroid) {
+      handleBackgroundColor("");
+      renderBookFunc?.();
+    }
   };
 
   const getFeaturedImage = (index: number): BackgroundImage | undefined => {
@@ -340,7 +356,13 @@ const BackgroundSetting = () => {
       if (state.readerBackgroundId === image.id) {
         ConfigService.setReaderConfig("readerBackgroundImage", "");
         setState((prev) => ({ ...prev, readerBackgroundId: "" }));
-    handleReaderBackgroundImage?.("");
+        handleReaderBackgroundImage?.("");
+        if (isAndroid) {
+          ConfigService.setReaderConfig("textColor", "");
+          ConfigService.setReaderConfig("backgroundColor", "");
+          handleBackgroundColor("");
+          renderBookFunc?.();
+        }
       }
       toast.success(t("Deletion successful"));
     } catch (err) {
@@ -371,38 +393,38 @@ const BackgroundSetting = () => {
         onClick={(e) => e.stopPropagation()}
       >
         {isApp ? (
-          <span
+          <button type="button"
             className="change-location-button background-apple-button"
             style={{ fontSize: "14px", padding: "6px 16px", height: "32px" }}
             onClick={handleClearAppBackground}
           >
             <Trans>Clear app background</Trans>
-          </span>
+          </button>
         ) : (
-          <span
+          <button type="button"
             className="change-location-button background-apple-button"
             style={{ fontSize: "14px", padding: "6px 16px", height: "32px" }}
             onClick={() => handleSetAppBackground(previewImage)}
           >
             <Trans>Set as app background</Trans>
-          </span>
+          </button>
         )}
         {isReader ? (
-          <span
+          <button type="button"
             className="change-location-button background-apple-button"
             style={{ fontSize: "14px", padding: "6px 16px", height: "32px" }}
             onClick={handleClearReaderBackground}
           >
             <Trans>Clear book background</Trans>
-          </span>
+          </button>
         ) : (
-          <span
+          <button type="button"
             className="change-location-button background-apple-button"
             style={{ fontSize: "14px", padding: "6px 16px", height: "32px" }}
             onClick={() => handleSetReaderBackground(previewImage)}
           >
             <Trans>Set as book background</Trans>
-          </span>
+          </button>
         )}
       </div>
     );
@@ -420,14 +442,14 @@ const BackgroundSetting = () => {
         onClick={(e) => e.stopPropagation()}
       >
         {isApp ? (
-          <span
+          <button type="button"
             className="change-location-button background-apple-button"
             onClick={handleClearAppBackground}
           >
             <Trans>Clear app background</Trans>
-          </span>
+          </button>
         ) : (
-          <span
+          <button type="button"
             className={
               "change-location-button background-apple-button" +
               (isDownloading ? " is-downloading" : "")
@@ -441,17 +463,17 @@ const BackgroundSetting = () => {
             ) : (
               <Trans>Set as app background</Trans>
             )}
-          </span>
+          </button>
         )}
         {isReader ? (
-          <span
+          <button type="button"
             className="change-location-button background-apple-button"
             onClick={handleClearReaderBackground}
           >
             <Trans>Clear book background</Trans>
-          </span>
+          </button>
         ) : (
-          <span
+          <button type="button"
             className={
               "change-location-button background-apple-button" +
               (isDownloading ? " is-downloading" : "")
@@ -465,7 +487,7 @@ const BackgroundSetting = () => {
             ) : (
               <Trans>Set as book background</Trans>
             )}
-          </span>
+          </button>
         )}
       </div>
     );
@@ -504,8 +526,9 @@ const BackgroundSetting = () => {
                       index,
                       isAuthed
                     )}
-                    alt={id}
+                    alt=""
                     loading="lazy"
+                    onError={(event) => { event.currentTarget.style.opacity = "0"; }}
                   />
                 ) : (
                   <div className="background-featured-img background-featured-placeholder" />
@@ -556,7 +579,9 @@ const BackgroundSetting = () => {
                 <div className="background-setting-img background-setting-placeholder" />
               )}
               {renderBadge(img)}
-              <span
+              <button
+                type="button"
+                aria-label={t("Delete")}
                 className="background-setting-delete icon-close"
                 onClick={(e) => handleDelete(e, img)}
               />
@@ -577,11 +602,11 @@ const BackgroundSetting = () => {
       />
 
       {/* Import button fixed at bottom-right */}
-      <div className="setting-dialog-new-plugin" onClick={handleImportClick}>
+      <button type="button" className="setting-dialog-new-plugin background-import-btn" onClick={handleImportClick}>
         <span style={{ fontWeight: "bold" }}>
           <Trans>Import local image</Trans>
         </span>
-      </div>
+      </button>
 
       {/* Preview overlay */}
       {previewImage && (
@@ -589,7 +614,9 @@ const BackgroundSetting = () => {
           className="background-preview-overlay"
           onClick={handleClosePreview}
         >
-          <span
+          <button
+            type="button"
+            aria-label={t("Close")}
             className="background-preview-close icon-close"
             onClick={handleClosePreview}
           />
@@ -609,7 +636,9 @@ const BackgroundSetting = () => {
           className="background-preview-overlay"
           onClick={handleCloseFeaturedPreview}
         >
-          <span
+          <button
+            type="button"
+            aria-label={t("Close")}
             className="background-preview-close icon-close"
             onClick={handleCloseFeaturedPreview}
           />
@@ -619,7 +648,7 @@ const BackgroundSetting = () => {
               previewFeatured,
               isAuthed
             )}
-            alt={BackgroundUtil.getFeaturedBackgroundId(previewFeatured)}
+            alt={t("Background")}
             onClick={(e) => e.stopPropagation()}
           />
           {renderFeaturedPreviewActions(previewFeatured)}

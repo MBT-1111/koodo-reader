@@ -120,7 +120,7 @@ public final class NativeLibraryStore implements AutoCloseable {
     }
 
     private File location(String group, String name) throws IOException {
-        if (!group.equals("book") && !group.equals("cover") && !group.equals("font")) throw new IllegalArgumentException("STORAGE_GROUP");
+        if (!group.equals("book") && !group.equals("cover") && !group.equals("font") && !group.equals("background")) throw new IllegalArgumentException("STORAGE_GROUP");
         if (name.isEmpty() || name.length() > 255 || name.equals(".") || name.equals("..") || name.endsWith(".bak") || name.endsWith(".new")
             || name.contains("/") || name.contains("\\") || name.chars().anyMatch(Character::isISOControl)) {
             throw new IllegalArgumentException("STORAGE_FILENAME");
@@ -172,7 +172,7 @@ public final class NativeLibraryStore implements AutoCloseable {
         }
     }
 
-    private static void write(AtomicFile file, byte[] bytes) throws IOException {
+    static void write(AtomicFile file, byte[] bytes) throws IOException {
         FileOutputStream output = null;
         try {
             output = file.startWrite();

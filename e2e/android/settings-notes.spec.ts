@@ -19,7 +19,7 @@ test("opens grouped phone settings and returns from pages and font preview", asy
   await expect(settings).toHaveAttribute("data-settings-level", "root");
   await expect(page.locator(".android-settings-group")).toHaveCount(3);
   await expect(page.locator(".android-bottom-nav")).toBeInViewport();
-  for (const name of ["General", "Reading", "Appearance", "Font management", "TXT parser", "Text rules", "Plugins", "AI service", "More settings", "About"]) {
+  for (const name of ["General", "Reading", "Appearance", "Font management", "Background", "Data", "TXT parser", "Text rules", "Plugins", "AI service", "More settings", "About"]) {
     await settings.getByRole("button", { name, exact: true }).click();
     await expect(settings.getByRole("heading", { level: 1 })).toHaveText(name);
     expect(await page.locator(".android-settings-content").evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true);

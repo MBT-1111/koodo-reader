@@ -5,6 +5,9 @@ android {
     compileSdk = rootProject.ext.compileSdkVersion
     defaultConfig {
         applicationId "xyz.koodoreader.custom.android"
+        if (project.hasProperty('restoreQa')) {
+            applicationIdSuffix ".restoreqa"
+        }
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
         versionCode 1
