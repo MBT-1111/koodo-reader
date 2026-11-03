@@ -1,5 +1,7 @@
 # Windows 阅读交互修复（2026-11-03）
 
+连续滚轮/键盘翻页后卡死，以及重开白屏的后续配置保存修复见 [WINDOWS_PAGE_TURN_FIX.md](WINDOWS_PAGE_TURN_FIX.md)。
+
 本次修改位于 `custom/dev`，不包含 Android 分支功能。未构建安装包或修改现有安装文件。
 
 ## 行为与原因

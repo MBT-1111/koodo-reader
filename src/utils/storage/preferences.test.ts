@@ -126,6 +126,18 @@ describe("desktop preference persistence", () => {
     expect(preferences.storageLocation()).toBe(defaultLocation);
   });
 
+  it("does not rewrite identical preferences or already absent keys", () => {
+    const store = disk();
+    const preferences = createPreferences(store, runtime, defaultLocation);
+    preferences.handle({ action: "initialize", values: { readerConfig: "{}" } });
+    const write = vi.spyOn(store, "set");
+    preferences.handle({ action: "set", key: "readerConfig", value: "{}" });
+    preferences.handle({ action: "remove", key: "absent" });
+    expect(write).not.toHaveBeenCalled();
+    preferences.handle({ action: "set", key: "readerConfig", value: '{"animation":"none"}' });
+    expect(write).toHaveBeenCalledOnce();
+  });
+
   it("does not restore preferences after the application clears all data", () => {
     launch(memoryStorage({ readerConfig: '{"isEinkMode":"yes"}' }));
     localStorage.clear();

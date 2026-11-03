@@ -33,8 +33,10 @@ const createPreferences = (store, runtime, defaultLocation) => {
     validateKey(request.key);
     if (request.action === "set") {
       validate(request.key, request.value);
+      if (values[request.key] === request.value) return null;
       values[request.key] = request.value;
     } else if (request.action === "remove") {
+      if (!Object.hasOwn(values, request.key)) return null;
       delete values[request.key];
     } else {
       throw new Error("CUSTOM_INVALID_PREFERENCE");

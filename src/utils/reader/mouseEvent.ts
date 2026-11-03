@@ -193,6 +193,18 @@ const NAV_TAB_SHORTCUTS: Array<{
 ];
 let lock = false; //prevent from clicking too fasts
 
+const runPageAction = async (action: () => Promise<void>) => {
+  if (lock) return;
+  lock = true;
+  try {
+    await action();
+  } finally {
+    // Saving the position can fail independently of a successful page turn.
+    // Never strand both keyboard and wheel input behind that failed save.
+    setTimeout(() => (lock = false), getThrottleTime());
+  }
+};
+
 // 仿真翻页动画收敛后（kookit 派发 flipend 事件）立即解除锁，
 // 不再等待满 1000ms 的 throttleTime，滚轮/键盘可继续快速翻页
 window.addEventListener("page-flipend", () => {
@@ -417,11 +429,10 @@ export const bindHtmlEvent = (
   doc.addEventListener(
     "keydown",
     async (event) => {
-      if (lock) return;
-      lock = true;
-      await arrowKeys(rendition, event, readerMode, book);
-      handleLocation(key, rendition);
-      setTimeout(() => (lock = false), getThrottleTime());
+      await runPageAction(async () => {
+        await arrowKeys(rendition, event, readerMode, book);
+        handleLocation(key, rendition);
+      });
     },
     { passive: false }
   );
@@ -457,41 +468,40 @@ export const bindHtmlEvent = (
       ) {
         event.preventDefault();
       }
-      if (lock) return;
-      lock = true;
-      if (readerMode === "scroll") {
-        if (Math.abs(event.deltaX) === 0 && isReadingAidMode(format, key)) {
-          // 段落/阅读尺/速读模式内部实际按单页渲染，同样遵循 RTL
-          await mouseChrome(
-            rendition,
-            event.deltaY,
-            isRevertDirectionReading(rendition)
-          );
+      await runPageAction(async () => {
+        if (readerMode === "scroll") {
+          if (Math.abs(event.deltaX) === 0 && isReadingAidMode(format, key)) {
+            // 段落/阅读尺/速读模式内部实际按单页渲染，同样遵循 RTL
+            await mouseChrome(
+              rendition,
+              event.deltaY,
+              isRevertDirectionReading(rendition)
+            );
+          } else {
+            await sleep(200);
+            await rendition.record();
+            if (
+              Math.abs(event.deltaX) === 0 &&
+              ConfigService.getReaderConfig("isDisableAutoScroll") !== "yes"
+            ) {
+              let srollElement = document.getElementById("page-area");
+              await scrollChapter(srollElement, rendition, event.deltaY);
+            }
+          }
         } else {
-          await sleep(200);
-          await rendition.record();
-          if (
-            Math.abs(event.deltaX) === 0 &&
-            ConfigService.getReaderConfig("isDisableAutoScroll") !== "yes"
+          const revertDirection = isRevertDirectionReading(rendition);
+          if (Math.abs(event.deltaX) === 0) {
+            await mouseChrome(rendition, event.deltaY, revertDirection);
+          } else if (
+            revertDirection &&
+            Math.abs(event.deltaY) < Math.abs(event.deltaX)
           ) {
-            let srollElement = document.getElementById("page-area");
-            await scrollChapter(srollElement, rendition, event.deltaY);
+            // RTL 下触控板水平滚动：向左滚动（deltaX<0）为下一页
+            await mouseChrome(rendition, event.deltaX, true);
           }
         }
-      } else {
-        const revertDirection = isRevertDirectionReading(rendition);
-        if (Math.abs(event.deltaX) === 0) {
-          await mouseChrome(rendition, event.deltaY, revertDirection);
-        } else if (
-          revertDirection &&
-          Math.abs(event.deltaY) < Math.abs(event.deltaX)
-        ) {
-          // RTL 下触控板水平滚动：向左滚动（deltaX<0）为下一页
-          await mouseChrome(rendition, event.deltaX, true);
-        }
-      }
-      handleLocation(key, rendition);
-      setTimeout(() => (lock = false), getThrottleTime());
+        handleLocation(key, rendition);
+      });
     },
     { passive: false }
   );
@@ -499,11 +509,10 @@ export const bindHtmlEvent = (
   window.addEventListener(
     "keydown",
     async (event) => {
-      if (lock) return;
-      lock = true;
-      await arrowKeys(rendition, event, readerMode, book);
-      handleLocation(key, rendition);
-      setTimeout(() => (lock = false), getThrottleTime());
+      await runPageAction(async () => {
+        await arrowKeys(rendition, event, readerMode, book);
+        handleLocation(key, rendition);
+      });
     },
     { passive: false }
   );
@@ -514,25 +523,24 @@ export const bindHtmlEvent = (
       if (readerMode === "scroll") {
         return;
       }
-      if (lock || event.pointerType === "mouse") return;
-      lock = true;
-      await gesture(rendition, event.type);
-      handleLocation(key, rendition);
-      setTimeout(() => (lock = false), getThrottleTime());
+      if (event.pointerType === "mouse") return;
+      await runPageAction(async () => {
+        await gesture(rendition, event.type);
+        handleLocation(key, rendition);
+      });
     });
   }
 
   doc.addEventListener(
     "touchend",
     async () => {
-      if (lock) return;
-      lock = true;
-      if (readerMode === "scroll") {
-        await sleep(200);
-        await rendition.record();
-      }
-      handleLocation(key, rendition);
-      setTimeout(() => (lock = false), getThrottleTime());
+      await runPageAction(async () => {
+        if (readerMode === "scroll") {
+          await sleep(200);
+          await rendition.record();
+        }
+        handleLocation(key, rendition);
+      });
     },
     { passive: false }
   );
