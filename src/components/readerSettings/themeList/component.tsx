@@ -11,6 +11,7 @@ import { HexColorPicker } from "react-colorful";
 import toast from "react-hot-toast";
 import { normalizePickerColor, parseColorInput } from "../../../utils/common";
 import { useAppStore } from "../../../store/useAppStore";
+import { isAndroidEink } from "../../../custom/android/eink";
 
 export interface ThemeListState {
   currentBackgroundIndex: number;
@@ -262,6 +263,14 @@ const ThemeList = () => {
         );
       });
   };
+
+  if (isAndroidEink()) {
+    return (
+      <p className="setting-option-subtitle" role="status">
+        {t("android.eink.readerHint")}
+      </p>
+    );
+  }
 
   return (
     <div className="background-color-setting">

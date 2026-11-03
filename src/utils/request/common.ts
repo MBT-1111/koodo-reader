@@ -12,6 +12,9 @@ import { resetUserRequest } from "./user";
 import { resetThirdpartyRequest } from "./thirdparty";
 import { isElectron } from "react-device-detect";
 import TokenService from "../storage/tokenService";
+import { serviceFetch } from "../../custom/android/http";
+import { isNativeAndroid } from "../platform";
+import { createAIRequest, isNativeGemini, readAIText } from "../../custom/ai/protocol";
 const PUBLIC_URL = "https://api.koodoreader.com";
 const CN_PUBLIC_URL = "https://api.koodoreader.cn";
 export const getPublicUrl = () => {
@@ -78,7 +81,7 @@ export const aiRequest = async (
   statusText: string;
   body: string;
 }> => {
-  const response = await fetch(url, {
+  const response = await serviceFetch(url, {
     method,
     headers,
     body: method === "POST" ? body : undefined,
@@ -101,6 +104,14 @@ export const chatStream = async (
   chat: any[],
   onMessage: (result) => void
 ) => {
+  if (isNativeAndroid || isNativeGemini({ endpoint: url, modelId: model, apiKey, providerId })) {
+    const query = createAIRequest({ endpoint: url, providerId, apiKey, modelId: model }, { system: "You are a helpful reading assistant.", user: prompt });
+    const response = await serviceFetch(query.url, { method: "POST", headers: query.headers, body: JSON.stringify({ ...query.body, ...(!query.native ? { messages: [...chat, { role: "user", content: prompt }].slice(-5) } : {}) }) });
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    onMessage({ text: readAIText(await response.json(), query.native) });
+    onMessage({ done: true });
+    return { done: true };
+  }
   const messages = [...chat, { role: "user", content: prompt }].slice(-5);
   const chatUrl = url + "/chat/completions";
   const headers: Record<string, string> = {

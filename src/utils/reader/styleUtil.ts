@@ -4,6 +4,7 @@ import { applyThemeColor, removeThemeColor } from "./themeUtil";
 import { StyleHelper } from "../../assets/lib/kookit.min";
 import FontUtil from "../file/fontUtil";
 import { isAndroid } from "../platform";
+import { isAndroidEink } from "../../custom/android/eink";
 
 class styleUtil {
   // add default css for iframe
@@ -45,6 +46,22 @@ class styleUtil {
   // get default css for iframe
   static getDefaultCss(bookKey: string) {
     const css = StyleHelper.getDefaultCss(ConfigService, bookKey);
+    if (isAndroidEink()) return `${css}
+      html:root body *:not(svg):not(svg *) {
+        color: #000 !important;
+        background-color: transparent !important;
+        background-image: none !important;
+        border-color: #000 !important;
+        text-shadow: none !important;
+        box-shadow: none !important;
+      }
+      html:root, html:root body { color: #000 !important; background: #fff !important; color-scheme: light; }
+      *, *::before, *::after { animation: none !important; transition: none !important; scroll-behavior: auto !important; }
+      html:root body [data-key] {
+        text-decoration-line: underline !important;
+        text-decoration-color: #000 !important;
+        text-decoration-thickness: 2px !important;
+      }`;
     return isAndroid && ConfigService.getReaderConfig("readerBackgroundImage")
       ? `${css}\nhtml, body { background: transparent !important; }`
       : css;

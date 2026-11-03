@@ -5,6 +5,7 @@ import BookUtil from "../../utils/file/bookUtil";
 import PopupMenu from "../../components/popups/popupMenu";
 import Background from "../../components/background";
 import StyleUtil from "../../utils/reader/styleUtil";
+import { isAndroidEink } from "../../custom/android/eink";
 import "./index.css";
 import { htmlMouseEvent } from "../../utils/reader/mouseEvent";
 import ImageViewer from "../../components/imageViewer";
@@ -430,6 +431,7 @@ const Viewer = (props: ViewerProps) => {
       return task;
     };
     if (!isCurrentViewer()) return;
+    const eink = isAndroidEink();
     let rendition = BookHelper.getRendition(
       result,
       {
@@ -439,7 +441,9 @@ const Viewer = (props: ViewerProps) => {
           : "no",
         readerMode: propsRef.current.readerMode,
         charset: propsRef.current.currentBook.charset,
-        animation: ConfigService.getReaderConfig("animation") || "none",
+        animation: eink
+          ? "none"
+          : ConfigService.getReaderConfig("animation") || "none",
         convertChinese: ConfigService.getReaderConfig("convertChinese"),
         bookLayout: ConfigService.getReaderConfig("bookLayout") || "",
         textRules: getTextRules(propsRef.current.currentBook.key),
@@ -458,11 +462,13 @@ const Viewer = (props: ViewerProps) => {
             : "no",
         textOrientation: ConfigService.getReaderConfig("textOrientation"),
         isDarkMode:
-          ConfigService.getReaderConfig("backgroundColor") ===
-          "rgba(44,47,49,1)"
+          !eink &&
+          ConfigService.getReaderConfig("backgroundColor") === "rgba(44,47,49,1)"
             ? "yes"
             : "no",
-        backgroundColor: ConfigService.getReaderConfig("backgroundColor"),
+        backgroundColor: eink
+          ? "rgba(255,255,255,1)"
+          : ConfigService.getReaderConfig("backgroundColor"),
         isMobile: "no",
         isIndent: ConfigService.getReaderConfig("isIndent"),
         isHyphenation: ConfigService.getReaderConfig("isHyphenation"),
@@ -1068,7 +1074,7 @@ const Viewer = (props: ViewerProps) => {
         }
       ></div>
       <PageWidget />
-      {isAndroid ? (currentBook.key && readerBackgroundImage ? <Background /> : null) : isHideBackground ||
+      {isAndroid ? (currentBook.key && readerBackgroundImage && !isAndroidEink() ? <Background /> : null) : isHideBackground ||
       textOrientation === "vertical" ||
       isShowPageBorder ||
       ((isParagraphMode || isReadingRuler || isSpeedReading) &&

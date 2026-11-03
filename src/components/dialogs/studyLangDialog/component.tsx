@@ -14,6 +14,8 @@ import SwitchRow from "../../readerSettings/switchRow";
 import { useAppStore } from "../../../store/useAppStore";
 import { personalMode } from "../../../custom/personal";
 import { hasReadingAI } from "../../../custom/ai/reader";
+import { isAndroid } from "../../../utils/platform";
+import "./studyLangDialog.css";
 
 export interface StudyLangDialogState {
   fullTranslationModeValue: string;
@@ -283,8 +285,11 @@ const StudyLangDialog = () => {
   return (
     <div
       className="sort-dialog-container scale-page-dialog-container study-lang-dialog-container"
+      role={isAndroid ? "dialog" : undefined}
+      aria-label={isAndroid ? t("Translation") : undefined}
+      aria-modal={isAndroid || undefined}
       onMouseLeave={() => {
-        handleStudyLangDialog(false);
+        if (!isAndroid) handleStudyLangDialog(false);
       }}
       onMouseEnter={() => {
         handleStudyLangDialog(true);
@@ -296,6 +301,7 @@ const StudyLangDialog = () => {
         maxHeight: "calc(100vh - 80px)",
       }}
     >
+      {isAndroid && <div className="android-reader-sheet-heading"><span>{t("Translation")}</span><button type="button" aria-label={t("Close")} onClick={() => handleStudyLangDialog(false)}><span className="icon-close" aria-hidden="true" /></button></div>}
       <ul className="sort-by-category">
         <div className="setting-dialog-new-title scale-page-preset-row">
           <span>
@@ -304,6 +310,7 @@ const StudyLangDialog = () => {
           </span>
           <select
             className="lang-setting-dropdown"
+            aria-label={t("custom.ai.pageTranslation")}
             value={state.fullTranslationModeValue}
             onChange={(event) => {
               handleFullTranslationChange(event.target.value);
@@ -329,6 +336,7 @@ const StudyLangDialog = () => {
             </span>
             <select
               className="lang-setting-dropdown"
+              aria-label={t("Target translation language")}
               value={
                 fullTranslationLangList.find(
                   (option) => option.code === state.fullTranslationTargetValue

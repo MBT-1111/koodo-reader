@@ -24,6 +24,7 @@ import { isAndroid } from "../../../utils/platform";
 import AndroidSettings from "../../androidSettings";
 import AndroidData from "../../androidData";
 import AndroidSync from "../../androidSync";
+import AndroidStats from "../../androidStats";
 
 const settingPages: Record<string, ComponentType> = {
   general: GeneralSetting, reading: ReadingSetting, shortcut: ShortcutSetting,
@@ -32,6 +33,7 @@ const settingPages: Record<string, ComponentType> = {
   data: isAndroid ? AndroidData : DataSetting, about: AboutSetting, ai: AISetting, background: BackgroundSetting,
   font: FontSetting, chapter: ChapterSetting, text: TextSetting, dict: DictSetting,
   more: MoreSetting, plugins: PluginSetting,
+  stats: AndroidStats,
 };
 const SettingDialog = () => {
   const settingMode = useAppStore((s) => s.manager.settingMode);
@@ -100,6 +102,8 @@ const SettingDialog = () => {
         return "Account";
       case "about":
         return "About";
+      case "stats":
+        return "Reading Stats";
       case "ai":
         return "AI service";
       case "background":

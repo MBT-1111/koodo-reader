@@ -6,6 +6,27 @@ import java.util.Collections;
 import static org.junit.Assert.*;
 
 public class NativeSpeechQueueTest {
+    @Test public void cloudRolesNeverMergeAcrossSpeakersAndRetainLongSentenceRoles() {
+        NativeSpeechQueue queue = NativeSpeechQueue.cloud(Arrays.asList("旁白。", "男声一。", "男声二。", "😀".repeat(700), "尾声。"), Arrays.asList("narrator", "male", "male", "female", "narrator"));
+        assertEquals(Arrays.asList("narrator", "male", "female", "female", "narrator"), queue.roles);
+        assertEquals("男声一。\n男声二。", queue.text.get(1));
+        assertEquals("旁白。男声一。男声二。" + "😀".repeat(700) + "尾声。", String.join("", queue.text).replace("\n", ""));
+        queue.resume(); assertTrue(queue.finish(queue.token())); assertEquals("male", queue.roles.get(queue.index));
+        queue.move(1); assertEquals("female", queue.roles.get(queue.index));
+    }
+    @Test public void rejectsMismatchedOrUnknownRoles() {
+        assertThrows(IllegalArgumentException.class, () -> NativeSpeechQueue.cloud(Arrays.asList("one", "two"), Collections.singletonList("male")));
+        assertThrows(IllegalArgumentException.class, () -> NativeSpeechQueue.cloud(Collections.singletonList("one"), Collections.singletonList("invented")));
+    }
+    @Test public void cloudSegmentsPreserveParagraphsAndBoundRequestSize() {
+        NativeSpeechQueue queue = NativeSpeechQueue.cloud(Arrays.asList("第一段。", "第二段！", "😀".repeat(1400)));
+        assertEquals("第一段。第二段！" + "😀".repeat(1400), String.join("", queue.text).replace("\n", ""));
+        for (String part : queue.text) {
+            assertTrue(part.length() <= 1200);
+            assertFalse(Character.isHighSurrogate(part.charAt(part.length() - 1)));
+        }
+        assertTrue(queue.text.get(0).contains("第一段。\n第二段！"));
+    }
     @Test public void preservesChineseSentencesAndSurrogatePairs() {
         NativeSpeechQueue queue = new NativeSpeechQueue(Arrays.asList("第一句。第二句！", "ab😀cd"), 3);
         assertEquals(Arrays.asList("第一句", "。", "第二句", "！", "ab", "😀c", "d"), queue.text);

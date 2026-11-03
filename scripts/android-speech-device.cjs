@@ -6,11 +6,12 @@ const { _android: android } = require("playwright");
 const { expect } = require("@playwright/test");
 const { showReadingTools } = require("../e2e/android/fixtures.cjs");
 const { systemPicker } = require("./android-system-picker.cjs");
+const { selectSpeechParagraph } = require("../e2e/android/speech-selection.cjs");
 
 const pkg = "xyz.koodoreader.custom.android", testPkg = `${pkg}.test`;
 const output = path.join(__dirname, "..", "dist", "android-device");
 const hash = (value) => createHash("sha256").update(JSON.stringify(value)).digest("hex");
-const configKeys = ["recordLocation", "readingTime", "readingStats", "recentBooks"];
+const configKeys = ["readerConfig", "recordLocation", "readingTime", "readingStats", "recentBooks"];
 
 async function main() {
   await fs.mkdir(output, { recursive: true });
@@ -64,6 +65,7 @@ async function main() {
     await page.getByRole("button", { name: "Text to speech", exact: true }).click();
     const panel = page.locator(".android-speech"), ui = systemPicker(page, device);
     await expect(panel).toHaveCount(1);
+    await panel.getByLabel("Speech service", { exact: true }).selectOption("system");
     await expect(panel.getByLabel("Voice", { exact: true })).toBeEnabled();
     const voice = (await speech({ action: "voices" })).voices.find((item) => item.locale === "zh-CN" && !item.network);
     assert.ok(voice, "Install an offline Chinese system voice before QA");
@@ -73,6 +75,14 @@ async function main() {
     await ui.tap(panel.getByRole("button", { name: "Read aloud", exact: true }));
     await expect.poll(async () => (await state()).status).toBe("playing");
     await advance(); checked("offline Chinese voice starts by physical touch and advances through native utterance completion");
+    const initialTotal = (await state()).total;
+    await panel.getByRole("button", { name: "Stop", exact: true }).click();
+    await panel.getByRole("button", { name: "Close", exact: true }).click();
+    await selectSpeechParagraph(page);
+    await ui.tap(page.locator(".speech-start-option"));
+    await expect.poll(async () => (await state()).status).toBe("playing");
+    assert.ok((await state()).total < initialTotal, "Selection must exclude earlier chapter text");
+    checked("Read from here physically starts a new native queue at the selected paragraph without pressing Start");
     await ui.tap(panel.getByRole("button", { name: "Pause", exact: true }));
     const paused = await state(); assert.equal(paused.status, "paused");
     await page.waitForTimeout(2000); assert.equal((await state()).index, paused.index);
@@ -144,9 +154,6 @@ async function main() {
         if (preferences && fixture) {
           await page.evaluate(({ original, keys }) => {
             for (const key of keys) { if (original[key] === undefined) localStorage.removeItem(key); else localStorage.setItem(key, original[key]); }
-            const config = JSON.parse(localStorage.getItem("readerConfig") || "{}"), old = JSON.parse(original.readerConfig || "{}");
-            for (const key of ["androidVoice", "androidVoiceSpeed"]) { if (old[key] === undefined) delete config[key]; else config[key] = old[key]; }
-            localStorage.setItem("readerConfig", JSON.stringify(config));
           }, { original: preferences, keys: configKeys });
           await expect.poll(async () => {
             const saved = (await storage({ channel: "preferences", action: "read" })).values;

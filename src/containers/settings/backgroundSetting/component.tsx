@@ -9,6 +9,7 @@ import BackgroundUtil from "../../../utils/file/backgroundUtil";
 import { useAppStore } from "../../../store/useAppStore";
 import { isAndroid } from "../../../utils/platform";
 import { ANDROID_SETTINGS_DISMISS_EVENT } from "../../../custom/android/navigation";
+import { isAndroidEink } from "../../../custom/android/eink";
 
 export interface BackgroundImage {
   id: string;
@@ -546,6 +547,11 @@ const BackgroundSetting = () => {
 
   return (
     <>
+      {isAndroidEink() && (
+        <p className="setting-option-subtitle" role="status">
+          {t("android.eink.backgroundHint")}
+        </p>
+      )}
       <div className="background-setting-grid">
         {isLoading ? (
           <div className="background-setting-empty">

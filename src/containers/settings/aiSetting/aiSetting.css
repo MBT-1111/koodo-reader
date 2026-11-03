@@ -1,0 +1,8 @@
+.ai-setting-form button { border: 0; font: inherit; cursor: pointer; }
+.ai-setting-form button:disabled { cursor: wait; opacity: 0.6; }
+.android-settings .ai-setting-form { margin: 0 !important; width: 100% !important; }
+.android-settings .ai-setting-form input, .android-settings .ai-setting-form select { box-sizing: border-box; max-width: 100%; min-height: 44px; }
+.android-settings .ai-setting-form .lang-setting-dropdown { width: 100% !important; }
+.android-settings .ai-setting-form button { min-height: 44px; }
+.android-settings .ai-setting-form .token-dialog-button-container { display: flex; flex-wrap: wrap; gap: 8px; height: auto; }
+.android-settings .ai-setting-form .voice-add-button-container { display: flex; flex-wrap: wrap; gap: 8px; }

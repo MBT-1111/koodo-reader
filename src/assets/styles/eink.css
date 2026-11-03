@@ -68,3 +68,96 @@ html[data-eink="true"] .single-control-button {
 html[data-eink="true"] :is(.spine-shadow-left, .spine-shadow-right) {
   display: none;
 }
+
+/* Phone surfaces declare their own palette instead of inheriting desktop tokens. */
+:root[data-platform="android"][data-eink="true"] :is(.android-manager, .android-settings, .android-reader) {
+  --android-bg: #fff;
+  --android-surface: #fff;
+  --android-text: #000;
+  --android-muted: #000;
+  --android-accent: #000;
+  --android-tint: #fff;
+  --android-border: #000;
+  --settings-bg: #fff;
+  --settings-surface: #fff;
+  --settings-text: #000;
+  --settings-muted: #000;
+  --settings-accent: #000;
+  --settings-tint: #fff;
+  --reader-surface: #fff;
+  --reader-text: #000;
+  --reader-muted: #000;
+  --reader-accent: #000;
+  --reader-tint: #fff;
+}
+
+:root[data-platform="android"][data-eink="true"] #root {
+  background: #fff !important;
+  /* Includes book/PDF artwork and color swatches without altering saved content. */
+  filter: grayscale(1);
+}
+
+:root[data-platform="android"][data-eink="true"] :is(.android-manager, .android-manager .book-list-container, .android-reader, .android-reader #page-area) {
+  background: #fff !important;
+  color: #000;
+}
+
+:root[data-platform="android"][data-eink="true"] :is(
+  .android-continue-card, .android-library-shortcuts button > span:first-child,
+  .android-shelf-form, .android-shelf-list > button, .android-note-card,
+  .android-settings-group > div, .android-settings-group button,
+  .android-note-tags span, .android-notes-toolbar button, .android-notes-tag-options button,
+  .android-data-row, .android-backup-section, .android-reader-toolbar, .android-reader-bottom,
+  .android-reader-menu-toggle, .android-reader-progress-row > button, .android-speech,
+  .android-speech-actions button, .android-reader .navigation-panel-container,
+  .android-reader .setting-panel-container
+) {
+  box-sizing: border-box;
+  border: 1px solid #000;
+}
+
+:root[data-platform="android"][data-eink="true"] .android-library-shortcuts button > span:first-child {
+  background: #fff;
+  color: #000;
+}
+
+:root[data-platform="android"][data-eink="true"] :is(
+  .android-bottom-nav button[aria-current="page"] > span:first-child,
+  .android-note-tabs button[aria-pressed="true"],
+  .android-notes-tag-options button[aria-pressed="true"],
+  .android-reader .book-bookmark-title[aria-pressed="true"]
+) {
+  background: #000;
+  color: #fff;
+}
+
+:root[data-platform="android"][data-eink="true"] .android-reader-background {
+  display: none;
+}
+
+/* Dynamic accent rules fill these controls; retain readable icons and labels. */
+:root[data-platform="android"][data-eink="true"] :is(
+  .import-from-local, .previous-chapter-single-container, .next-chapter-single-container
+) {
+  background-color: #fff !important;
+  color: #000;
+  border: 1px solid #000;
+}
+
+:root[data-platform="android"][data-eink="true"] input[type="range"]::-webkit-slider-runnable-track {
+  border-color: #000;
+}
+
+:root[data-platform="android"][data-eink="true"] input[type="range"]::-webkit-slider-thumb {
+  border-color: #000;
+  background: #fff;
+}
+
+:root[data-platform="android"][data-eink="true"] .android-reader .bookmark {
+  border-left-color: #000;
+  border-right-color: #000;
+}
+
+:root[data-platform="android"][data-eink="true"] .android-reader-sheet-heading::before {
+  opacity: 1;
+}

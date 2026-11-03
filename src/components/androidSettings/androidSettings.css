@@ -47,3 +47,5 @@ html[data-platform="android"] .android-manager > .android-settings { height: cal
 .android-settings .lang-setting-dropdown { max-width: 100%; min-height: 44px; box-sizing: border-box; }
 .android-settings .setting-dialog-new-container { margin: 16px 0; }
 .android-settings .change-location-button { min-height: 44px; display: inline-flex; align-items: center; justify-content: center; }
+.android-settings .plugin-tab-bar { flex-wrap: wrap; padding: 6px 4px; gap: 4px; }
+.android-settings .plugin-tab-item { display: flex; align-items: center; min-height: 44px; padding: 8px 12px; box-sizing: border-box; }

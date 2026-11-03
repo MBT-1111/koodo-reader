@@ -11,6 +11,7 @@ import FontUtil from "../../../utils/file/fontUtil";
 import toast from "react-hot-toast";
 import { isReadingRawPDF } from "../../../utils/common";
 import { useAppStore } from "../../../store/useAppStore";
+import { isAndroidEink } from "../../../custom/android/eink";
 
 export interface DropdownListProps {
   group?: string;
@@ -204,6 +205,8 @@ const DropdownList = (props: DropdownListProps) => {
             <select
               name=""
               className="general-setting-dropdown"
+              aria-label={t(item.title)}
+              disabled={item.value === "animation" && isAndroidEink()}
               value={
                 item.value === "lineHeight"
                   ? state.currentLineHeightValue
@@ -212,7 +215,9 @@ const DropdownList = (props: DropdownListProps) => {
                     : item.value === "convertChinese"
                       ? state.chineseConversionValue
                       : item.value === "animation"
-                        ? state.currentAnimationValue
+                        ? isAndroidEink()
+                          ? "none"
+                          : state.currentAnimationValue
                         : item.value === "bookLayout"
                           ? state.currentBookLayoutValue
                           : item.value === "codeHighlight"

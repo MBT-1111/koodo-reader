@@ -28,8 +28,11 @@ import {
 } from "../../../utils/plugins/customPlugin";
 import type { PluginConfig, PluginVoice } from "../../../utils/plugins/types";
 import { useAppStore } from "../../../store/useAppStore";
+import { isAndroid } from "../../../utils/platform";
+import { getAndroidCloudVoices, supportsAndroidCloudVoice } from "../../../custom/android/cloudSpeech";
 
 import type { BuiltinPluginMarketItem } from "../../../utils/plugins/types";
+import "./pluginSetting.css";
 
 export interface SettingInfoState {
   isAddNew: boolean;
@@ -69,7 +72,7 @@ const SettingDialog = () => {
         tab === "dictionary" ||
         tab === "voice" ||
         tab === "ocr") &&
-      !(tab === "voice" && !isElectron)
+      !(tab === "voice" && !isElectron && !isAndroid)
     ) {
       return tab;
     }
@@ -98,6 +101,11 @@ const SettingDialog = () => {
   });
 
   const scrollToPluginSection = (type: string, retries = 20) => {
+    if (isAndroid) {
+      const container = document.querySelector(".android-settings-content");
+      if (container) container.scrollTop = 0;
+      return;
+    }
     const ref = getPluginSectionRefMap()[type]?.current;
     const scrollContainer = document.querySelector(
       ".setting-dialog-info"
@@ -112,7 +120,7 @@ const SettingDialog = () => {
     }
     const containerRect = scrollContainer.getBoundingClientRect();
     const refRect = ref.getBoundingClientRect();
-    const tabBarHeight = 40;
+    const tabBarHeight = scrollContainer.querySelector<HTMLElement>(".plugin-tab-bar")?.offsetHeight || 40;
     scrollContainer.scrollTop +=
       refRect.top - containerRect.top - tabBarHeight;
   };
@@ -132,12 +140,12 @@ const SettingDialog = () => {
   }, [pluginSettingTab]);
 
   const handleGetPluginList = () => {
-    const installedPluginKeys = plugins.map((item) => item.key);
+    const installedPluginKeys = (plugins || []).map((item) => item.key);
     const pluginList = getBuiltinPluginMarket(
       ConfigService.getReaderConfig("lang") || navigator.language
     ).filter((item) => {
       if (!installedPluginKeys.includes(item.plugin.identifier)) {
-        if (!isElectron && item.plugin.type === "voice") {
+        if (!isElectron && item.plugin.type === "voice" && !(isAndroid && supportsAndroidCloudVoice(item.plugin.identifier))) {
           return false;
         }
         return true;
@@ -240,7 +248,11 @@ const SettingDialog = () => {
     if (keys.length === 0) {
       return true;
     }
-    let result = await vexOpenAsync(config, configuration || "");
+    const secret = typeof config.apiKey === "string" ? config.apiKey : "";
+    const fields = isAndroid && supportsAndroidCloudVoice(plugin.identifier || plugin.key)
+      ? { ...config, apiKey: { type: "password", value: secret.includes("[") ? "" : secret, placeholder: secret.includes("[") ? secret : "" } }
+      : config;
+    let result = await vexOpenAsync(fields, configuration || "");
     if (result === false) {
       return false;
     }
@@ -252,11 +264,25 @@ const SettingDialog = () => {
     handleGetPluginList();
   }, [plugins]);
 
+  const installedPlugins = (plugins || []).filter(item => item.type !== "ai" && (!isAndroid || item.type === state.activePluginTab))
+    .sort((a, b) => installedTypeOrder[a.type] - installedTypeOrder[b.type]);
+  const marketPlugins = state.availablePlugins.filter(item => !isAndroid || item.plugin.type === state.activePluginTab);
+  const pluginTabs = <div className="plugin-tab-bar" role="group" aria-label={t("android.plugins.category")}>
+    {(["translation", "dictionary", "voice", "ocr"] as const)
+      .filter(type => isElectron || isAndroid || type !== "voice")
+      .map(type => <button type="button" key={type} aria-pressed={state.activePluginTab === type}
+        className={`plugin-tab-item${state.activePluginTab === type ? " plugin-tab-item-active" : ""}`}
+        onClick={() => { mergeState({ activePluginTab: type, expandedPluginKey: null }); scrollToPluginSection(type); }}>
+        {t({ translation: "Translation", dictionary: "Dictionary", voice: "Voice", ocr: "OCR" }[type])}
+      </button>)}
+  </div>;
+
   return (
-    <>
+    <div className={`plugin-setting${isAndroid ? " plugin-setting-phone" : ""}`} data-plugin-category={state.activePluginTab}>
+      {isAndroid && pluginTabs}
       {state.isAddNew && (
         <div
-          className="voice-add-new-container"
+          className="voice-add-new-container plugin-custom-form"
           style={{
             marginLeft: "25px",
             width: "calc(100% - 50px)",
@@ -406,6 +432,7 @@ const SettingDialog = () => {
         </div>
       )}
       <div
+        className="plugin-section-title"
         style={{
           fontWeight: "bold",
           textAlign: "left",
@@ -414,21 +441,17 @@ const SettingDialog = () => {
           marginTop: "20px",
         }}
       >
-        <span style={{}} onClick={() => handleOpenAddNew(false)}>
+        <span onClick={isAndroid ? undefined : () => handleOpenAddNew(false)}>
           <Trans>Installed</Trans>
         </span>
       </div>
 
-      {plugins &&
-        plugins
-          .filter((item) => item.type !== "ai")
-          .sort(
-            (a, b) => installedTypeOrder[a.type] - installedTypeOrder[b.type]
-          )
+      {isAndroid && !installedPlugins.length && <p className="plugin-empty">{t("android.plugins.noInstalled")}</p>}
+      {installedPlugins
           .map((item) => {
             return (
-              <div className="setting-dialog-new-title" key={item.key}>
-                <span>
+              <div className="setting-dialog-new-title plugin-setting-row plugin-card plugin-card-installed" data-plugin-type={item.type} key={item.key}>
+                <span className="plugin-setting-identity">
                   <span
                     className={`icon-${
                       item.type === "dictionary"
@@ -449,8 +472,8 @@ const SettingDialog = () => {
                 {!item.key.startsWith("official") &&
                   !item.key.startsWith("dict") &&
                   !item.key.startsWith("custom") && (
-                    <span
-                      className="change-location-button"
+                    <button type="button"
+                      className="change-location-button plugin-setting-remove"
                       onClick={async () => {
                         await DatabaseService.deleteRecord(item.key, "plugins");
                         handleFetchPlugins();
@@ -459,12 +482,13 @@ const SettingDialog = () => {
                       }}
                     >
                       <Trans>Delete</Trans>
-                    </span>
+                    </button>
                   )}
               </div>
             );
           })}
       <div
+        className="plugin-section-title"
         style={{
           fontWeight: "bold",
           textAlign: "left",
@@ -473,40 +497,17 @@ const SettingDialog = () => {
           marginTop: "20px",
         }}
       >
-        <span style={{}} onClick={() => handleOpenAddNew(false)}>
+        <span onClick={isAndroid ? undefined : () => handleOpenAddNew(false)}>
           <Trans>Plugin market</Trans>
         </span>
       </div>
-      <div className="plugin-tab-bar">
-        {(["translation", "dictionary", "voice", "ocr"] as const)
-          .filter((type) => isElectron || type !== "voice")
-          .map((type) => {
-            const labelMap: Record<string, string> = {
-              translation: t("Translation"),
-              dictionary: t("Dictionary"),
-              voice: t("Voice"),
-              ocr: t("OCR"),
-            };
-            return (
-              <div
-                key={type}
-                className={`plugin-tab-item${state.activePluginTab === type ? " plugin-tab-item-active" : ""}`}
-                onClick={() => {
-                  mergeState({ activePluginTab: type });
-                  scrollToPluginSection(type);
-                }}
-              >
-                {labelMap[type]}
-              </div>
-            );
-          })}
-      </div>
-      {state.availablePlugins &&
-        state.availablePlugins.map((item, index: number) => {
+      {!isAndroid && pluginTabs}
+      {isAndroid && !marketPlugins.length && <p className="plugin-empty">{t("android.plugins.noAvailable")}</p>}
+      {marketPlugins.map((item, index: number) => {
           const isExpanded = state.expandedPluginKey === item.plugin.identifier;
           const type = item.plugin.type;
           const prevType =
-            index > 0 ? state.availablePlugins[index - 1].plugin.type : null;
+            index > 0 ? marketPlugins[index - 1].plugin.type : null;
           const isFirstOfType = type !== prevType;
           const sectionRef =
             type === "translation"
@@ -519,12 +520,12 @@ const SettingDialog = () => {
                     ? voiceRef
                     : null;
           return (
-            <div key={item.plugin.identifier}>
+            <div className="plugin-card plugin-card-market" data-plugin-type={type} key={item.plugin.identifier}>
               {isFirstOfType && sectionRef && (
                 <div ref={sectionRef} className="plugin-section-anchor" />
               )}
-              <div className="setting-dialog-new-title">
-                <span>
+              <div className="setting-dialog-new-title plugin-setting-row">
+                <span className="plugin-setting-identity">
                   <span
                     className={`icon-${
                       item.plugin.type === "dictionary"
@@ -540,13 +541,16 @@ const SettingDialog = () => {
                   <span className="setting-plugin-name">{t(item.name)}</span>
                 </span>
                 <span
+                  className="plugin-setting-actions"
                   style={{
                     display: "flex",
                     gap: "10px",
                     alignItems: "center",
                   }}
                 >
-                  <span
+                  <button type="button"
+                    className="plugin-setting-details-button"
+                    aria-expanded={isExpanded}
                     style={{ cursor: "pointer" }}
                     onClick={() => {
                       mergeState({
@@ -557,15 +561,15 @@ const SettingDialog = () => {
                     }}
                   >
                     <Trans>Details</Trans>
-                  </span>
+                  </button>
 
-                  <span
+                  <button type="button"
                     className="change-location-button"
                     onClick={async () => {
                       const plugin = structuredClone(item.plugin);
                       const pluginKey = plugin.identifier;
 
-                      if (plugin.type === "voice" && !isElectron) {
+                      if (plugin.type === "voice" && !isElectron && !(isAndroid && supportsAndroidCloudVoice(pluginKey))) {
                         toast.error(
                           t("Only desktop version supports TTS plugin")
                         );
@@ -595,7 +599,7 @@ const SettingDialog = () => {
                         voiceList.length === 0
                       ) {
                         try {
-                          voiceList = await window.electronAPI.invoke<
+                          voiceList = isAndroid ? await getAndroidCloudVoices(pluginKey, plugin.config) : await window.electronAPI.invoke<
                             PluginVoice[]
                           >("get-tts-voices", {
                             pluginKey,
@@ -608,7 +612,7 @@ const SettingDialog = () => {
                         }
                       }
                       if (
-                        plugins.find((installed) => installed.key === pluginKey)
+                        (plugins || []).find((installed) => installed.key === pluginKey)
                       ) {
                         toast.error(t("Plugin already installed"));
                         return;
@@ -629,11 +633,12 @@ const SettingDialog = () => {
                     }}
                   >
                     <Trans>Install</Trans>
-                  </span>
+                  </button>
                 </span>
               </div>
               {isExpanded && (
                 <div
+                  className="plugin-setting-details"
                   style={{
                     marginLeft: "30px",
                     marginRight: "30px",
@@ -694,16 +699,16 @@ const SettingDialog = () => {
         })}
 
       {!window.electronAPI?.runtime?.windowsStore && (
-        <div className="setting-dialog-new-plugin">
-          <span
+        <div className="setting-dialog-new-plugin plugin-setting-footer">
+          <button type="button"
             style={{ textDecoration: "underline", marginRight: "20px" }}
             onClick={() => {
               openExternalUrl(getPluginTutorialUrl());
             }}
           >
             <Trans>Visit online version</Trans>
-          </span>
-          <span
+          </button>
+          <button type="button"
             style={{ textDecoration: "underline" }}
             onClick={() => {
               if (
@@ -721,18 +726,18 @@ const SettingDialog = () => {
             }}
           >
             <Trans>How to custom plugin</Trans>
-          </span>
-          <span
+          </button>
+          <button type="button"
             style={{ marginLeft: "20px", fontWeight: "bold" }}
             onClick={async () => {
               handleOpenAddNew(true);
             }}
           >
             <Trans>Add custom plugin</Trans>
-          </span>
+          </button>
         </div>
       )}
-    </>
+    </div>
   );
 };
 

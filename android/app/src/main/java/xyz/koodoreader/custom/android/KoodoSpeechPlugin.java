@@ -34,7 +34,8 @@ public class KoodoSpeechPlugin extends Plugin {
             AtomicBoolean settled = new AtomicBoolean();
             Runnable timeout = () -> { if (settled.compareAndSet(false, true)) call.reject("ANDROID_SPEECH_UNAVAILABLE"); };
             main.postDelayed(timeout, 16000);
-            connected.thenCompose(target -> "stop".equals(action) || "state".equals(action) ? CompletableFuture.completedFuture(null) : target.ready).whenComplete((unused, failure) -> main.post(() -> {
+            boolean systemEngine = "voices".equals(action) || ("start".equals(action) && "system".equals(call.getString("source", "system")));
+            connected.thenCompose(target -> systemEngine ? target.ready : CompletableFuture.completedFuture(null)).whenComplete((unused, failure) -> main.post(() -> {
                 main.removeCallbacks(timeout);
                 if (!settled.compareAndSet(false, true)) return;
                 if (failure != null || service == null || destroyed) { call.reject("ANDROID_SPEECH_UNAVAILABLE"); return; }

@@ -21,6 +21,7 @@ html[data-theme="dark"] .android-reader {
 .android-reader-menu-toggle { position: absolute; right: 16px; bottom: 8px; z-index: 20; width: 44px; height: 44px; border: 0; border-radius: 50%; background: var(--reader-surface); color: var(--reader-muted); box-shadow: 0 2px 12px #0001; font-size: 20px; }
 .android-reader-bottom { position: absolute; inset: auto 0 0; z-index: 20; background: var(--reader-surface); color: var(--reader-text); padding: 8px 12px env(safe-area-inset-bottom, 0px); box-shadow: 0 -2px 12px #0001; }
 .android-reader-bottom nav { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); }
+.android-reader-bottom nav[data-translation="true"] { grid-template-columns: repeat(6, minmax(0, 1fr)); }
 .android-reader-bottom nav button { min-height: 72px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 7px; border: 0; padding: 8px 2px; background: transparent; color: inherit; font-size: 11px; }
 .android-reader-bottom nav button > span:first-child { color: var(--reader-accent); font-size: 22px; }
 .android-reader-progress-row { display: flex; align-items: center; gap: 8px; }

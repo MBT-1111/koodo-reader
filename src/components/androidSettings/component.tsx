@@ -16,6 +16,7 @@ const groups = [
     { mode: "appearance", label: "Appearance", icon: "highlight-line" },
     { mode: "font", label: "Font management", icon: "font" },
     { mode: "background", label: "Background", icon: "image" },
+    { mode: "stats", label: "Reading Stats", icon: "chart" },
   ] },
   { title: "android.settings.library", items: [
     { mode: "data", label: "Data", icon: "save" },
@@ -28,7 +29,6 @@ const groups = [
     { mode: "plugins", label: "Plugins", icon: "internet" },
     { mode: "ai", label: "AI service", icon: "idea-line" },
     { mode: "more", label: "More settings", icon: "more" },
-    { mode: "about", label: "About", icon: "detail" },
   ] },
 ];
 
@@ -38,7 +38,7 @@ const AndroidSettings = ({ title, contentRef, children }: AndroidSettingsProps) 
   const mode = useAppStore((s) => s.manager.settingMode);
   const handleSetting = useAppStore((s) => s.handleSetting);
   const handleSettingMode = useAppStore((s) => s.handleSettingMode);
-  const root = mode === "index";
+  const root = mode === "index" || mode === "about";
   const close = () => { handleSetting(false); handleSettingMode("index"); };
   return (
     <section className="setting-dialog-container android-settings" data-settings-level={root ? "root" : "page"}>

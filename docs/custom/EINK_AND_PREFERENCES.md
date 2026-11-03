@@ -6,6 +6,8 @@
 
 “设置 → 外观”新增开关。参考本地 anx-reader-custom 的主题实现，界面强制浅色、黑白主题色、清晰边框，关闭阴影和动画。关闭开关后恢复之前选择的主题和主题色；书籍自身的文字/背景配置保留。
 
+2026-11-03 的 Android 补充适配覆盖手机各页面、正文、背景隐藏、批注标记及实际翻页动画，详见 [Android E-ink 模式](ANDROID_EINK.md)。下文保留最初桌面批次的验证记录。
+
 ## 配置保存
 
 AI 模型、Discord 开关、书库位置及其他 ConfigService 配置原先仅保存在 Chromium localStorage。现在通过经过参数校验的 `preferences` IPC 同步写入 Custom profile 的 electron-store，在 React、Zustand 和主题初始化前恢复。

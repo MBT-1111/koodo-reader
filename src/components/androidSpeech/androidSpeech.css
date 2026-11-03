@@ -7,3 +7,5 @@
 .android-speech-actions { display: flex; flex-wrap: wrap; gap: 8px; }
 .android-speech-actions button { flex: 1; min-height: 44px; border: 0; border-radius: 12px; padding: 8px; background: var(--reader-tint); color: var(--reader-accent); }
 .android-speech button:disabled, .android-speech select:disabled { opacity: 0.5; }
+.android-speech-roles { margin: 16px 0; }
+.android-speech-roles > button { width: 100%; min-height: 44px; padding: 8px; border: 1px solid var(--reader-muted); border-radius: 12px; background: var(--reader-surface); color: inherit; font: inherit; }

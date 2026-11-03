@@ -9,7 +9,7 @@ import {
 } from "../../../assets/lib/kookit-extra-browser.min";
 import Parser from "html-react-parser";
 import DOMPurify from "dompurify";
-import axios from "axios";
+import { serviceAxios as axios } from "../../../custom/android/http";
 import DictHistory from "../../../models/DictHistory";
 import { Trans } from "react-i18next";
 import {
@@ -193,32 +193,35 @@ const PopupDict = (props: PopupDictProps) => {
         aiTextAccumulator.current = "";
         updateState({ aiAnswer: "", isAiWaiting: true, isAiStreaming: true });
         startUpdateInterval();
-        await chatStream(
-          config.endpoint,
-          config.providerId,
-          config.apiKey,
-          config.modelId,
-          systemPrompt,
-          [],
-          (result) => {
-            if (result && result.done) {
-              return;
-            }
-            if (result && result.text) {
-              if (!aiTextAccumulator.current) {
-                updateState({ isAiWaiting: false });
+        try {
+          await chatStream(
+            config.endpoint,
+            config.providerId,
+            config.apiKey,
+            config.modelId,
+            systemPrompt,
+            [],
+            (result) => {
+              if (result && result.done) {
+                return;
               }
-              aiTextAccumulator.current += result.text;
+              if (result && result.text) {
+                if (!aiTextAccumulator.current) {
+                  updateState({ isAiWaiting: false });
+                }
+                aiTextAccumulator.current += result.text;
+              }
             }
-          }
-        );
-        stopUpdateInterval();
-        aiTextAccumulator.current = "";
-        updateState({
-          isAiWaiting: false,
-          isAiStreaming: false,
-          dictText: " ",
-        });
+          );
+        } finally {
+          stopUpdateInterval();
+          aiTextAccumulator.current = "";
+          updateState({
+            isAiWaiting: false,
+            isAiStreaming: false,
+            dictText: " ",
+          });
+        }
         return "";
       } else if (
         ConfigService.getReaderConfig("dictService") &&

@@ -1,0 +1,20 @@
+.android-reader .reader-setting-dialog-anchor:has(.study-lang-dialog-container) {
+  inset: auto 0 0;
+  z-index: 24;
+  animation: none;
+  transition: none;
+}
+.android-reader .study-lang-dialog-container {
+  width: 100% !important;
+  max-width: 100%;
+  max-height: min(74dvh, 600px) !important;
+  margin: 0;
+  padding: 0 12px 24px;
+  border: 1px solid var(--reader-muted);
+  border-radius: 24px 24px 0 0;
+  background: var(--reader-surface);
+  color: var(--reader-text);
+}
+.android-reader .study-lang-dialog-container .sort-by-category { width: 100%; padding: 0; }
+.android-reader .study-lang-dialog-container select { min-height: 44px; max-width: 100%; }
+.android-reader .study-lang-dialog-container .scale-page-preset-row { min-height: 56px; flex-wrap: wrap; gap: 8px; }

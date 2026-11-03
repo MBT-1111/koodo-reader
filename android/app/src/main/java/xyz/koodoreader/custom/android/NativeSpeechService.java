@@ -13,7 +13,11 @@ import org.json.JSONArray;
 import org.json.JSONObject;
 import java.util.*;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 import java.util.function.Consumer;
+import java.io.File;
 
 public class NativeSpeechService extends Service {
     private static final String CHANNEL = "reading-speech";
@@ -29,6 +33,16 @@ public class NativeSpeechService extends Service {
     private PowerManager.WakeLock wake;
     private String status = "idle", bookKey = "", title = "", error = "";
     private boolean foreground;
+    private String source = "system";
+    private NativeCloudSpeech cloud;
+    private final Map<String, NativeCloudSpeech> roleVoices = new HashMap<>();
+    private boolean multiRole;
+    private final ExecutorService cloudWorker = Executors.newSingleThreadExecutor();
+    private Future<?> cloudTask;
+    private MediaPlayer player;
+    private File cloudDirectory;
+    private final Map<Integer, File> clips = new LinkedHashMap<>();
+    private int cloudPosition;
     private final BroadcastReceiver noisy = new BroadcastReceiver() {
         @Override public void onReceive(Context context, Intent intent) { pause(); }
     };
@@ -39,6 +53,10 @@ public class NativeSpeechService extends Service {
     @Override public void onCreate() {
         super.onCreate();
         audio = (AudioManager) getSystemService(AUDIO_SERVICE);
+        cloudDirectory = new File(getCacheDir(), "cloud-speech");
+        cloudDirectory.mkdirs();
+        File[] orphaned = cloudDirectory.listFiles();
+        if (orphaned != null) for (File file : orphaned) if (file.isFile() && file.getName().startsWith("clip-")) file.delete();
         AudioAttributes attributes = new AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_MEDIA)
             .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH).build();
         focus = new AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN).setAudioAttributes(attributes)
@@ -94,7 +112,8 @@ public class NativeSpeechService extends Service {
 
     JSObject state() {
         return new JSObject().put("status", status).put("bookKey", bookKey).put("index", queue == null ? 0 : queue.index)
-            .put("total", queue == null ? 0 : queue.text.size()).put("error", error);
+            .put("total", queue == null ? 0 : queue.text.size()).put("error", error).put("source", source)
+            .put("multiRole", multiRole).put("role", queue == null ? "narrator" : queue.roles.get(queue.index));
     }
 
     void start(JSONObject request) throws Exception {
@@ -109,6 +128,36 @@ public class NativeSpeechService extends Service {
             if (!(input.get(i) instanceof String)) throw new IllegalArgumentException("ANDROID_SPEECH_TEXT");
             text.add(input.getString(i));
         }
+        String requestedSource = request.optString("source", "system");
+        List<String> roles = null;
+        if (request.has("roles") || request.has("roleVoices")) {
+            JSONArray inputRoles = request.getJSONArray("roles");
+            if (inputRoles.length() != text.size()) throw new IllegalArgumentException("ANDROID_SPEECH_ROLES");
+            request.getJSONObject("roleVoices");
+            roles = new ArrayList<>();
+            for (int i = 0; i < inputRoles.length(); i++) {
+                if (!(inputRoles.get(i) instanceof String)) throw new IllegalArgumentException("ANDROID_SPEECH_ROLES");
+                roles.add(inputRoles.getString(i));
+            }
+            if (requestedSource.equals("system")) throw new IllegalArgumentException("ANDROID_SPEECH_ROLES");
+        }
+        if (!requestedSource.equals("system")) {
+            NativeSpeechQueue next = NativeSpeechQueue.cloud(text, roles);
+            NativeCloudSpeech nextCloud = new NativeCloudSpeech(requestedSource, request.getJSONObject("config"), speed);
+            Map<String, NativeCloudSpeech> nextVoices = new HashMap<>();
+            if (roles != null) {
+                JSONObject voices = request.getJSONObject("roleVoices");
+                Iterator<String> names = voices.keys();
+                while (names.hasNext()) {
+                    String role = names.next();
+                    if (!Arrays.asList("male", "female", "child").contains(role)) throw new IllegalArgumentException("ANDROID_SPEECH_ROLES");
+                    JSONObject voice = voices.getJSONObject(role);
+                    nextVoices.put(role, new NativeCloudSpeech(voice.getString("source"), voice.getJSONObject("config"), speed));
+                }
+            }
+            stop(); cloud = nextCloud; roleVoices.putAll(nextVoices); multiRole = roles != null; source = requestedSource;
+            queue = next; bookKey = key; title = name; error = ""; resumeSafely(); return;
+        }
         NativeSpeechQueue next = new NativeSpeechQueue(text, Math.min(3500, TextToSpeech.getMaxSpeechInputLength()));
         Voice voice = engine.getVoices() == null ? null : engine.getVoices().stream().filter(item -> item.getName().equals(voiceName)
             && !item.getFeatures().contains(TextToSpeech.Engine.KEY_FEATURE_NOT_INSTALLED)).findFirst().orElse(null);
@@ -116,12 +165,13 @@ public class NativeSpeechService extends Service {
         stop();
         if (engine.setVoice(voice) != TextToSpeech.SUCCESS || engine.setSpeechRate((float) speed) != TextToSpeech.SUCCESS)
             throw new IllegalStateException("ANDROID_SPEECH_UNAVAILABLE");
-        queue = next; bookKey = key; title = name; error = "";
+        queue = next; bookKey = key; title = name; error = ""; source = "system";
         resumeSafely();
     }
 
     private void resumeSafely() {
         if (queue == null || queue.playing) return;
+        if (!source.equals("system") && cloud == null) return;
         try {
             // Establish the foreground service before requesting audio focus (target API 35+).
             startForegroundService(new Intent(this, NativeSpeechService.class));
@@ -135,20 +185,84 @@ public class NativeSpeechService extends Service {
 
     private void speak() {
         wake.acquire(30 * 60 * 1000L);
+        if (cloud != null) { speakCloud(); return; }
         if (engine.speak(queue.text.get(queue.index), TextToSpeech.QUEUE_FLUSH, null, queue.token()) != TextToSpeech.SUCCESS) { fail(); return; }
         publish();
     }
 
+    private void speakCloud() {
+        final NativeSpeechQueue expected = queue;
+        final NativeCloudSpeech sessionCloud = cloud;
+        final NativeCloudSpeech client = roleVoices.getOrDefault(queue.roles.get(queue.index), cloud);
+        final String token = queue.token();
+        final int index = queue.index;
+        status = "buffering"; publish();
+        File cached = clips.get(index);
+        if (cached != null && cached.isFile()) { playCloud(cached, expected, token); return; }
+        cloudTask = cloudWorker.submit(() -> {
+            try {
+                File file = client.synthesize(expected.text.get(index), cloudDirectory);
+                main.post(() -> {
+                    if (cloud != sessionCloud || queue != expected || !queue.playing || !queue.token().equals(token)) { client.release(file); return; }
+                    clips.put(index, file);
+                    while (clips.size() > 2) { Integer old = clips.keySet().iterator().next(); releaseClip(clips.remove(old)); }
+                    playCloud(file, expected, token);
+                });
+            } catch (Exception failure) {
+                main.post(() -> {
+                    if (cloud == sessionCloud && queue == expected && queue.playing && queue.token().equals(token)) {
+                        String code = failure.getMessage();
+                        fail();
+                        if ("ANDROID_SPEECH_AUTH".equals(code) || "ANDROID_SPEECH_QUOTA".equals(code)) { error = code; publish(); }
+                    }
+                });
+            }
+        });
+    }
+
+    private void playCloud(File file, NativeSpeechQueue expected, String token) {
+        try {
+            releasePlayer();
+            MediaPlayer next = new MediaPlayer(); player = next;
+            next.setAudioAttributes(new AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_MEDIA).setContentType(AudioAttributes.CONTENT_TYPE_SPEECH).build());
+            next.setDataSource(file.getAbsolutePath());
+            Runnable start = () -> {
+                if (player != next || queue != expected || !queue.playing || !queue.token().equals(token)) return;
+                try { next.setPlaybackParams(new PlaybackParams().setSpeed(roleVoices.getOrDefault(queue.roles.get(queue.index), cloud).playbackSpeed())); next.start(); status = "playing"; publish(); }
+                catch (RuntimeException failure) { fail(); }
+            };
+            next.setOnPreparedListener(value -> { if (player != next) return; if (cloudPosition > 0) { next.setOnSeekCompleteListener(seeked -> start.run()); next.seekTo(cloudPosition); } else start.run(); });
+            next.setOnCompletionListener(value -> {
+                if (player != next || queue != expected || !queue.finish(token)) return;
+                releasePlayer(); cloudPosition = 0;
+                if (queue.playing) speak();
+                else { closeCloud(); status = "completed"; releasePlayback(); session.setActive(false); publish(); }
+            });
+            next.setOnErrorListener((value, what, extra) -> { if (player == next) fail(); return true; });
+            next.prepareAsync();
+        } catch (Exception failure) { fail(); }
+    }
+
+    private void releasePlayer() { if (player != null) { player.release(); player = null; } }
+    private void releaseClip(File file) { if (cloud != null) cloud.release(file); for (NativeCloudSpeech voice : roleVoices.values()) voice.release(file); }
+    private void cancelCloudWork() { if (cloudTask != null) { cloudTask.cancel(true); cloudTask = null; } if (cloud != null) cloud.cancel(); for (NativeCloudSpeech voice : roleVoices.values()) voice.cancel(); }
+    private void closeCloud() { cancelCloudWork(); releasePlayer(); if (cloud != null) cloud.close(); for (NativeCloudSpeech voice : roleVoices.values()) voice.close(); roleVoices.clear(); cloud = null; clips.clear(); cloudPosition = 0; }
+
     void pause() {
         if (queue == null || !queue.playing) return;
-        queue.pause(); engine.stop(); status = "paused";
+        queue.pause(); engine.stop();
+        if (cloud != null) {
+            if (player != null) { try { cloudPosition = player.getCurrentPosition(); } catch (RuntimeException ignored) {} }
+            cancelCloudWork(); releasePlayer();
+        }
+        status = "paused";
         releasePlayback(); publish();
     }
 
     void move(int delta) {
         if (queue == null) return;
         boolean playing = queue.playing;
-        queue.move(delta); engine.stop();
+        queue.move(delta); engine.stop(); cancelCloudWork(); releasePlayer(); cloudPosition = 0;
         if (playing) { queue.resume(); speak(); }
         else { status = "paused"; publish(); }
     }
@@ -156,7 +270,8 @@ public class NativeSpeechService extends Service {
     void stop() {
         if (queue != null) queue.pause();
         if (engine != null) engine.stop();
-        queue = null; status = "idle"; bookKey = ""; error = "";
+        closeCloud();
+        queue = null; status = "idle"; bookKey = ""; error = ""; multiRole = false;
         releasePlayback(); session.setActive(false);
         getSystemService(NotificationManager.class).cancel(NOTIFICATION);
         publish();
@@ -164,7 +279,7 @@ public class NativeSpeechService extends Service {
 
     private void fail() {
         if (queue != null) queue.pause();
-        engine.stop(); status = "error"; error = "ANDROID_SPEECH_FAILED";
+        engine.stop(); closeCloud(); status = "error"; error = "ANDROID_SPEECH_FAILED";
         releasePlayback(); session.setActive(false); publish();
     }
 
@@ -179,7 +294,7 @@ public class NativeSpeechService extends Service {
     // https://developer.android.com/develop/ui/views/notifications/notification-permission#exemptions-media-sessions
     @SuppressLint("NotificationPermission")
     private void publish() {
-        int playback = "playing".equals(status) ? PlaybackState.STATE_PLAYING : "paused".equals(status) ? PlaybackState.STATE_PAUSED : PlaybackState.STATE_STOPPED;
+        int playback = "buffering".equals(status) ? PlaybackState.STATE_BUFFERING : "playing".equals(status) ? PlaybackState.STATE_PLAYING : "paused".equals(status) ? PlaybackState.STATE_PAUSED : PlaybackState.STATE_STOPPED;
         session.setPlaybackState(new PlaybackState.Builder().setActions(PlaybackState.ACTION_PLAY | PlaybackState.ACTION_PAUSE
             | PlaybackState.ACTION_STOP | PlaybackState.ACTION_SKIP_TO_NEXT | PlaybackState.ACTION_SKIP_TO_PREVIOUS)
             // Android 13+ derives notification controls from PlaybackState instead of Notification actions.
@@ -188,7 +303,7 @@ public class NativeSpeechService extends Service {
             .setState(playback, PlaybackState.PLAYBACK_POSITION_UNKNOWN, 1).build());
         session.setMetadata(new MediaMetadata.Builder().putString(MediaMetadata.METADATA_KEY_TITLE, title)
             .putString(MediaMetadata.METADATA_KEY_ARTIST, getString(R.string.app_name)).build());
-        if (queue != null && ("playing".equals(status) || "paused".equals(status))) getSystemService(NotificationManager.class).notify(NOTIFICATION, notification());
+        if (queue != null && ("playing".equals(status) || "buffering".equals(status) || "paused".equals(status))) getSystemService(NotificationManager.class).notify(NOTIFICATION, notification());
         else getSystemService(NotificationManager.class).cancel(NOTIFICATION);
         if (listener != null) listener.accept(state());
     }
@@ -200,7 +315,7 @@ public class NativeSpeechService extends Service {
     }
 
     private Notification notification() {
-        boolean playing = "playing".equals(status);
+        boolean playing = "playing".equals(status) || "buffering".equals(status);
         PendingIntent open = PendingIntent.getActivity(this, 0, new Intent(this, MainActivity.class), PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
         return new Notification.Builder(this, CHANNEL).setSmallIcon(R.drawable.ic_stat_speech).setContentTitle(title)
             .setContentText(getString(R.string.speech_channel)).setContentIntent(open).setOnlyAlertOnce(true).setOngoing(playing)
@@ -239,7 +354,7 @@ public class NativeSpeechService extends Service {
     @Override public void onTaskRemoved(Intent rootIntent) { stop(); }
     @Override public void onDestroy() {
         listener = null; ready.completeExceptionally(new IllegalStateException("ANDROID_SPEECH_UNAVAILABLE"));
-        stop(); engine.shutdown(); session.release(); unregisterReceiver(noisy); main.removeCallbacksAndMessages(null);
+        stop(); cloudWorker.shutdownNow(); engine.shutdown(); session.release(); unregisterReceiver(noisy); main.removeCallbacksAndMessages(null);
         super.onDestroy();
     }
 }

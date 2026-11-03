@@ -1,0 +1,42 @@
+.android-stats { --stats-grid: #d9e1e1; --stats-cell-empty: #e8eded; display: grid; gap: 16px; min-width: 0; padding-bottom: 8px; }
+.android-stats-toolbar { display: flex; justify-content: flex-end; }
+.android-stats button { min-height: 44px; border: 1px solid var(--settings-muted); border-radius: 12px; padding: 8px 16px; background: var(--settings-surface); color: inherit; font: inherit; cursor: pointer; }
+.android-stats button:focus-visible { outline: 2px solid var(--settings-accent); outline-offset: -3px; }
+.android-stats button:disabled { opacity: .6; }
+.android-stats p { margin: 0; line-height: 1.6; }
+.android-stats-cards { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.android-stats-card { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; min-width: 0; padding: 20px 12px; border-radius: 18px; background: var(--settings-surface); text-align: center; }
+.android-stats-card > span:first-child { font-size: 26px; color: var(--settings-muted); }
+.android-stats-card strong { max-width: 100%; font-size: 25px; line-height: 1.4; overflow-wrap: anywhere; }
+.android-stats-card > span:last-child { font-size: 13px; color: var(--settings-muted); line-height: 1.6; }
+.android-stats-section { box-sizing: border-box; min-width: 0; padding: 18px 12px; border-radius: 18px; background: var(--settings-surface); }
+.android-stats-heading { display: flex; align-items: baseline; justify-content: space-between; flex-wrap: wrap; gap: 8px; margin-bottom: 14px; }
+.android-stats-heading h2 { margin: 0; font-size: 17px; line-height: 1.5; }
+.android-stats-heading > span { font-size: 12px; line-height: 1.5; color: var(--settings-muted); }
+.android-stats-chart-tabs { display: flex; gap: 6px; margin-bottom: 12px; }
+.android-stats-chart-tabs button { flex: 1; min-width: 0; padding: 8px 4px; font-size: 13px; }
+.android-stats-chart-tabs button[aria-pressed="true"] { border-color: var(--settings-accent); background: var(--settings-tint); color: var(--settings-accent); font-weight: 700; }
+.android-stats-chart { height: 220px; min-width: 0; width: 100%; }
+.android-stats-day-summary { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 2px; margin: 6px 0 0; padding: 0; list-style: none; }
+.android-stats-day-summary li { display: grid; gap: 4px; min-width: 0; font-size: 10px; line-height: 1.5; text-align: center; overflow-wrap: anywhere; }
+.android-stats-day-summary time { color: var(--settings-muted); }
+.android-stats-activity { display: flex; align-items: stretch; gap: 6px; min-width: 0; }
+.android-stats-weekdays { display: grid; grid-template-rows: repeat(7, 1fr); flex: 0 0 14px; font-size: 10px; line-height: 1; color: var(--settings-muted); }
+.android-stats-weekdays > span { display: flex; align-items: center; justify-content: center; }
+.android-stats-heatmap { display: flex; gap: 3px; flex: 1; min-width: 0; }
+.android-stats-week { display: grid; grid-template-rows: repeat(7, 1fr); align-content: start; gap: 3px; flex: 1; min-width: 0; }
+.android-stats-cell { display: block; box-sizing: border-box; width: 100%; aspect-ratio: 1; border: 1px solid transparent; border-radius: 3px; background: var(--stats-cell-empty); }
+.android-stats-cell[data-level="1"] { background: #b9decf; }
+.android-stats-cell[data-level="2"] { background: #77bda6; }
+.android-stats-cell[data-level="3"] { background: #3d967e; }
+.android-stats-cell[data-level="4"] { background: #1d6d59; }
+.android-stats-cell-padding { visibility: hidden; }
+.android-stats-legend { display: flex; align-items: center; gap: 5px; margin-top: 14px; font-size: 11px; color: var(--settings-muted); }
+.android-stats-legend .android-stats-cell { width: 13px; flex: 0 0 13px; }
+html[data-theme="dark"] .android-stats { --stats-grid: #405056; --stats-cell-empty: #344248; }
+html[data-eink="true"] .android-stats { --stats-grid: #000; --stats-cell-empty: #fff; }
+html[data-eink="true"] .android-stats :is(.android-stats-card, .android-stats-section, .android-stats-cell) { border: 1px solid #000; }
+html[data-eink="true"] .android-stats .android-stats-cell[data-level="1"] { background: repeating-linear-gradient(135deg, #fff 0 4px, #000 4px 5px); }
+html[data-eink="true"] .android-stats .android-stats-cell[data-level="2"] { background: repeating-linear-gradient(135deg, #fff 0 2px, #000 2px 4px); }
+html[data-eink="true"] .android-stats .android-stats-cell[data-level="3"] { background: repeating-linear-gradient(135deg, #000 0 3px, #fff 3px 4px); }
+html[data-eink="true"] .android-stats .android-stats-cell[data-level="4"] { background: #000; }

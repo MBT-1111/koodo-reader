@@ -17,6 +17,7 @@ import { HexColorPicker } from "react-colorful";
 import { reloadManager, parseColorInput } from "../../../utils/common";
 import SwitchRow from "../../../components/readerSettings/switchRow";
 import FontUtil from "../../../utils/file/fontUtil";
+import { isAndroid } from "../../../utils/platform";
 import {
   applyCustomSystemCSS,
   applyCustomSystemFont,
@@ -379,8 +380,9 @@ const AppearanceSetting = () => {
         }}
       />
       <p className="setting-option-subtitle">
-        {t(
-          "Use a black-and-white interface with clear borders and no shadows or animations. Your regular theme is restored when turned off."
+        {t(isAndroid
+          ? "android.eink.description"
+          : "Use a black-and-white interface with clear borders and no shadows or animations. Your regular theme is restored when turned off."
         )}
       </p>
       {renderSwitchOption(appearanceSettingList)}

@@ -9,9 +9,18 @@ import { ConfigService } from "../../assets/lib/kookit-extra-browser.min";
 import packageJson from "../../../package.json";
 import BackgroundUtil from "../file/backgroundUtil";
 import FontUtil from "../file/fontUtil";
+import { isNativeAndroid } from "../platform";
+import { SystemBars, SystemBarsStyle } from "@capacitor/core";
 
 export const syncNativeThemeSource = (appSkin: string) => {
   if (!isElectron) {
+    if (isNativeAndroid) {
+      void SystemBars.setStyle({
+        style: ConfigService.getReaderConfig("isEinkMode") === "yes"
+          ? SystemBarsStyle.Light
+          : SystemBarsStyle.Default,
+      }).catch(() => {});
+    }
     return;
   }
   const ipcRenderer = window.electronAPI;

@@ -1,5 +1,17 @@
 # Android 手机原型
 
+2026-11-03 阅读统计：参考手机官方 App 的 Settings → Reading stats，在手机设置加入四项概览、7 天柱状/折线趋势与 90 天阅读活动，复用已有阅读记录，支持深色与 E-ink。数据口径和验收见 [ANDROID_STATS.md](ANDROID_STATS.md)。
+
+2026-11-03 手机设置整理：插件页按分类区分已安装与市场，名称/操作分行，页脚回到正常滚动布局，移除手机 About；随后接通选字菜单“从这里朗读”的原生队列起点与一次性自动启动。说明见 [ANDROID_SETTINGS_POLISH.md](ANDROID_SETTINGS_POLISH.md)。
+
+2026-11-03 多角色朗读：手机可用 Gemini AI 辅助模型逐句标记角色，旁白、男声、女声与童声可混用 Azure/MiMo，保留原文、取消分析及原生队列生命周期控制，详见 [ANDROID_MULTIROLE.md](ANDROID_MULTIROLE.md)。
+
+2026-11-03 云朗读：手机插件页与原生播放服务接入用户使用的 Azure、MiMo，支持分段后台生成/播放、Azure 情绪与强度、MiMo 播放语速、缓存位置继续及停止清理。配置方式和测试范围见 [ANDROID_CLOUD_SPEECH.md](ANDROID_CLOUD_SPEECH.md)。
+
+2026-11-03 Gemini / AI 翻译补充：接入 Android 原生 HTTP，增加手机当前页翻译与词义注释面板，补齐 Gemini 选字翻译、模型列表、连接测试和失败恢复。使用方式及验证边界见 [ANDROID_AI.md](ANDROID_AI.md)。
+
+2026-11-03 E-ink 补充：手机书库、设置、阅读工具和正文统一高对比黑白显示，隐藏背景并关闭实际翻页动画，关闭后恢复原有配色与背景。实机已检查三格式阅读、批注、模式重启持久化和书库保全，详见 [ANDROID_EINK.md](ANDROID_EINK.md)。
+
 2026-11-03 更新：按所有者要求，备份统一为跨平台阅读数据 JSON，新导入原书使用系统持久文件映射。本文历史记录中的“完整备份 ZIP”已被替代；当前约定与验证见 [DATA_BACKUP.md](DATA_BACKUP.md)。旧版已存入私有目录的书保持可读。
 
 后续进展：安卓已接入与 Windows v1 协议兼容的 MEGA 数据同步及前台自动调度，说明和隔离验收方式见 [ANDROID_SYNC.md](ANDROID_SYNC.md)。

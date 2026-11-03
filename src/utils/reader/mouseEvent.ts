@@ -11,6 +11,7 @@ import {
 import Hammer from "hammerjs";
 import TTSUtil from "./ttsUtil";
 import { isAndroid } from "../platform";
+import { isAndroidEink } from "../../custom/android/eink";
 import { closeAndroidReader } from "../../custom/android/navigation";
 import {
   getShortcutConfig,
@@ -23,6 +24,7 @@ declare var window: any;
 
 // 每次翻页时实时读取，避免修改动画设置后锁延迟不生效
 const getThrottleTime = () =>
+  !isAndroidEink() &&
   (ConfigService.getReaderConfig("animation") || "none") !== "none"
     ? 1000
     : 100;

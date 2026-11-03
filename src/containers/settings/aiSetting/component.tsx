@@ -12,6 +12,7 @@ import {
 import { useAppStore } from "../../../store/useAppStore";
 import { personalMode } from "../../../custom/personal";
 import { createAIRequest, geminiModelsRequest, isNativeGemini, readAIText } from "../../../custom/ai/protocol";
+import "./aiSetting.css";
 
 export interface AIModelConfig {
   endpoint: string;
@@ -375,12 +376,12 @@ const AISetting = () => {
     const provider = KookitConfig.AiProviderList.find(
       (p) => p.id === state.selectedProvider
     );
-    const hasModelsEndpoint = provider && provider.modelsEndpoint;
+    const hasModelsEndpoint = provider && (provider.modelsEndpoint || ["google", "gemini"].includes(provider.id));
     const hasFetchedModels = state.fetchedModels.length > 0;
 
     return (
       <div
-        className="voice-add-new-container"
+        className="voice-add-new-container ai-setting-form"
         style={{
           marginLeft: "25px",
           width: "calc(100% - 50px)",
@@ -394,6 +395,7 @@ const AISetting = () => {
           </label>
           <select
             className="lang-setting-dropdown"
+            aria-label={t("Provider")}
             style={{ width: "100px" }}
             value={state.selectedProvider}
             onChange={(e) => handleProviderChange(e.target.value)}
@@ -433,7 +435,7 @@ const AISetting = () => {
         {/* Step 3: Fetch models button (for non-custom providers with modelsEndpoint) */}
         {!isCustom && hasModelsEndpoint && (
           <div className="ai-setting-form-row">
-            <span
+            <button type="button" disabled={state.isFetchingModels}
               className="change-location-button"
               style={{
                 display: "inline-flex",
@@ -446,7 +448,7 @@ const AISetting = () => {
               ) : (
                 <Trans>Fetch models</Trans>
               )}
-            </span>
+            </button>
           </div>
         )}
 
@@ -458,6 +460,7 @@ const AISetting = () => {
             </label>
             <select
               className="lang-setting-dropdown"
+              aria-label={t("Select model")}
               style={{ width: "100px" }}
               value={state.selectedModel}
               onChange={(e) => handleModelSelect(e.target.value)}
@@ -474,8 +477,8 @@ const AISetting = () => {
           </div>
         )}
 
-        {/* Step 5: Endpoint, Model name, Model ID (always shown for custom, shown after selection for others) */}
-        {(isCustom || state.selectedModel || state.isEditing) && (
+        {/* Endpoint and manual model details remain editable before fetching. */}
+        {state.selectedProvider && (
           <>
             {/* Endpoint */}
             <div className="ai-setting-form-row">
@@ -484,6 +487,7 @@ const AISetting = () => {
                 type="text"
                 className="token-dialog-username-box"
                 placeholder="https://api.example.com/v1"
+                aria-label={t("Endpoint")}
                 value={state.endpoint}
                 id="ai-endpoint-box"
                 onContextMenu={() => {
@@ -535,20 +539,20 @@ const AISetting = () => {
 
         {/* Buttons: Add/Save, Cancel, Test */}
         <div className="token-dialog-button-container">
-          <div className="voice-add-confirm" onClick={handleSave}>
+          <button type="button" className="voice-add-confirm" onClick={handleSave}>
             <Trans>{state.isEditing ? "Save" : "Add"}</Trans>
-          </div>
+          </button>
           <div className="voice-add-button-container">
-            <div className="voice-add-cancel" onClick={resetForm}>
+            <button type="button" className="voice-add-cancel" onClick={resetForm}>
               <Trans>Cancel</Trans>
-            </div>
-            <div
+            </button>
+            <button type="button" disabled={state.isTesting}
               className="voice-add-confirm"
               style={{ marginRight: "10px" }}
               onClick={handleTest}
             >
               {state.isTesting ? <Trans>Testing...</Trans> : <Trans>Test</Trans>}
-            </div>
+            </button>
           </div>
         </div>
       </div>
@@ -663,6 +667,7 @@ const AISetting = () => {
         <select
           className="lang-setting-dropdown"
           value={state.aiTranslateModel}
+          aria-label={t("AI translation model")}
           onChange={(e) => {
             const val = e.target.value;
             updateState({ aiTranslateModel: val });
@@ -700,6 +705,7 @@ const AISetting = () => {
         <select
           className="lang-setting-dropdown"
           value={state.aiDictModel}
+          aria-label={t("AI dictionary model")}
           onChange={(e) => {
             const val = e.target.value;
             updateState({ aiDictModel: val });
@@ -737,6 +743,7 @@ const AISetting = () => {
         <select
           className="lang-setting-dropdown"
           value={state.aiAssistanceModel}
+          aria-label={t("AI assistance model")}
           onChange={(e) => {
             const val = e.target.value;
             updateState({ aiAssistanceModel: val });

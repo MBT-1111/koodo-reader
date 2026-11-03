@@ -6,7 +6,7 @@ import {
   ConfigService,
   KookitConfig,
 } from "../../../assets/lib/kookit-extra-browser.min";
-import axios from "axios";
+import { serviceAxios as axios } from "../../../custom/android/http";
 import { Trans } from "react-i18next";
 import toast from "react-hot-toast";
 import { getDefaultTransTarget, openExternalUrl } from "../../../utils/common";
@@ -64,10 +64,11 @@ const PopupTrans = (props: PopupTransProps) => {
       clearInterval(updateInterval.current);
     }
     updateInterval.current = setInterval(() => {
-      if (textAccumulator.current) {
+      const translatedText = textAccumulator.current;
+      if (translatedText) {
         setState((prev) => ({
           ...prev,
-          translatedText: textAccumulator.current,
+          translatedText,
         }));
       }
     }, 150);
@@ -78,10 +79,11 @@ const PopupTrans = (props: PopupTransProps) => {
       clearInterval(updateInterval.current);
       updateInterval.current = null;
     }
-    if (textAccumulator.current) {
+    const translatedText = textAccumulator.current;
+    if (translatedText) {
       setState((prev) => ({
         ...prev,
-        translatedText: textAccumulator.current,
+        translatedText,
       }));
     }
   };
@@ -171,32 +173,37 @@ const PopupTrans = (props: PopupTransProps) => {
       textAccumulator.current = "";
       setState((prev) => ({ ...prev, isAiWaiting: true }));
       startUpdateInterval();
-      await chatStream(
-        config.endpoint,
-        config.providerId,
-        config.apiKey,
-        config.modelId,
-        systemPrompt,
-        [],
-        (result) => {
-          if (result && result.done) {
-            return;
-          }
-          if (result && result.text) {
-            if (!textAccumulator.current) {
-              setState((prev) => ({ ...prev, isAiWaiting: false }));
+      try {
+        await chatStream(
+          config.endpoint,
+          config.providerId,
+          config.apiKey,
+          config.modelId,
+          systemPrompt,
+          [],
+          (result) => {
+            if (result && result.done) {
+              return;
             }
-            textAccumulator.current += result.text;
+            if (result && result.text) {
+              if (!textAccumulator.current) {
+                setState((prev) => ({ ...prev, isAiWaiting: false }));
+              }
+              textAccumulator.current += result.text;
+            }
           }
-        }
-      );
-      stopUpdateInterval();
-      textAccumulator.current = "";
-      setState((prev) => ({
-        ...prev,
-        isFinishOutput: true,
-        isAiWaiting: false,
-      }));
+        );
+      } catch {
+        toast.error(t("Translation failed"));
+      } finally {
+        stopUpdateInterval();
+        textAccumulator.current = "";
+        setState((prev) => ({
+          ...prev,
+          isFinishOutput: true,
+          isAiWaiting: false,
+        }));
+      }
     } else if (
       isAuthed &&
       ConfigService.getReaderConfig("isDisableAI") !== "yes"

@@ -738,7 +738,7 @@ const Reader = () => {
       className={"viewer" + (isAndroid ? " android-reader" : "") + (state.isNearEdge ? " quick-buttons-shown" : "")}
     >
       <Tooltip id="my-tooltip" style={{ zIndex: 25 }} />
-      {isAndroid && renditionProps.isShow && (
+      {isAndroid && (renditionProps.isShow || isStudyLangOpen) && (
         <button type="button" className="android-reader-backdrop" aria-label={t("Close")} onClick={dismissAndroidReaderOverlay} />
       )}
       {isAndroid && (
@@ -747,7 +747,14 @@ const Reader = () => {
       {isAndroid && (
         <AndroidReaderControls visible={state.androidControlsOpen} currentDuration={state.currentDuration}
           onToggle={renditionProps.handleToggleControls} onNavigate={toggleNavTab}
-          onSettings={(tab) => { setAndroidSettingTab(tab); handleEnterReader("right"); }}
+          onSettings={(tab) => {
+            if (tab === "study") {
+              dialogAnchorIconRef.current = null;
+              closeSettingDialogs();
+              updateState({ isOpenLeftPanel: false, isOpenRightPanel: false });
+              handleStudyLangDialog(true);
+            } else { setAndroidSettingTab(tab); handleEnterReader("right"); }
+          }}
           onPage={(next) => void handleTurnPage(next)} />
       )}
       {isSeparateElectronWindow && (
