@@ -6,6 +6,10 @@ import { Trans } from "react-i18next";
 import i18n from "../../../i18n";
 import _ from "underscore";
 import { useAppStore } from "../../../store/useAppStore";
+import {
+  beginNavigationComposition,
+  endNavigationComposition,
+} from "../../../utils/reader/navigationLock";
 
 export interface ContentListState {
   chapters: any;
@@ -160,24 +164,23 @@ const ContentList = () => {
     setState((prev) => ({ ...prev, searchKeyword: event.target.value }));
   };
 
-  const handleCompositionStart = () => {
+  const handleCompositionStart = (
+    event: React.CompositionEvent<HTMLInputElement>
+  ) => {
     setState((prev) => ({ ...prev, isComposing: true }));
-    ConfigService.setReaderConfig("isTempLocked", "yes");
-    ConfigService.setReaderConfig("isNavLocked", "yes");
+    beginNavigationComposition(event.currentTarget);
   };
 
   const handleCompositionEnd = (
-    event: React.CompositionEvent<HTMLInputElement>
+    event: React.SyntheticEvent<HTMLInputElement>
   ) => {
+    endNavigationComposition(event.currentTarget);
+    const keyword = event.currentTarget.value;
     setState((prev) => ({
       ...prev,
       isComposing: false,
-      searchKeyword: event.currentTarget.value,
+      searchKeyword: keyword,
     }));
-    if (ConfigService.getReaderConfig("isTempLocked") === "yes") {
-      ConfigService.setReaderConfig("isNavLocked", "");
-      ConfigService.setReaderConfig("isTempLocked", "");
-    }
   };
 
   const handleSearchJump = async (item: any) => {
@@ -438,6 +441,7 @@ const ContentList = () => {
             onChange={handleSearchChange}
             onCompositionStart={handleCompositionStart}
             onCompositionEnd={handleCompositionEnd}
+            onBlur={handleCompositionEnd}
             placeholder={i18n.t("Search chapters...")}
           />
         </div>

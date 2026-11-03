@@ -15,6 +15,10 @@ import Book from "../../../models/Book";
 import Bookmark from "../../../models/Bookmark";
 import Note from "../../../models/Note";
 import { useAppStore } from "../../../store/useAppStore";
+import {
+  beginNavigationComposition,
+  endNavigationComposition,
+} from "../../../utils/reader/navigationLock";
 
 import BookmarkModel from "../../../models/Bookmark";
 import NoteModel from "../../../models/Note";
@@ -128,15 +132,17 @@ const NavList = (props: NavListProps) => {
     }
   };
 
-  const handleCompositionStart = () => {
+  const handleCompositionStart = (
+    event: React.CompositionEvent<HTMLInputElement>
+  ) => {
     setState((prev) => ({ ...prev, isComposing: true }));
-    ConfigService.setReaderConfig("isTempLocked", "yes");
-    ConfigService.setReaderConfig("isNavLocked", "yes");
+    beginNavigationComposition(event.currentTarget);
   };
 
   const handleCompositionEnd = (
-    event: React.CompositionEvent<HTMLInputElement>
+    event: React.SyntheticEvent<HTMLInputElement>
   ) => {
+    endNavigationComposition(event.currentTarget);
     const keyword = event.currentTarget.value;
     setState((prev) => ({
       ...prev,
@@ -144,10 +150,6 @@ const NavList = (props: NavListProps) => {
       searchKeyword: keyword,
     }));
     handleSearch(keyword);
-    if (ConfigService.getReaderConfig("isTempLocked") === "yes") {
-      ConfigService.setReaderConfig("isNavLocked", "");
-      ConfigService.setReaderConfig("isTempLocked", "");
-    }
   };
 
   const toggleSearch = () => {
@@ -560,6 +562,7 @@ const NavList = (props: NavListProps) => {
             onChange={handleSearchChange}
             onCompositionStart={handleCompositionStart}
             onCompositionEnd={handleCompositionEnd}
+            onBlur={handleCompositionEnd}
             placeholder={getSearchPlaceholder()}
           />
         </div>

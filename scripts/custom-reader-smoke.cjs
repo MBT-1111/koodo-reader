@@ -42,6 +42,8 @@ const { isInside } = require('../src/utils/main/custom/runtime');
       const bytes = new TextEncoder().encode(text);
       const book = { key: 'reader-fixture', name: 'Synthetic reader check', author: 'Test', description: '', md5: 'fixture', cover: '', format: 'HTML', publisher: '', size: bytes.length, page: 1, path: '', charset: 'utf-8', published: '', modified: '', identifier: '', language: 'en', subject: '', rights: '', isbn: '', layout: '' };
       ConfigService.setReaderConfig('readerMode', 'single'); ConfigService.setReaderConfig('animation', 'none');
+      // Reproduce the stale IME lock left behind by an interrupted search.
+      ConfigService.setReaderConfig('isNavLocked', 'yes'); ConfigService.setReaderConfig('isTempLocked', 'yes');
       ConfigService.setReaderConfig('voiceEngine', 'system'); ConfigService.setReaderConfig('voiceName', 'FixtureVoice'); ConfigService.setReaderConfig('voiceLocale', 'en-US');
       ConfigService.setItem('isFirst', 'no'); ConfigService.setItem('isFirstRun', 'no');
       ConfigService.setListConfig('Fixture tag', 'noteTags');
@@ -49,8 +51,99 @@ const { isInside } = require('../src/utils/main/custom/runtime');
       await DatabaseService.saveRecord(book, 'books');
     });
     await page.goto('http://127.0.0.1:3000/#/html/reader-fixture?title=Synthetic');
+    // Hash navigation reuses the manager's store; reload to exercise startup hydration.
+    await page.reload();
     await page.waitForFunction(async () => (await import('/src/store/useAppStore.ts')).useAppStore.getState().reader.htmlBook?.rendition?.audioText);
     await page.waitForTimeout(1800);
+    const navigationIsHidden = () => page.waitForFunction(() => document.querySelector('.navigation-panel-container').getBoundingClientRect().right <= 0, undefined, { timeout: 5000 });
+    const clickBook = () => page.evaluate(async () => {
+      const { useAppStore } = await import('/src/store/useAppStore.ts');
+      const { getIframeDoc } = await import('/src/utils/reader/docUtil.ts');
+      getIframeDoc(useAppStore.getState().book.currentBook)[0].querySelector('p').click();
+    });
+    const openNavigation = () => page.locator('.left-panel').evaluate(node => node.click());
+    await navigationIsHidden();
+    await openNavigation();
+    await page.waitForFunction(() => !document.querySelector('.navigation-panel-container').style.transform);
+    await clickBook();
+    await navigationIsHidden();
+    console.log('PASS a stale IME lock does not keep the navigation panel open');
+    const toggleNavigation = () => page.evaluate(() => window.dispatchEvent(new CustomEvent('koodo-reading-panel-toggle', { detail: { position: 'left' } })));
+    const assertNavigationOpen = () => page.waitForFunction(() => !document.querySelector('.navigation-panel-container').style.transform);
+    const navigationConfig = () => page.evaluate(async () => {
+      const { ConfigService } = await import('/src/assets/lib/kookit-extra-browser.min.js');
+      return { pin: ConfigService.getReaderConfig('isNavLocked'), temporary: ConfigService.getReaderConfig('isTempLocked') };
+    });
+    assert.deepEqual(await navigationConfig(), { pin: 'no', temporary: '' });
+    await openNavigation();
+    await page.locator('.navigation-panel-container').hover();
+    const center = await page.evaluate(() => ({ x: innerWidth / 2, y: innerHeight / 2 }));
+    await page.mouse.move(center.x, center.y);
+    await navigationIsHidden();
+    console.log('PASS moving the pointer out of the unpinned navigation panel hides it');
+    for (const [tab, inputSelector, searchSelector] of [
+      [0, '.book-content-search-input', '.book-content-expand'],
+      [1, '.book-nav-search-input', '.book-nav-expand'],
+    ]) {
+      await openNavigation(); await assertNavigationOpen();
+      await page.locator('.navigation-navigation .book-bookmark-title').nth(tab).evaluate(node => node.click());
+      const search = page.locator(searchSelector).filter({ has: page.locator('.icon-search') });
+      await search.evaluate(node => node.click());
+      const input = page.locator(inputSelector);
+      await input.evaluate(node => { node.focus(); node.dispatchEvent(new CompositionEvent('compositionstart', { bubbles: true, data: 'zhong' })); });
+      await toggleNavigation(); await assertNavigationOpen();
+      assert.deepEqual(await navigationConfig(), { pin: 'no', temporary: '' });
+      await input.evaluate(node => node.dispatchEvent(new CompositionEvent('compositionend', { bubbles: true, data: '' })));
+      await toggleNavigation(); await navigationIsHidden();
+      await openNavigation();
+      await input.evaluate(node => { node.focus(); node.dispatchEvent(new CompositionEvent('compositionstart', { bubbles: true })); node.blur(); });
+      await toggleNavigation(); await navigationIsHidden();
+      await openNavigation();
+      await input.evaluate(node => { node.focus(); node.dispatchEvent(new CompositionEvent('compositionstart', { bubbles: true })); });
+      await search.evaluate(node => node.click());
+      await input.waitFor({ state: 'detached' });
+      await toggleNavigation(); await navigationIsHidden();
+    }
+    console.log('PASS chapter and bookmark IME guards release on completion, blur and input removal');
+    await openNavigation();
+    await page.locator('.navigation-search-box .header-search-box').focus();
+    const bookSearch = page.locator('.header-search-container .header-search-box');
+    await bookSearch.waitFor();
+    await bookSearch.evaluate(node => { node.focus(); node.dispatchEvent(new CompositionEvent('compositionstart', { bubbles: true })); });
+    await toggleNavigation(); await assertNavigationOpen();
+    await bookSearch.evaluate(node => node.dispatchEvent(new CompositionEvent('compositionend', { bubbles: true })));
+    await toggleNavigation(); await navigationIsHidden();
+    await openNavigation();
+    await bookSearch.evaluate(node => { node.focus(); node.dispatchEvent(new CompositionEvent('compositionstart', { bubbles: true })); node.blur(); });
+    await toggleNavigation(); await navigationIsHidden();
+    await openNavigation();
+    await bookSearch.evaluate(node => { node.focus(); node.dispatchEvent(new CompositionEvent('compositionstart', { bubbles: true })); });
+    await page.locator('.nav-close-icon').evaluate(node => node.click());
+    await bookSearch.waitFor({ state: 'detached' });
+    await toggleNavigation(); await navigationIsHidden();
+    assert.deepEqual(await navigationConfig(), { pin: 'no', temporary: '' });
+    console.log('PASS full-book search cannot persist or strand a temporary navigation lock');
+    await openNavigation();
+    await page.locator('.nav-lock-icon').evaluate(node => node.click());
+    await page.waitForTimeout(1000);
+    assert.equal((await navigationConfig()).pin, 'yes');
+    await clickBook(); await assertNavigationOpen();
+    await page.reload();
+    await page.waitForFunction(async () => (await import('/src/store/useAppStore.ts')).useAppStore.getState().reader.htmlBook?.rendition?.audioText);
+    await assertNavigationOpen();
+    await page.locator('.book-content-expand').filter({ has: page.locator('.icon-search') }).evaluate(node => node.click());
+    await page.locator('.book-content-search-input').evaluate(node => {
+      node.focus(); node.dispatchEvent(new CompositionEvent('compositionstart', { bubbles: true }));
+      node.dispatchEvent(new CompositionEvent('compositionend', { bubbles: true })); node.blur();
+    });
+    assert.deepEqual(await navigationConfig(), { pin: 'yes', temporary: '' });
+    await page.locator('.nav-lock-icon').evaluate(node => node.click());
+    await page.waitForTimeout(1000);
+    await clickBook(); await navigationIsHidden();
+    await page.reload();
+    await page.waitForFunction(async () => (await import('/src/store/useAppStore.ts')).useAppStore.getState().reader.htmlBook?.rendition?.audioText);
+    await navigationIsHidden();
+    console.log('PASS intentional pins survive input and restart; unlocking restores the default hidden panel');
     const openSpeech = () => page.locator('.icon-earphone-line').evaluate(node => node.closest('.reader-setting-icon-container').click());
     await openSpeech();
     await page.locator('.tts-player-btn-main').waitFor();
@@ -200,7 +293,7 @@ const { isInside } = require('../src/utils/main/custom/runtime');
     assert.equal(await page.evaluate(() => document.documentElement.dataset.theme), 'dark');
     console.log('PASS disabling E-ink restores the saved dark theme');
     assert.deepEqual(errors, [], 'The source renderer must not raise uncaught errors');
-    fs.writeFileSync(path.join(output, 'custom-reader-smoke.json'), JSON.stringify({ passed: true, mode: 'isolated Windows runtime with localhost source renderer', checks: ['selection-during-speech', 'new-note-tag-feedback', 'existing-note-tag-feedback', 'speech-panel-reopen', 'system-pause-resume', 'custom-loading-pause', 'custom-position-resume', 'custom-fast-pause-resume', 'stop-after-reopen', 'monochrome-book-style', 'eink-theme-restoration', 'dialog-animation-lifecycle'] }, null, 2));
+    fs.writeFileSync(path.join(output, 'custom-reader-smoke.json'), JSON.stringify({ passed: true, mode: 'isolated Windows runtime with localhost source renderer', checks: ['stale-navigation-lock', 'navigation-mouse-leave', 'navigation-ime-lifecycle', 'full-book-search-ime', 'navigation-pin-restoration', 'selection-during-speech', 'new-note-tag-feedback', 'existing-note-tag-feedback', 'speech-panel-reopen', 'system-pause-resume', 'custom-loading-pause', 'custom-position-resume', 'custom-fast-pause-resume', 'stop-after-reopen', 'monochrome-book-style', 'eink-theme-restoration', 'dialog-animation-lifecycle'] }, null, 2));
   } finally {
     if (app) await app.close();
     if (root && path.dirname(path.resolve(root)) === path.resolve(require('os').tmpdir()) && path.basename(root).startsWith('krc-test-reader-')) fs.rmSync(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });

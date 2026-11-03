@@ -34,6 +34,7 @@ import WindowControls from "../../components/windowControls";
 import { READING_PANEL_TOGGLE_EVENT } from "../../utils/reader/mouseEvent";
 import { isPaginatedBook, isReadingRawPDF, throttle } from "../../utils/common";
 import { getOuterDoc } from "../../utils/reader/docUtil";
+import { isNavigationComposing } from "../../utils/reader/navigationLock";
 import { useAppStore } from "../../store/useAppStore";
 
 const QUICK_BUTTON_EDGE_DISTANCE = 60;
@@ -320,7 +321,7 @@ const Reader = () => {
       case "left":
         if (
           propsRef.current.isNavLocked ||
-          ConfigService.getReaderConfig("isTempLocked") === "yes"
+          isNavigationComposing(document.activeElement)
         ) {
           break;
         } else {

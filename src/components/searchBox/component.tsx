@@ -8,6 +8,10 @@ import {
 import ConfigUtil from "../../utils/file/configUtil";
 import BookUtil from "../../utils/file/bookUtil";
 import { useAppStore } from "../../store/useAppStore";
+import {
+  beginNavigationComposition,
+  endNavigationComposition,
+} from "../../utils/reader/navigationLock";
 
 export interface SearchBoxProps {
   isNavSearch?: boolean;
@@ -23,7 +27,6 @@ const collectionUtil = new CollectionUtil(ConfigService);
 
 const SearchBox = (props: SearchBoxProps) => {
   const htmlBook = useAppStore((s) => s.reader.htmlBook);
-  const isNavLocked = useAppStore((s) => s.reader.isNavLocked);
   const isSearch = useAppStore((s) => s.manager.isSearch);
   const isReading = useAppStore((s) => s.book.isReading);
   const tabMode = useAppStore((s) => s.sidebar.mode);
@@ -177,23 +180,14 @@ const SearchBox = (props: SearchBoxProps) => {
               }
             : {}
         }
-        onCompositionStart={() => {
+        onCompositionStart={(event) => {
           if (props.mode === "nav") {
             props.handleNavSearchState?.("focused");
           }
-          if (isNavLocked) {
-            return;
-          } else {
-            ConfigService.setReaderConfig("isTempLocked", "yes");
-            ConfigService.setReaderConfig("isNavLocked", "yes");
-          }
+          beginNavigationComposition(event.currentTarget);
         }}
-        onCompositionEnd={() => {
-          if (ConfigService.getReaderConfig("isTempLocked") === "yes") {
-            ConfigService.setReaderConfig("isNavLocked", "");
-            ConfigService.setReaderConfig("isTempLocked", "");
-          }
-        }}
+        onCompositionEnd={(event) => endNavigationComposition(event.currentTarget)}
+        onBlur={(event) => endNavigationComposition(event.currentTarget)}
       />
       {isSearch && !isFocused ? (
         <span

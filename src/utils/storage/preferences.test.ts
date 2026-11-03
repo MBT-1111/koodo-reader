@@ -4,6 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { persistPreferences } from "./preferences";
+import { clearLegacyNavigationLock } from "../reader/navigationLock";
 
 const require = createRequire(import.meta.url);
 const Conf = require("conf");
@@ -57,6 +58,15 @@ afterAll(() => {
 });
 
 describe("desktop preference persistence", () => {
+  it("persists recovery of an old IME navigation lock after hydration", () => {
+    launch(memoryStorage({ readerConfig: '{"isNavLocked":"yes","isTempLocked":"yes","textColor":"saved-color"}' }));
+    clearLegacyNavigationLock(engine.ConfigService);
+    launch();
+    expect(engine.ConfigService.getReaderConfig("isNavLocked")).toBe("no");
+    expect(engine.ConfigService.getReaderConfig("isTempLocked")).toBeFalsy();
+    expect(engine.ConfigService.getReaderConfig("textColor")).toBe("saved-color");
+  });
+
   it("migrates existing preferences, then restores AI, Discord, E-ink and the library before startup reads", () => {
     const library = path.join(root, "relocated-library");
     launch(memoryStorage({ storageLocation: library, readerConfig: JSON.stringify({ lang: "zhCN", appSkin: "night" }) }));
