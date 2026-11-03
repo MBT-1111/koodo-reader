@@ -39,6 +39,7 @@ import { isAndroid } from "../../utils/platform";
 import { ANDROID_READER_CLOSE_EVENT, ANDROID_READER_DISMISS_EVENT, closeAndroidReader, dismissAndroidReaderOverlay } from "../../custom/android/navigation";
 import "../../components/androidHeader/android.css";
 import AndroidReaderControls from "../../components/androidReaderControls";
+import AndroidSpeech from "../../components/androidSpeech";
 
 const QUICK_BUTTON_EDGE_DISTANCE = 60;
 
@@ -741,6 +742,9 @@ const Reader = () => {
         <button type="button" className="android-reader-backdrop" aria-label={t("Close")} onClick={dismissAndroidReaderOverlay} />
       )}
       {isAndroid && (
+        <AndroidSpeech key={`speech-${currentBook.key}`} open={isSpeechOpen} onClose={() => handleSpeechDialog(false)} />
+      )}
+      {isAndroid && (
         <AndroidReaderControls visible={state.androidControlsOpen} currentDuration={state.currentDuration}
           onToggle={renditionProps.handleToggleControls} onNavigate={toggleNavTab}
           onSettings={(tab) => { setAndroidSettingTab(tab); handleEnterReader("right"); }}
@@ -1205,7 +1209,7 @@ const Reader = () => {
       isPdfCropOpen ||
       isStudyLangOpen ||
       isAssistReadOpen ||
-      isSpeechOpen ? (
+      (!isAndroid && isSpeechOpen) ? (
         <div className="reader-setting-dialog-anchor">
           {(readerMode === "scroll" || readerMode === "single") &&
             isScaleOpen && <ScalePageDialog />}
@@ -1214,7 +1218,7 @@ const Reader = () => {
           {isStudyLangOpen && <StudyLangDialog />}
           {isAssistReadOpen && <AssistReadDialog />}
           <div style={{ display: isSpeechOpen ? "block" : "none" }}>
-            <SpeechDialog />
+            {!isAndroid && <SpeechDialog />}
           </div>
         </div>
       ) : null}

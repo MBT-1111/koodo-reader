@@ -19,6 +19,7 @@ const AndroidReaderControls = (props: AndroidReaderControlsProps) => {
   const currentBook = useAppStore((s) => s.book.currentBook);
   const htmlBook = useAppStore((s) => s.reader.htmlBook);
   const menuOpen = useAppStore((s) => s.viewArea.isOpenMenu);
+  const handleSpeechDialog = useAppStore((s) => s.handleSpeechDialog);
   if (menuOpen) return null;
   return (
     <>
@@ -26,6 +27,7 @@ const AndroidReaderControls = (props: AndroidReaderControlsProps) => {
       <header className="android-reader-toolbar" hidden={!props.visible}>
         <button type="button" aria-label={t("Exit reader")} onClick={() => void closeAndroidReader()}><span className="icon-exit" aria-hidden="true" /></button>
         <span className="android-reader-title">{currentBook.name}</span>
+        <button type="button" aria-label={t("Text to speech")} onClick={() => handleSpeechDialog(true)}><span className="icon-speaker" aria-hidden="true" /></button>
         {htmlBook && currentBook.key && htmlBook.key === currentBook.key && <OperationPanel compact currentDuration={props.currentDuration} />}
         <button type="button" aria-label={t("android.reader.hideControls")} onClick={props.onToggle}><span className="icon-close" aria-hidden="true" /></button>
       </header>

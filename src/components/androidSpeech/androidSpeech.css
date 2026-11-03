@@ -1,0 +1,9 @@
+.android-speech-backdrop { position: absolute; inset: 0; z-index: 30; border: 0; background: #0005; }
+.android-speech { position: absolute; inset: auto 0 0; z-index: 31; max-height: 85%; overflow-y: auto; border-radius: 24px 24px 0 0; background: var(--reader-surface); color: var(--reader-text); padding-bottom: env(safe-area-inset-bottom, 0px); }
+.android-speech > p, .android-speech-body { margin: 0; padding: 8px 20px 24px; }
+.android-speech p { line-height: 1.5; font-size: 13px; }
+.android-speech label { display: grid; gap: 8px; margin: 16px 0; font-size: 14px; }
+.android-speech select { width: 100%; min-height: 44px; box-sizing: border-box; border: 1px solid var(--reader-muted); border-radius: 12px; padding: 8px; background: var(--reader-surface); color: inherit; }
+.android-speech-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.android-speech-actions button { flex: 1; min-height: 44px; border: 0; border-radius: 12px; padding: 8px; background: var(--reader-tint); color: var(--reader-accent); }
+.android-speech button:disabled, .android-speech select:disabled { opacity: 0.5; }

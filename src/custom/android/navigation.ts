@@ -2,6 +2,7 @@ import { ConfigService } from "../../assets/lib/kookit-extra-browser.min";
 import { useAppStore } from "../../store/useAppStore";
 import TTSUtil from "../../utils/reader/ttsUtil";
 import { flushAndroidPreferences } from "./bootstrap";
+import { stopAndroidSpeech } from "./speech";
 
 export const ANDROID_READER_CLOSE_EVENT = "android-reader-close";
 export const ANDROID_READER_DISMISS_EVENT = "android-reader-dismiss";
@@ -51,6 +52,7 @@ export async function closeAndroidReader() {
     return;
   }
   window.speechSynthesis?.cancel();
+  await stopAndroidSpeech();
   await TTSUtil.stopAudio();
   const state = useAppStore.getState();
   state.handleReadingState(false);

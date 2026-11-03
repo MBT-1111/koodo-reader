@@ -125,6 +125,7 @@
     "test:android:exports": "node scripts/android-exports-device.cjs",
     "test:android:backup": "node scripts/android-backup-device.cjs",
     "test:android:sync": "node scripts/android-sync-device.cjs",
+    "test:android:speech": "node scripts/android-speech-device.cjs",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
