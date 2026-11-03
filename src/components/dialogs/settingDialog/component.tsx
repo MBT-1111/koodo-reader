@@ -23,10 +23,11 @@ import { personalMode } from "../../../custom/personal";
 import { isAndroid } from "../../../utils/platform";
 import AndroidSettings from "../../androidSettings";
 import AndroidData from "../../androidData";
+import AndroidSync from "../../androidSync";
 
 const settingPages: Record<string, ComponentType> = {
   general: GeneralSetting, reading: ReadingSetting, shortcut: ShortcutSetting,
-  appearance: AppearanceSetting, sync: SyncSetting,
+  appearance: AppearanceSetting, sync: isAndroid ? AndroidSync : SyncSetting,
   account: personalMode ? AISetting : AccountSetting,
   data: isAndroid ? AndroidData : DataSetting, about: AboutSetting, ai: AISetting, background: BackgroundSetting,
   font: FontSetting, chapter: ChapterSetting, text: TextSetting, dict: DictSetting,

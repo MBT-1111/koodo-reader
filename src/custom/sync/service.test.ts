@@ -19,6 +19,8 @@ vi.mock("../../utils/storage/databaseService", () => ({ default: { getAllRecords
 vi.mock("../../store/useAppStore", () => ({ useAppStore: { getState: () => ({ handleFetchBooks: async () => undefined, handleFetchNotes: async () => undefined, handleFetchBookmarks: async () => undefined }) } }));
 import { restoreSyncBackup, runCustomSync } from "./service";
 import { copy, stable } from "./protocol";
+import { desktopDataBackup } from "../backup/desktopBackup";
+import { parseDataBackup } from "../backup/dataBackup";
 
 const require = createRequire(import.meta.url);
 const { createCustomSync } = require("../../utils/main/custom/sync.js") as typeof import("../../utils/main/custom/sync.js");
@@ -63,6 +65,38 @@ async function client(id: number, namespace: string): Promise<Client> {
 async function sync(client: Client) { fixture.current = client; return runCustomSync(); }
 
 describe("full personal-sync lifecycle with separate device profiles", () => {
+  it("does not turn an unavailable known original into annotation deletions", async () => {
+    const a = await client(80, "unavailable"), b = await client(81, "unavailable");
+    a.raw.tables.notes = [{ key: "note", bookKey: "80-book", text: "Retain while offline" }];
+    await sync(a);
+    a.raw.tables.books[0].path = "";
+    await sync(a); await sync(b);
+    expect(a.raw.tables.notes).toHaveLength(1);
+    expect(b.raw.tables.notes[0].text).toBe("Retain while offline");
+  });
+  it("exports and restores portable data offline across Windows profile keys without copying originals", async () => {
+    const a = await client(70, "portable"), b = await client(71, "portable");
+    await a.handle({ sender: { id: a.id } }, { action: "disconnect", provider: "folder" });
+    await b.handle({ sender: { id: b.id } }, { action: "disconnect", provider: "folder" });
+    a.raw.tables.notes = [{ key: "desktop-note", bookKey: "70-book", text: "Portable note" }];
+    a.raw.config.recordLocation = JSON.stringify({ "70-book": { percentage: 0.6 } });
+    a.raw.config.readerConfig = '{"fontSize":"25","aiApiKey":"source-secret"}';
+    b.raw.config.readerConfig = '{"fontSize":"16","aiApiKey":"target-secret"}';
+    fixture.current = a;
+    const exported = await desktopDataBackup();
+    const backup = await parseDataBackup(await exported.blob!.text());
+    expect(backup.settings).toEqual({ fontSize: "25" });
+    fixture.current = b;
+    const before = fs.readFileSync(String(b.raw.tables.books[0].path));
+    expect((await desktopDataBackup(backup)).pendingBooks).toBe(0);
+    expect(b.raw.tables.notes).toHaveLength(1);
+    expect(b.raw.tables.notes[0].bookKey).toBe("71-book");
+    expect(JSON.parse(b.raw.config.recordLocation!)["71-book"].percentage).toBe(0.6);
+    expect(JSON.parse(b.raw.config.readerConfig!)).toEqual({ fontSize: "25", aiApiKey: "target-secret" });
+    expect(fs.readFileSync(String(b.raw.tables.books[0].path))).toEqual(before);
+    await desktopDataBackup(backup);
+    expect(b.raw.tables.notes).toHaveLength(1);
+  });
   it("does not publish new generations for unchanged data, and publishes actual edits", async () => {
     const a = await client(40, "unchanged");
     await sync(a);

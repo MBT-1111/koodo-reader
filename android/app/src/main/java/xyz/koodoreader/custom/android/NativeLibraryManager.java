@@ -1,6 +1,8 @@
 package xyz.koodoreader.custom.android;
 
 import android.util.AtomicFile;
+import android.content.ContentResolver;
+import java.nio.charset.StandardCharsets;
 import org.json.JSONArray;
 import org.json.JSONObject;
 import java.io.File;
@@ -18,20 +20,29 @@ public final class NativeLibraryManager implements AutoCloseable {
     private static final String[] GROUPS = {"book", "cover", "font", "background"};
     private final File base, live, candidate, previous;
     private final AtomicFile journal;
+    private final AtomicFile dataJournal;
     private NativeLibraryStore store, staging;
     private String mode, token;
     private final Map<String, JSONObject> expected = new HashMap<>();
     private final Set<String> received = new HashSet<>();
 
     public NativeLibraryManager(File directory) throws Exception {
+        this(directory, null);
+    }
+    public NativeLibraryManager(File directory, ContentResolver resolver) throws Exception {
         base = directory.getCanonicalFile();
         if (!base.isDirectory() && !base.mkdirs()) throw new IOException("LIBRARY_DIRECTORY");
         live = new File(base, "library-v1");
         candidate = new File(base, "library-restore");
         previous = new File(base, "library-previous");
         journal = new AtomicFile(new File(base, "library-restore.pending"));
+        dataJournal = new AtomicFile(new File(base, "library-data.pending"));
         recover();
-        store = new NativeLibraryStore(live);
+        store = new NativeLibraryStore(live, resolver);
+        if (dataJournal.getBaseFile().exists() || new File(dataJournal.getBaseFile() + ".bak").exists()) {
+            installData(new JSONObject(new String(dataJournal.readFully(), StandardCharsets.UTF_8)));
+            clearDataJournal();
+        }
     }
 
     private static JSONObject request(String channel, String action) throws Exception {
@@ -46,6 +57,11 @@ public final class NativeLibraryManager implements AutoCloseable {
         return (String) item;
     }
     private boolean marked() { return journal.getBaseFile().exists() || new File(journal.getBaseFile() + ".bak").exists() || new File(journal.getBaseFile() + ".new").exists(); }
+    private boolean dataPending() { return dataJournal.getBaseFile().exists() || new File(dataJournal.getBaseFile() + ".bak").exists(); }
+    private void clearDataJournal() throws IOException {
+        dataJournal.delete();
+        if (dataPending() || new File(dataJournal.getBaseFile() + ".new").exists()) throw new IOException("LIBRARY_DATA_JOURNAL");
+    }
     private void erase(File root) throws Exception {
         if (!root.exists()) return;
         if (!root.getCanonicalFile().getParentFile().equals(base)) throw new IOException("LIBRARY_PATH");
@@ -88,6 +104,42 @@ public final class NativeLibraryManager implements AutoCloseable {
         token = id;
         mode = "backup";
         return new JSONObject().put("token", token).put("tables", tables).put("preferences", preferences).put("files", files);
+    }
+    private void installData(JSONObject data) throws Exception {
+        JSONObject tables = data.getJSONObject("tables");
+        for (String table : TABLES) if (tables.has(table)) store.execute(tableRequest(table, "replaceAllStatement").put("data", tables.getJSONArray(table)));
+        JSONObject preferences = new JSONObject(data.getJSONObject("preferences").toString());
+        JSONObject current = (JSONObject) store.execute(request("preferences", "read"));
+        preferences.put("version", Math.max(current.getLong("version") + 1, System.currentTimeMillis()));
+        store.execute(request("preferences", "write").put("snapshot", preferences));
+    }
+    private JSONObject commitData(JSONObject data, String id) throws Exception {
+        JSONObject next = data.getJSONObject("tables");
+        if (next.length() != 3 || !next.has("books") || !next.has("notes") || !next.has("bookmarks")) throw new IllegalArgumentException("LIBRARY_TABLES");
+        JSONArray books = (JSONArray) store.execute(tableRequest("books", "getAllStatement"));
+        JSONArray incoming = next.getJSONArray("books");
+        if (books.length() != incoming.length()) throw new IllegalArgumentException("LIBRARY_BOOK_SET");
+        Map<String, JSONObject> keyed = new HashMap<>();
+        for (int i = 0; i < incoming.length(); i++) if (keyed.put(string(incoming.getJSONObject(i), "key"), incoming.getJSONObject(i)) != null) throw new IllegalArgumentException("LIBRARY_BOOK_SET");
+        for (int i = 0; i < books.length(); i++) {
+            JSONObject book = books.getJSONObject(i), other = keyed.get(string(book, "key"));
+            if (other == null) throw new IllegalArgumentException("LIBRARY_BOOK_SET");
+            for (String field : Arrays.asList("path", "format", "cover")) if (!book.optString(field).equals(other.optString(field))) throw new IllegalArgumentException("LIBRARY_BOOK_SOURCE");
+        }
+        JSONObject before = new JSONObject().put("tables", new JSONObject()).put("preferences", store.execute(request("preferences", "read")));
+        for (String table : Arrays.asList("books", "notes", "bookmarks")) before.getJSONObject("tables").put(table, store.execute(tableRequest(table, "getAllStatement")));
+        JSONObject preferences = new JSONObject().put("schema", 1).put("values", data.getJSONObject("preferences")).put("version", 1);
+        preferences.getJSONObject("values").put("__koodo_native_restore_id", id);
+        NativeLibraryStore.write(dataJournal, before.toString().getBytes(StandardCharsets.UTF_8));
+        try {
+            installData(new JSONObject().put("tables", next).put("preferences", preferences));
+            clearDataJournal();
+            return (JSONObject) store.execute(request("preferences", "read"));
+        } catch (Exception error) {
+            installData(before);
+            clearDataJournal();
+            throw error;
+        }
     }
     private JSONObject beginRestore(JSONObject data, String id) throws Exception {
         if (!(data.get("schema") instanceof Number) || data.getDouble("schema") != 1 || !"koodo-reader-android-backup".equals(data.get("type"))) throw new IllegalArgumentException("LIBRARY_FORMAT");
@@ -177,6 +229,7 @@ public final class NativeLibraryManager implements AutoCloseable {
         }
     }
     public synchronized Object execute(JSONObject data) throws Exception {
+        if (dataPending()) throw new IOException("LIBRARY_DATA_RECOVERY");
         String channel = string(data, "channel");
         if (channel.equals("database-command") && "library".equals(data.opt("dbName"))) {
             switch (string(data, "statement")) {
@@ -184,6 +237,7 @@ public final class NativeLibraryManager implements AutoCloseable {
                     if (mode != null) throw new IOException("LIBRARY_BUSY");
                     return beginBackup(validToken(data));
                 case "backupEndStatement": checkToken(data, "backup"); mode = token = null; return JSONObject.NULL;
+                case "dataCommitStatement": checkToken(data, "backup"); return commitData(data.getJSONObject("data"), token);
                 case "restoreBeginStatement":
                     if (mode != null) throw new IOException("LIBRARY_BUSY");
                     return beginRestore(data.getJSONObject("data"), validToken(data));
@@ -195,7 +249,7 @@ public final class NativeLibraryManager implements AutoCloseable {
         if (channel.equals("file-command") && "restore-write".equals(data.opt("action"))) return restoreFile(data);
         if (mode != null) {
             boolean read = channel.equals("database-command") && data.optString("statement").startsWith("get") ||
-                channel.equals("file-command") && Arrays.asList("read", "list", "exists").contains(data.optString("action")) ||
+                channel.equals("file-command") && Arrays.asList("read", "list", "exists", "fingerprint").contains(data.optString("action")) ||
                 channel.equals("preferences") && "read".equals(data.opt("action"));
             if (!read) throw new IOException("LIBRARY_BUSY");
         }

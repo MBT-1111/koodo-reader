@@ -7,7 +7,7 @@ import Header from "../../containers/header";
 import AndroidHeader from "../../components/androidHeader";
 import AndroidBottomNav from "../../components/androidBottomNav";
 import "./androidManager.css";
-import { isAndroid } from "../../utils/platform";
+import { isAndroid, isNativeAndroid } from "../../utils/platform";
 import DeleteDialog from "../../components/dialogs/deleteDialog";
 import EditDialog from "../../components/dialogs/editDialog";
 import AddDialog from "../../components/dialogs/addDialog";
@@ -39,7 +39,8 @@ import {
 import Footer from "../../components/footer";
 import ProtectionOverlay from "../../components/protection";
 import { useAppStore } from "../../store/useAppStore";
-import { scheduleCustomSync } from "../../custom/sync/service";
+import { scheduleCustomSync, syncErrorKey } from "../../custom/sync/service";
+import { scheduleAndroidSync } from "../../custom/android/sync";
 import AndroidBookList from "../../containers/lists/bookList";
 
 export interface ManagerState {
@@ -119,6 +120,14 @@ const Manager = () => {
   );
   const { t } = useTranslation();
   useEffect(() => {
+    const count = Number(sessionStorage.getItem("customDataPendingBooks") || 0);
+    sessionStorage.removeItem("customDataPendingBooks");
+    if (count > 0) toast(t("android.backup.pendingBooks", { count }), { duration: 12000 });
+  }, [t]);
+  useEffect(() => {
+    if (isNativeAndroid) return scheduleAndroidSync((result) => {
+      if (result.conflicts.length) toast(t("custom.sync.conflictsPending"));
+    }, (error) => toast.error(t(syncErrorKey(error))));
     if (!window.electronAPI) return;
     return scheduleCustomSync((result) => {
       if (result.conflicts.length) toast(t("custom.sync.conflictsPending"));

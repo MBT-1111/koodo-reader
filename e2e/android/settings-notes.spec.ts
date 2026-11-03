@@ -40,6 +40,17 @@ test("opens grouped phone settings and returns from pages and font preview", asy
   expect(errors).toEqual([]);
 });
 
+test("shows MEGA setup without enabling native account actions in browser preview", async ({ page }) => {
+  await page.getByRole("button", { name: "Settings", exact: true }).click();
+  await page.locator(".android-settings").getByRole("button", { name: "Personal sync", exact: true }).click();
+  const sync = page.locator(".android-sync");
+  await expect(sync).toBeVisible();
+  await expect(sync.getByText("Connect MEGA in the installed Android app.", { exact: true })).toBeVisible();
+  await expect(sync.locator('input[type="password"]')).toBeDisabled();
+  await expect(sync.getByRole("button", { name: "Sync now", exact: true })).toBeDisabled();
+  expect(await sync.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true);
+});
+
 test("combines phone note filters with search, edits a record and opens its book", async ({ page }, testInfo) => {
   const keys = await seedPhoneNotes(page);
   await expect(page.locator(".android-note-card")).toHaveCount(3);

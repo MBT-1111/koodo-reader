@@ -4,10 +4,12 @@ import BookUtil from "../../utils/file/bookUtil";
 import Book from "../../models/Book";
 import { getStorageLocation } from "../../utils/common";
 import { useAppStore } from "../../store/useAppStore";
-import { changes, configKeys, plan, snapshot, tables } from "./data";
-import { acknowledge, conflicts, copy, envelope, freshCheckpoint, materialize, mergeDocuments, reconcile, stable, validateEnvelope } from "./protocol";
+import { changes, configKeys, snapshot, tables } from "./data";
+import { acknowledge, copy, envelope, freshCheckpoint, stable, validateEnvelope } from "./protocol";
 import { personalMode } from "../personal";
 import type { Change, Checkpoint, Conflict, RawData, Row, SyncProvider, SyncStatus, Table } from "./types";
+import { DATA_STATE_KEY } from "../backup/dataBackup";
+import { describeConflicts, prepareSync, sharedIdentityState } from "./workflow";
 
 export const customSyncIPC = <T>(action: string, data: Record<string, unknown> = {}): Promise<T> => window.electronAPI.invoke<T>("custom-sync", { ...data, action });
 const safeKey = (key: unknown): key is string => typeof key === "string" && /^[\w-]{1,256}$/.test(key) && !["__proto__", "constructor", "prototype"].includes(key);
@@ -21,32 +23,33 @@ function checkpoint(input: Checkpoint | null): Checkpoint {
   return copy(input);
 }
 
-async function collect(): Promise<RawData> {
+export async function collect(): Promise<RawData> {
   const rows = await Promise.all(tables.map((table) => DatabaseService.getAllRecords(table) as Promise<unknown>));
   for (const data of rows) if (!Array.isArray(data) || !data.every((row: unknown) => row && typeof row === "object" && safeKey((row as Record<string, unknown>).key)) || new Set(data.map((row: Row) => row.key)).size !== data.length) throw new Error("CUSTOM_INVALID_LOCAL_DATA");
   return {
     tables: Object.fromEntries(tables.map((table, index) => [table, (rows[index] as Row[]).sort((a, b) => a.key.localeCompare(b.key))])) as RawData["tables"],
-    config: Object.fromEntries(configKeys.map((key) => [key, ConfigService.getItem(key) || null])),
+    config: Object.fromEntries([...configKeys, DATA_STATE_KEY].map((key) => [key, ConfigService.getItem(key) || null])),
   };
 }
-const currentConfig = () => Object.fromEntries(configKeys.map((key) => [key, ConfigService.getItem(key) || null]));
 
-async function apply(expected: RawData, next: RawData, token: string): Promise<void> {
+export async function apply(expected: RawData, next: RawData, token: string): Promise<void> {
   const applied: { table: Table; changes: Change[] }[] = [];
   const written: string[] = [];
   let started = false;
+  const keys = Object.keys(expected.config);
+  const current = () => Object.fromEntries(keys.map((key) => [key, ConfigService.getItem(key) || null]));
   const batch = (table: Table, data: Change[]) => window.electronAPI.invoke("database-command", { statement: "customSyncBatch", dbName: table, storagePath: getStorageLocation(), data, customSyncToken: token });
   try {
-    if (stable(currentConfig()) !== stable(expected.config)) throw new Error("CUSTOM_LOCAL_CHANGED");
+    if (stable(current()) !== stable(expected.config)) throw new Error("CUSTOM_LOCAL_CHANGED");
     await customSyncIPC("applying", { token });
     started = true;
-    if (stable(currentConfig()) !== stable(expected.config)) throw new Error("CUSTOM_LOCAL_CHANGED");
+    if (stable(current()) !== stable(expected.config)) throw new Error("CUSTOM_LOCAL_CHANGED");
     for (const table of tables) {
       const data = changes(expected.tables[table], next.tables[table]);
       if (data.length) { await batch(table, data); applied.push({ table, changes: data }); }
     }
-    if (stable(currentConfig()) !== stable(expected.config)) throw new Error("CUSTOM_LOCAL_CHANGED");
-    for (const key of configKeys) if (expected.config[key] !== next.config[key]) {
+    if (stable(current()) !== stable(expected.config)) throw new Error("CUSTOM_LOCAL_CHANGED");
+    for (const key of keys) if (expected.config[key] !== next.config[key]) {
       if (next.config[key] === null) ConfigService.removeItem(key);
       else ConfigService.setItem(key, next.config[key]);
       written.push(key);
@@ -69,16 +72,6 @@ async function apply(expected: RawData, next: RawData, token: string): Promise<v
 
 let running = false;
 export interface SyncResult { conflicts: Conflict[]; pendingBooks: number; skippedBooks: number; unchanged: boolean }
-function describeConflicts(state: Checkpoint): Conflict[] {
-  const values = materialize(state.entries);
-  return conflicts(state.entries).map((conflict) => {
-    const value = conflict.versions.find((revision) => !revision.deleted)?.value;
-    const book = value && typeof value === "object" && !Array.isArray(value) && typeof value.book === "string" ? value.book : conflict.entity.split("/").at(-1);
-    const metadata = values[`book/${book}`]?.value;
-    const bookTitle = metadata && typeof metadata === "object" && !Array.isArray(metadata) && typeof metadata.name === "string" ? metadata.name : undefined;
-    return { ...conflict, bookTitle };
-  });
-}
 export async function runCustomSync(resolutions: Record<string, string> = {}, provider?: SyncProvider): Promise<SyncResult> {
   if (running) throw new Error("CUSTOM_SYNC_BUSY");
   if (!personalMode && (ConfigService.getItem("defaultSyncOption") || ConfigService.getReaderConfig("isEnableKoodoSync") === "yes")) throw new Error("CUSTOM_OTHER_SYNC_ENABLED");
@@ -89,13 +82,8 @@ export async function runCustomSync(resolutions: Record<string, string> = {}, pr
     token = session.token;
     const state = checkpoint(session.checkpoint), raw = await collect();
     const fingerprints = await customSyncIPC<Record<string, string>>("fingerprints", { token, books: raw.tables.books.map((book) => ({ key: book.key, path: BookUtil.getBookPath(book as unknown as Book) })) });
-    Object.assign(state.mappings.books, fingerprints);
-    const identities = raw.tables.books.map((book) => state.mappings.books[book.key]).filter(Boolean);
-    if (new Set(identities).size !== identities.length) throw new Error("CUSTOM_DUPLICATE_BOOK");
-    const local = snapshot(raw, state.mappings);
-    const merged = reconcile(state, local, session.documents, resolutions);
-    const next = plan(raw, merged);
-    const publish = stable(merged.entries) !== stable(mergeDocuments(session.documents));
+    const { state: merged, next, publish } = prepareSync(raw, fingerprints, state, session.documents, resolutions);
+    next.config[DATA_STATE_KEY] = sharedIdentityState(raw.config[DATA_STATE_KEY], merged);
     // No upload or local write after a stale capture.
     if (stable(await collect()) !== stable(raw)) throw new Error("CUSTOM_LOCAL_CHANGED");
     await customSyncIPC("stage", { token, document: envelope(merged), checkpoint: merged, backup: raw, publish });
@@ -134,7 +122,7 @@ export async function restoreSyncBackup(provider?: SyncProvider): Promise<void> 
     if (!backup || !tables.every((table) => Array.isArray(backup.tables?.[table]) && backup.tables[table].every((row) => row && safeKey(row.key)) && new Set(backup.tables[table].map((row) => row.key)).size === backup.tables[table].length) || !backup.config || !configKeys.every((key) => backup.config[key] === null || typeof backup.config[key] === "string")) throw new Error("CUSTOM_INVALID_LOCAL_DATA");
     snapshot(backup, { books: {}, notes: {}, bookmarks: {} });
     await customSyncIPC("stage-restore", { token, backup: before });
-    await apply(before, backup, token);
+    await apply(before, { ...backup, config: { ...backup.config, [DATA_STATE_KEY]: before.config[DATA_STATE_KEY] } }, token);
     await customSyncIPC("finish-restore", { token });
     token = undefined;
     const store = useAppStore.getState();

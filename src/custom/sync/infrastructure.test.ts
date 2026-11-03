@@ -8,7 +8,8 @@ import type { SyncStatus } from "./types";
 import { envelope, freshCheckpoint, reconcile } from "./protocol";
 
 const require = createRequire(import.meta.url);
-const { FolderProvider, MegaProvider, documentName } = require("../../utils/main/custom/providers.js") as typeof import("../../utils/main/custom/providers.js");
+const { FolderProvider } = require("../../utils/main/custom/providers.js") as typeof import("../../utils/main/custom/providers.js");
+import { MegaProvider, documentName } from "../../utils/main/custom/megaTransport.mjs";
 const { configureRuntime, assertOfficialUpdateAllowed, isInside, assertTestPath } = require("../../utils/main/custom/runtime.js") as typeof import("../../utils/main/custom/runtime.js");
 const { createCustomSync } = require("../../utils/main/custom/sync.js") as typeof import("../../utils/main/custom/sync.js");
 const root = fs.mkdtempSync(path.join(os.tmpdir(), "krc-unit-infra-"));

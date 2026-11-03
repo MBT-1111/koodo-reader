@@ -5,6 +5,7 @@ import { getStorageLocation } from "../../utils/common";
 import { customSyncIPC, inspectConflicts, restoreSyncBackup, runCustomSync, syncErrorKey } from "./service";
 import type { Conflict, Json, SyncProvider, SyncStatus } from "./types";
 import "./settings.css";
+import DataBackupPanel from "../backup/DataBackupPanel";
 
 const preview = (value: Json): string => {
   if (value && typeof value === "object" && !Array.isArray(value)) return [value.name, value.notes, value.text, value.label, value.chapter, value.percentage].filter((v) => typeof v === "string" || typeof v === "number").join(" · ").slice(0, 240);
@@ -98,6 +99,7 @@ export default function CustomSyncSettings() {
         <button type="button" disabled={!connection} onClick={() => execute(async () => { const saved = await customSyncIPC<SyncStatus>("disconnect", { provider }); setStatus(saved); loadConnection(provider, saved); })}>{t("custom.sync.disconnect")}</button>
       </div>
     </fieldset>
+    <DataBackupPanel />
     <p>{t("custom.sync.restoreHelp")}</p>
     <small>{t("custom.sync.backupsHelp")}</small>
     <details><summary>{t("custom.sync.details")}</summary>

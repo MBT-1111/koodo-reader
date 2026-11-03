@@ -37,6 +37,8 @@ import {
 } from "../../utils/file/importData";
 import { useAppStore } from "../../store/useAppStore";
 import { isAndroid, isNativeAndroid } from "../../utils/platform";
+import { nativeFiles, pickNativeBooks } from "../../custom/android/storage";
+import { sha256 } from "../../custom/backup/dataBackup";
 
 export interface ImportLocalProps {
   handleDrag: (isDrag: boolean) => void;
@@ -392,6 +394,10 @@ const ImportLocal = (props: ImportLocalProps) => {
   };
 
   const getMd5WithBrowser = async (file: File) => {
+    if (isNativeAndroid && /\.(kdz|caj|nh)$/i.test(file.name)) {
+      toast.error(t("android.mappedImport.unsupported"));
+      return;
+    }
     return new Promise<void>(async (resolve) => {
       const md5 = await calculateFileMD5(file);
       if (!md5) {
@@ -427,6 +433,17 @@ const ImportLocal = (props: ImportLocalProps) => {
       let isRepeat = false;
       let repeatBook: BookModel | null = await BookUtil.getBookByMd5(md5);
       if (repeatBook) {
+        if (isNativeAndroid && file.path?.startsWith("content://")) {
+          try {
+            const bytes = await file.arrayBuffer();
+            const name = `${repeatBook.key}.${repeatBook.format.toLowerCase()}`;
+            const current = await nativeFiles.fingerprint(name);
+            if (current.sha256 !== await sha256(bytes)) throw new Error("ANDROID_STORAGE_VERIFY_FAILED");
+            await nativeFiles.link(name, file.path, bytes);
+            toast.success(t("android.mappedImport.linked"));
+          } catch { toast.error(t("Import failed")); }
+          return resolve();
+        }
         isRepeat = true;
         if (books && books.length > 0) {
           books.forEach((item) => {
@@ -461,11 +478,12 @@ const ImportLocal = (props: ImportLocalProps) => {
             break;
           }
         }
+        if (isNativeAndroid && file.path?.startsWith("content://")) sourcePath = file.path;
         // Path only used for the database record, never for file IO.
         // Keeps the original path (or URL) when it can't be verified on disk,
         // falling back to the original file name, so book.path is never empty.
         const recordPath = sourcePath || file.path || file.name;
-        if (sourcePath) {
+        if (sourcePath && isElectron) {
           try {
             if (
               extension.toUpperCase() === "CBZ" ||
@@ -1213,6 +1231,8 @@ const ImportLocal = (props: ImportLocalProps) => {
   const render = () => {
     return (
       <Dropzone
+        noClick={isNativeAndroid}
+        noKeyboard={isNativeAndroid}
         onDrop={async (acceptedFiles) => {
           props.handleDrag(false);
           for (let item of acceptedFiles) {
@@ -1455,7 +1475,12 @@ const ImportLocal = (props: ImportLocalProps) => {
               </span>
             )}
 
-            {!isElectron ? (
+            {isNativeAndroid ? (
+              <button type="button" className="import-book-box" aria-label={t("android.addBooks")} onClick={async () => {
+                try { for (const file of await pickNativeBooks()) await getMd5WithBrowser(file); }
+                catch { toast.error(t("Import failed")); }
+              }} />
+            ) : !isElectron ? (
               <input
                 type="file"
                 id="import-book-box"

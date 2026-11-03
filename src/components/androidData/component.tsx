@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type ChangeEvent } from "react";
 import { useTranslation } from "react-i18next";
+import { useLocation } from "react-router-dom";
 import toast from "react-hot-toast";
 import DatabaseService from "../../utils/storage/databaseService";
 import { exportBooks, exportNotes, exportHighlights, exportDictionaryHistory, type ExportFormat } from "../../utils/file/export";
@@ -7,17 +8,18 @@ import type Note from "../../models/Note";
 import { isNativeAndroid } from "../../utils/platform";
 import { saveExportFile } from "../../utils/file/saveExportFile";
 import { createAndroidBackup, restoreAndroidBackup } from "../../custom/android/backup";
-import { prepareBackupArchive, type PreparedBackup } from "../../custom/android/backupArchive";
+import { backupSummary, parseDataBackup, type DataBackup } from "../../custom/backup/dataBackup";
 import { ANDROID_SETTINGS_DISMISS_EVENT } from "../../custom/android/navigation";
 import "./androidData.css";
 
 const AndroidData = () => {
   const { t } = useTranslation();
+  const canBackup = useLocation().pathname.startsWith("/manager/");
   const [busy, setBusy] = useState(false);
   const pending = useRef(false);
   const dataRef = useRef<HTMLElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
-  const [prepared, setPrepared] = useState<PreparedBackup | null>(null);
+  const [prepared, setPrepared] = useState<DataBackup | null>(null);
   const [progress, setProgress] = useState(0);
   const lastProgress = useRef(0);
   const reportProgress = (done: number, total: number) => {
@@ -47,7 +49,7 @@ const AndroidData = () => {
     toast.loading(t("android.backup.creating"), { id: "backup" });
     try {
       const { blob } = await createAndroidBackup(reportProgress);
-      const result = await saveExportFile(blob, `KoodoReader-Android-Backup-${Date.now()}.zip`);
+      const result = await saveExportFile(blob, `KoodoReader-Data-${Date.now()}.json`);
       if (result === "success") toast.success(t("android.backup.saved"), { id: "backup" });
       else if (result === "failed") toast.error(t("android.backup.failed"), { id: "backup" });
       else toast.dismiss("backup");
@@ -59,7 +61,10 @@ const AndroidData = () => {
     event.target.value = "";
     if (!file || !begin()) return;
     toast.loading(t("android.backup.checking"), { id: "backup" });
-    try { setPrepared(await prepareBackupArchive(await file.arrayBuffer(), reportProgress)); toast.dismiss("backup"); }
+    try {
+      if (file.size > 100 * 1024 * 1024) throw new Error("CUSTOM_INVALID_DOCUMENT");
+      setPrepared(await parseDataBackup(await file.text())); toast.dismiss("backup");
+    }
     catch { toast.error(t("android.backup.invalid"), { id: "backup" }); }
     finally { finish(); }
   };
@@ -67,7 +72,8 @@ const AndroidData = () => {
     if (!prepared || !begin()) return;
     toast.loading(t("Restoring..."), { id: "backup" });
     try {
-      await restoreAndroidBackup(prepared, reportProgress);
+      const pendingBooks = await restoreAndroidBackup(prepared, reportProgress);
+      if (pendingBooks) sessionStorage.setItem("customDataPendingBooks", String(pendingBooks));
       window.location.hash = "/manager/home";
       window.location.reload();
     } catch { toast.error(t("android.backup.restoreFailed"), { id: "backup" }); }
@@ -109,15 +115,16 @@ const AndroidData = () => {
     </div>)}
     {isNativeAndroid && <section className="android-backup-section">
       <h2>{t("android.backup.title")}</h2><p>{t("android.backup.help")}</p>
-      <div className="android-backup-buttons"><button type="button" disabled={busy} onClick={() => void backup()}>{t("android.backup.create")}</button><button type="button" disabled={busy} onClick={() => inputRef.current?.click()}>{t("android.backup.restore")}</button></div>
-      <input ref={inputRef} type="file" accept=".zip,application/zip" hidden onChange={(event) => void selectBackup(event)} />
+      {!canBackup && <p>{t("custom.sync.closeReaders")}</p>}
+      <div className="android-backup-buttons"><button type="button" disabled={busy || !canBackup} onClick={() => void backup()}>{t("android.backup.create")}</button><button type="button" disabled={busy || !canBackup} onClick={() => inputRef.current?.click()}>{t("android.backup.restore")}</button></div>
+      <input ref={inputRef} type="file" accept=".json,application/json" hidden onChange={(event) => void selectBackup(event)} />
       {busy && progress > 0 && <progress aria-label={t("android.backup.progress")} max={100} value={progress} />}
     </section>}
     </div>
     {prepared && <div className="android-backup-overlay"><section className="android-backup-preview" role="dialog" aria-modal="true" aria-label={t("android.backup.restore")}>
       <h2>{t("android.backup.restore")}</h2>
-      <p>{new Date(prepared.manifest.createdAt).toLocaleString()}</p>
-      <p>{t("android.backup.summary", { books: prepared.manifest.tables.books.length, notes: prepared.manifest.tables.notes.length, files: prepared.manifest.files.length })}</p>
+      <p>{new Date(prepared.createdAt).toLocaleString()}</p>
+      <p>{t("android.backup.summary", backupSummary(prepared))}</p>
       <p>{t("android.backup.replaceHelp")}</p>
       {busy && <progress aria-label={t("android.backup.progress")} max={100} value={progress} />}
       <button type="button" disabled={busy} onClick={() => void restore()}>{t("android.backup.replace")}</button>

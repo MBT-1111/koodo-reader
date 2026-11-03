@@ -110,7 +110,7 @@ async function main() {
       // Keep the ADB service command ASCII: its framing counts JS characters, not UTF-8 bytes.
       await device.shell(`echo ${Buffer.from(scan).toString("base64")} | base64 -d | sh`);
     }
-    await page.locator(".import-from-local").click();
+    await require("./android-system-picker.cjs").systemPicker(page, device).tap(page.locator(".import-from-local > button.import-book-box"));
     await expect.poll(focus).toMatch(/documentsui|myfiles/i);
     if (!(await nodes()).some((node) => node.text === fixtures[1].name)) {
       await tap((node) => /^(Show roots|显示根目录|显示根位置)$/.test(node["content-desc"] || ""));
@@ -123,7 +123,7 @@ async function main() {
     await expect.poll(focus).toContain(appId);
     for (const fixture of fixtures.slice(1)) await expect(card(fixture)).toBeVisible();
     checked("system picker imports Chinese-named TXT and PDF in one selection");
-    if (!await card(fixtures[0]).count()) await page.locator("#import-book-box").setInputFiles(fixtures[0]);
+    if (!await card(fixtures[0]).count()) await require("./android-system-picker.cjs").importNativeFixture(page, device, fixtures[0]);
     await expect(card(fixtures[0])).toBeVisible();
 
     const saved = new Map();

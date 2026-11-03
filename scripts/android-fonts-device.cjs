@@ -133,7 +133,7 @@ async function main() {
     await tap(page.locator(".font-preview-actions").getByText("Set as app font", { exact: true }));
     await tap(page.locator(".font-preview-close"));
     await tap(page.locator(".setting-close-container"));
-    if (!await page.locator(".book-list-item").filter({ hasText: "Android custom font sample" }).count()) await page.locator("#import-book-box").setInputFiles(await fontBook());
+    if (!await page.locator(".book-list-item").filter({ hasText: "Android custom font sample" }).count()) await require("./android-system-picker.cjs").importNativeFixture(page, device, await fontBook());
     const openBook = async () => {
       await tap(page.locator(".book-list-item").filter({ hasText: "Android custom font sample" }).locator(".book-item-cover"));
       await expect(page.locator("#page-area")).toHaveAttribute("aria-busy", "false");

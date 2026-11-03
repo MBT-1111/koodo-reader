@@ -38,6 +38,54 @@ public class NativeLibraryManagerTest {
     private JSONObject file(String action, String group, String name) throws Exception { return new JSONObject().put("channel", "file-command").put("action", action).put("group", group).put("name", name); }
     private JSONObject book(String key) throws Exception { return new JSONObject().put("key", key).put("name", "测试书").put("format", "EPUB"); }
     private JSONObject prefs() throws Exception { return (JSONObject) manager.execute(new JSONObject().put("channel", "preferences").put("action", "read")); }
+    @Test public void metadataRestorePreservesOriginalsAndOtherTables() throws Exception {
+        manager.execute(table("words", "saveStatement").put("data", new JSONObject().put("key", "word").put("bookKey", "old")));
+        JSONObject capture = (JSONObject) manager.execute(command("backupBeginStatement"));
+        JSONObject tables = capture.getJSONObject("tables"); tables.remove("words"); tables.remove("plugins");
+        tables.put("notes", new JSONArray().put(new JSONObject().put("key", "restored-note").put("bookKey", "old").put("notes", "笔记")));
+        JSONObject result = (JSONObject) manager.execute(command("dataCommitStatement").put("data", new JSONObject().put("tables", tables).put("preferences", new JSONObject().put("readerConfig", "{\"fontSize\":\"24\"}"))));
+        assertEquals(token, result.getJSONObject("values").getString("__koodo_native_restore_id"));
+        assertEquals("AQID", manager.execute(file("read", "book", "old.epub")));
+        assertEquals("AQID", manager.execute(file("read", "font", "old.ttf")));
+        assertEquals(1, ((JSONArray) manager.execute(table("words", "getAllStatement"))).length());
+        manager.execute(command("backupEndStatement"));
+        manager.close(); manager = new NativeLibraryManager(directory);
+        assertEquals(1, ((JSONArray) manager.execute(table("notes", "getAllStatement"))).length());
+        assertFalse(new File(directory, "library-data.pending").exists());
+    }
+    @Test public void metadataRestoreRejectsBookReplacementBeforeWriting() throws Exception {
+        JSONObject capture = (JSONObject) manager.execute(command("backupBeginStatement"));
+        JSONObject tables = capture.getJSONObject("tables"); tables.remove("words"); tables.remove("plugins");
+        tables.put("books", new JSONArray().put(book("different")));
+        assertThrows(Exception.class, () -> manager.execute(command("dataCommitStatement").put("data", new JSONObject().put("tables", tables).put("preferences", new JSONObject()))));
+        assertEquals("old", ((JSONArray) manager.execute(table("books", "getAllStatement"))).getJSONObject(0).getString("key"));
+        assertEquals("AQID", manager.execute(file("read", "book", "old.epub")));
+    }
+    @Test public void rollsBackInterruptedMetadataRestoreWithoutCopyingBookFiles() throws Exception {
+        JSONObject before = (JSONObject) manager.execute(command("backupBeginStatement"));
+        manager.execute(command("backupEndStatement"));
+        before.getJSONObject("tables").remove("words"); before.getJSONObject("tables").remove("plugins");
+        manager.execute(table("notes", "saveStatement").put("data", new JSONObject().put("key", "partial").put("bookKey", "old")));
+        NativeLibraryStore.write(new AtomicFile(new File(directory, "library-data.pending")), before.toString().getBytes(java.nio.charset.StandardCharsets.UTF_8));
+        manager.close(); manager = new NativeLibraryManager(directory);
+        assertEquals(0, ((JSONArray) manager.execute(table("notes", "getAllStatement"))).length());
+        assertEquals("AQID", manager.execute(file("read", "book", "old.epub")));
+        assertEquals("{}", prefs().getJSONObject("values").getString("readerConfig"));
+    }
+    @Test public void invalidLateTableRollsBackEarlierTablesAndKeepsPreferencesWritable() throws Exception {
+        JSONObject capture = (JSONObject) manager.execute(command("backupBeginStatement"));
+        JSONObject tables = capture.getJSONObject("tables"); tables.remove("words"); tables.remove("plugins");
+        tables.getJSONArray("books").getJSONObject(0).put("name", "partial rename");
+        tables.put("notes", new JSONArray().put(new JSONObject().put("notes", "invalid without key")));
+        assertThrows(Exception.class, () -> manager.execute(command("dataCommitStatement").put("data", new JSONObject().put("tables", tables).put("preferences", new JSONObject().put("readerConfig", "{}")))));
+        assertEquals("测试书", ((JSONArray) manager.execute(table("books", "getAllStatement"))).getJSONObject(0).getString("name"));
+        assertEquals(0, ((JSONArray) manager.execute(table("notes", "getAllStatement"))).length());
+        assertEquals("AQID", manager.execute(file("read", "book", "old.epub")));
+        assertFalse(new File(directory, "library-data.pending").exists());
+        manager.execute(command("backupEndStatement"));
+        JSONObject snapshot = prefs(); snapshot.put("version", snapshot.getLong("version") + 1);
+        manager.execute(new JSONObject().put("channel", "preferences").put("action", "write").put("snapshot", snapshot));
+    }
     private JSONObject manifest() throws Exception {
         JSONObject tables = new JSONObject();
         for (String key : new String[]{"books", "notes", "bookmarks", "words", "plugins"}) tables.put(key, new JSONArray());

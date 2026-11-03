@@ -1,7 +1,8 @@
 const fs = require("fs");
 const path = require("path");
 const crypto = require("crypto");
-const { FolderProvider, MegaProvider, prepareMegaStorage, catchUpMegaStorage, MAX_DOCUMENT, writeFlushed, closeStorage } = require("./providers");
+const { FolderProvider, writeFlushed } = require("./providers");
+const MAX_DOCUMENT = 20 * 1024 * 1024;
 const { isInside, assertTestPath } = require("./runtime");
 
 const hash = (value) => crypto.createHash("sha256").update(value).digest("hex");
@@ -98,6 +99,7 @@ const createCustomSync = ({ app, safeStorage, dialog, shell, runtime, hasReaders
     if (runtime.testing) throw new Error("CUSTOM_TEST_NETWORK_BLOCKED");
     if (!safeStorage.isEncryptionAvailable()) throw new Error("CUSTOM_CREDENTIAL_STORAGE_UNAVAILABLE");
     const { Storage } = require("megajs");
+    const { MegaProvider, prepareMegaStorage, catchUpMegaStorage, closeStorage } = await import("./megaTransport.mjs");
     const credentials = JSON.parse(safeStorage.decryptString(Buffer.from(config.session, "base64")));
     credentials.options.fetch = (url, options = {}) => {
       if (!signal.aborted) onRequest();
@@ -163,6 +165,7 @@ const createCustomSync = ({ app, safeStorage, dialog, shell, runtime, hasReaders
       if (!safeStorage.isEncryptionAvailable()) throw new Error("CUSTOM_CREDENTIAL_STORAGE_UNAVAILABLE");
       if (typeof request.email !== "string" || request.email.length > 320 || !/^[^\s@]+@[^\s@]+$/.test(request.email) || typeof request.password !== "string" || !request.password || request.password.length > 4096 || (request.secondFactorCode && !/^\d{6}$/.test(request.secondFactorCode))) throw new Error("CUSTOM_INVALID_SETTINGS");
       const { Storage } = require("megajs");
+      const { prepareMegaStorage, closeStorage } = await import("./megaTransport.mjs");
       const controller = new AbortController();
       const storage = prepareMegaStorage(new Storage({ email: request.email.trim(), password: request.password, secondFactorCode: request.secondFactorCode || undefined, keepalive: false, fetch: (url, options = {}) => timedFetch(url, { ...options, signal: AbortSignal.any([controller.signal, ...(options.signal ? [options.signal] : [])]) }) }));
       let timer;
@@ -210,7 +213,7 @@ const createCustomSync = ({ app, safeStorage, dialog, shell, runtime, hasReaders
         if (await shell.openPath(directory)) throw new Error("CUSTOM_OPEN_FOLDER_FAILED");
         return true;
       }
-      const config = getConfig(request.provider);
+      const config = request.action === "begin-data" ? { provider: "local", namespace: "data-backup", account: "" } : request.token && request.token === active?.token ? active.config : getConfig(request.provider);
       if (!config) throw new Error("CUSTOM_NOT_CONFIGURED");
       if (request.action === "open-folder") {
         if (config.provider !== "folder") throw new Error("CUSTOM_INVALID_REQUEST");
@@ -226,7 +229,7 @@ const createCustomSync = ({ app, safeStorage, dialog, shell, runtime, hasReaders
         const scope = scopeFor(config, checkProfile(request.storagePath));
         return readJSON(path.join(root, `${scope}.json`));
       }
-      if (request.action === "begin" || request.action === "begin-restore") {
+      if (request.action === "begin" || request.action === "begin-restore" || request.action === "begin-data") {
         if (active || configuring) throw new Error("CUSTOM_SYNC_BUSY");
         if (hasReaders()) throw new Error("CUSTOM_CLOSE_READERS");
         const storagePath = checkProfile(request.storagePath), scope = scopeFor(config, storagePath);
@@ -248,7 +251,7 @@ const createCustomSync = ({ app, safeStorage, dialog, shell, runtime, hasReaders
           atomicWrite(settingsFile, saved);
         }
         const token = crypto.randomUUID();
-        const lease = { owner: event.sender.id, sender: event.sender, token, storagePath, scope, config, phase: "reading", expires: Date.now() + 180000, timer: null, restoring: request.action === "begin-restore", onDestroyed: null };
+        const lease = { owner: event.sender.id, sender: event.sender, token, storagePath, scope, config, phase: "reading", expires: Date.now() + 180000, timer: null, restoring: request.action !== "begin", onDestroyed: null };
         const expire = () => {
           if (active !== lease) return;
           const remaining = lease.expires - Date.now();
@@ -259,6 +262,7 @@ const createCustomSync = ({ app, safeStorage, dialog, shell, runtime, hasReaders
         event.sender.once?.("destroyed", lease.onDestroyed);
         active = lease;
         try {
+          if (request.action === "begin-data") return { token };
           if (lease.restoring) {
             const directories = [path.join(storagePath, "sync-backups", scope), path.join(root, "backups", scope)];
             const files = directories.flatMap((directory) => fs.existsSync(directory) ? fs.readdirSync(directory).filter((name) => /^\d+-[a-f0-9-]{36}\.json$/.test(name)).map((name) => ({ name, directory })) : []).sort((a, b) => b.name.localeCompare(a.name));

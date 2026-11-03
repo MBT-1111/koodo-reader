@@ -148,6 +148,7 @@ export function plan(raw: RawData, state: Checkpoint): RawData {
     }
   }
   next.config = {
+    ...raw.config,
     recordLocation: JSON.stringify(progress), readingTime: JSON.stringify(times), readingStats: JSON.stringify(days), shelfList: JSON.stringify(shelves),
     favoriteBooks: JSON.stringify([...favorites]), deletedBooks: JSON.stringify([...trash]), recentBooks: JSON.stringify([...recent].sort((a, b) => a[1] - b[1] || a[0].localeCompare(b[0])).map(([key]) => key)), noteTags: JSON.stringify([...tags]),
   };

@@ -124,6 +124,7 @@
     "test:android:backgrounds": "node scripts/android-backgrounds-device.cjs",
     "test:android:exports": "node scripts/android-exports-device.cjs",
     "test:android:backup": "node scripts/android-backup-device.cjs",
+    "test:android:sync": "node scripts/android-sync-device.cjs",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
@@ -154,6 +155,7 @@
       "src/utils/plugins/main/**/*.js",
       "main.js",
       "src/utils/main/**/*.js",
+      "src/utils/main/**/*.mjs",
       "preload.js",
       "chat-preload.js"
     ],

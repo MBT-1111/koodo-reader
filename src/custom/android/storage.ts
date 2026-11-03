@@ -8,6 +8,7 @@ export interface PreferencesSnapshot {
 }
 
 interface StoragePlugin {
+  pickBooks(): Promise<{ books: { uri: string; name: string; data: string }[] }>;
   execute(request: Record<string, unknown>): Promise<{ value: unknown }>;
   saveDocument(request: { name: string; mime: string; data: string; size: number; sha256: string }): Promise<
     { status: "cancel" } | { status: "success"; size: number; sha256: string }
@@ -16,6 +17,14 @@ interface StoragePlugin {
 
 const plugin = registerPlugin<StoragePlugin>("KoodoStorage");
 export const saveNativeDocument: StoragePlugin["saveDocument"] = (request) => plugin.saveDocument(request);
+export async function pickNativeBooks(): Promise<File[]> {
+  const { books } = await plugin.pickBooks();
+  return books.map(({ uri, name, data }) => {
+    const file = new File([Uint8Array.from(Buffer.from(data, "base64"))], name);
+    file.path = uri;
+    return file;
+  });
+}
 
 export async function nativeCommand<T>(request: Record<string, unknown>): Promise<T> {
   return (await plugin.execute(request)).value as T;
@@ -45,6 +54,12 @@ export const nativeLibraryCommand = <T>(statement: string, data?: unknown, token
   nativeCommand<T>({ channel: "database-command", dbName: "library", statement, data, token });
 
 export const nativeFiles = {
+  fingerprint: (name: string) => nativeCommand<{ size: number; sha256: string }>({ channel: "file-command", action: "fingerprint", group: "book", name }),
+  async link(name: string, uri: string, buffer: ArrayBuffer): Promise<void> {
+    const hash = Array.from(new Uint8Array(await crypto.subtle.digest("SHA-256", buffer)), (value) => value.toString(16).padStart(2, "0")).join("");
+    const result = await nativeCommand<{ size: number; sha256: string }>({ channel: "file-command", action: "link", group: "book", name, uri, sha256: hash });
+    if (result.size !== buffer.byteLength || result.sha256 !== hash) throw new Error("ANDROID_STORAGE_VERIFY_FAILED");
+  },
   list: (group: FileGroup) => nativeCommand<string[]>({ channel: "file-command", action: "list", group }),
   exists: (group: FileGroup, name: string) => nativeCommand<boolean>({ channel: "file-command", action: "exists", group, name }),
   remove: (group: FileGroup, name: string) => nativeCommand<void>({ channel: "file-command", action: "remove", group, name }),

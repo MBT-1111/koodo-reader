@@ -50,7 +50,8 @@ class BookUtil {
       });
     }
     if (isNativeAndroid) {
-      await nativeFiles.write("book", `${key}.${format.toLowerCase()}`, buffer);
+      if (sourcePath?.startsWith("content://")) await nativeFiles.link(`${key}.${format.toLowerCase()}`, sourcePath, buffer);
+      else await nativeFiles.write("book", `${key}.${format.toLowerCase()}`, buffer);
       await this.uploadBook(key, format);
     } else if (isElectron) {
       const fs = window.electronAPI.fs;

@@ -1,0 +1,10 @@
+.android-sync { padding: 8px 4px 24px; }
+.android-sync h2 { font-size: 20px; margin: 0 0 12px; }
+.android-sync p, .android-sync small { font-size: 14px; line-height: 1.6; overflow-wrap: anywhere; color: var(--settings-muted); }
+.android-sync fieldset { display: flex; flex-direction: column; gap: 16px; border: 0; padding: 0; min-width: 0; }
+.android-sync label { display: flex; flex-direction: column; gap: 8px; font-size: 15px; }
+.android-sync input, .android-sync select, .android-sync button { box-sizing: border-box; width: 100%; min-height: 48px; padding: 12px; border: 1px solid var(--settings-muted); border-radius: 12px; background: var(--settings-surface); color: var(--settings-text); font: inherit; }
+.android-sync button { color: var(--settings-accent); background: var(--settings-tint); border-color: transparent; }
+.android-sync :disabled { opacity: .55; }
+.android-sync-conflicts article { margin-top: 16px; padding: 16px; background: var(--settings-surface); border-radius: 16px; }
+.android-sync-conflicts article > div { margin-top: 16px; }

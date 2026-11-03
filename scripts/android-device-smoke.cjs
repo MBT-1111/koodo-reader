@@ -71,7 +71,7 @@ async function main() {
     await expect(page).toHaveURL(/#\/manager\/home/);
     checked("native Back returns from shelves to Home");
 
-    await page.locator(".import-from-local").click();
+    await require("./android-system-picker.cjs").systemPicker(page, device).tap(page.locator(".import-from-local > button.import-book-box"));
     await expect.poll(focus, { timeout: 15000 }).toMatch(/documentsui|myfiles/i);
     // The picker remembers its last folder; Back first navigates to its parents.
     for (let i = 0; i < 6 && !(await focus()).includes(appId); i++) {
@@ -86,7 +86,7 @@ async function main() {
     await fs.writeFile(path.join(output, "koodo-device-smoke.epub"), fixture);
     const card = () => page.locator(".book-list-item").filter({ hasText: title }).first();
     if (!await card().count()) {
-      await page.locator("#import-book-box").setInputFiles({ name: "koodo-device-smoke.epub", mimeType: "application/epub+zip", buffer: fixture });
+      await require("./android-system-picker.cjs").importNativeFixture(page, device, { name: "koodo-device-smoke.epub", buffer: fixture });
     }
     await expect(card()).toBeVisible();
     checked("synthetic EPUB imports in native WebView");

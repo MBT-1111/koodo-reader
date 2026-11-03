@@ -1,6 +1,8 @@
 package xyz.koodoreader.custom.android;
 
 import android.content.ContentValues;
+import android.content.ContentResolver;
+import android.net.Uri;
 import android.database.Cursor;
 import android.database.sqlite.SQLiteDatabase;
 import android.util.AtomicFile;
@@ -11,6 +13,8 @@ import java.io.File;
 import java.io.FileOutputStream;
 import java.io.FileInputStream;
 import java.io.IOException;
+import java.io.InputStream;
+import java.io.ByteArrayOutputStream;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.util.ArrayList;
@@ -23,8 +27,13 @@ public final class NativeLibraryStore implements AutoCloseable {
     private static final List<String> TABLES = Arrays.asList("books", "notes", "bookmarks", "words", "plugins");
     private final File root;
     private final SQLiteDatabase db;
+    private final ContentResolver resolver;
 
     public NativeLibraryStore(File directory) throws IOException {
+        this(directory, null);
+    }
+    public NativeLibraryStore(File directory, ContentResolver contentResolver) throws IOException {
+        resolver = contentResolver;
         root = directory.getCanonicalFile();
         if (!root.isDirectory() && !root.mkdirs()) throw new IOException("STORAGE_DIRECTORY");
         db = SQLiteDatabase.openOrCreateDatabase(new File(root, "records.sqlite"), null);
@@ -143,10 +152,57 @@ public final class NativeLibraryStore implements AutoCloseable {
             for (File child : files) {
                 if (child.isFile() && !child.getName().endsWith(".bak") && !child.getName().endsWith(".new")) result.put(child.getName());
             }
+            if (group.equals("book")) try (Cursor cursor = db.rawQuery("SELECT name FROM metadata WHERE name LIKE 'book-reference:%'", null)) {
+                while (cursor.moveToNext()) {
+                    String name = cursor.getString(0).substring("book-reference:".length());
+                    boolean found = false;
+                    for (int i = 0; i < result.length(); i++) if (name.equals(result.getString(i))) found = true;
+                    if (!found) result.put(name);
+                }
+            }
             return result;
         }
         File target = location(group, request.getString("name"));
         AtomicFile atomic = new AtomicFile(target);
+        String referenceKey = "book-reference:" + target.getName();
+        String reference = null;
+        if (group.equals("book")) {
+            try (Cursor cursor = db.rawQuery("SELECT value FROM metadata WHERE name=?", new String[]{referenceKey})) {
+                if (cursor.moveToFirst()) reference = cursor.getString(0);
+            }
+        }
+        if (action.equals("link")) {
+            if (!group.equals("book") || resolver == null) throw new IllegalArgumentException("STORAGE_REFERENCE");
+            Uri uri = Uri.parse(request.getString("uri"));
+            if (!"content".equals(uri.getScheme()) || !resolver.getPersistedUriPermissions().stream().anyMatch(p -> p.isReadPermission() && p.getUri().equals(uri))) throw new IllegalArgumentException("STORAGE_PERMISSION");
+            JSONObject result;
+            try (InputStream input = resolver.openInputStream(uri)) { result = fingerprint(input); }
+            if (!result.getString("sha256").equals(request.getString("sha256"))) throw new IOException("STORAGE_REFERENCE_CHANGED");
+            ContentValues values = new ContentValues(); values.put("name", referenceKey); values.put("value", uri.toString());
+            if (db.insertWithOnConflict("metadata", null, values, SQLiteDatabase.CONFLICT_REPLACE) == -1) throw new IOException("STORAGE_REFERENCE_WRITE");
+            return result;
+        }
+        if (action.equals("fingerprint")) {
+            try (InputStream input = reference != null ? resolver.openInputStream(Uri.parse(reference)) : atomic.openRead()) { return fingerprint(input); }
+        }
+        if (reference != null) {
+            switch (action) {
+                case "exists":
+                    try (InputStream input = resolver.openInputStream(Uri.parse(reference))) { return input != null; }
+                    catch (IOException | SecurityException error) { return false; }
+                case "read":
+                    try (InputStream input = resolver.openInputStream(Uri.parse(reference)); ByteArrayOutputStream output = new ByteArrayOutputStream()) {
+                        if (input == null) throw new IOException("STORAGE_REFERENCE_MISSING");
+                        byte[] bytes = new byte[65536]; int count;
+                        while ((count = input.read(bytes)) != -1) output.write(bytes, 0, count);
+                        return Base64.encodeToString(output.toByteArray(), Base64.NO_WRAP);
+                    }
+                case "remove":
+                    db.delete("metadata", "name=?", new String[]{referenceKey});
+                    break; // Only private legacy data is removed below; never delete the source document.
+                case "write": throw new IllegalArgumentException("STORAGE_MAPPED_BOOK");
+            }
+        }
         switch (action) {
             case "exists": return target.exists() || new File(target + ".bak").exists();
             case "read":
@@ -170,6 +226,16 @@ public final class NativeLibraryStore implements AutoCloseable {
                 return JSONObject.NULL;
             default: throw new IllegalArgumentException("STORAGE_FILE_ACTION");
         }
+    }
+
+    private static JSONObject fingerprint(InputStream input) throws Exception {
+        if (input == null) throw new IOException("STORAGE_REFERENCE_MISSING");
+        MessageDigest digest = MessageDigest.getInstance("SHA-256"); long size = 0;
+        byte[] bytes = new byte[65536]; int count;
+        while ((count = input.read(bytes)) != -1) { digest.update(bytes, 0, count); size += count; }
+        StringBuilder hash = new StringBuilder();
+        for (byte value : digest.digest()) hash.append(String.format("%02x", value & 255));
+        return new JSONObject().put("size", size).put("sha256", hash.toString());
     }
 
     static void write(AtomicFile file, byte[] bytes) throws IOException {

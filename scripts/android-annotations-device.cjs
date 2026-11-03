@@ -103,7 +103,7 @@ async function main() {
     await start();
     originalStyle = await savedStyle();
     if (!await page.locator(".book-list-item").filter({ hasText: "安卓章节样本" }).count()) {
-      await page.locator("#import-book-box").setInputFiles((await readingFixtures())[0]);
+      await require("./android-system-picker.cjs").importNativeFixture(page, device, (await readingFixtures())[0]);
     }
     await open();
     await page.getByRole("button", { name: "Chapters", exact: true }).click();

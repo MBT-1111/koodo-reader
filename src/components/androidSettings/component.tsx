@@ -19,6 +19,7 @@ const groups = [
   ] },
   { title: "android.settings.library", items: [
     { mode: "data", label: "Data", icon: "save" },
+    { mode: "sync", label: "custom.sync.title", icon: "sync" },
     { mode: "general", label: "General", icon: "setting" },
     { mode: "chapter", label: "TXT parser", icon: "convert-text" },
     { mode: "text", label: "Text rules", icon: "edit-line" },

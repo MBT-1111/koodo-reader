@@ -5,225 +5,130 @@ const { createHash } = require("node:crypto");
 const { isDeepStrictEqual } = require("node:util");
 const { _android: android } = require("playwright");
 const { expect } = require("@playwright/test");
-const JSZip = require("jszip");
-const { fontBook } = require("../e2e/android/font-fixtures.cjs");
+const { systemPicker, importNativeFixture, shared } = require("./android-system-picker.cjs");
 const { showReadingTools } = require("../e2e/android/fixtures.cjs");
-
-const appId = "xyz.koodoreader.custom.android";
-const qaId = `${appId}.restoreqa`;
+const appId = "xyz.koodoreader.custom.android", qaId = `${appId}.restoreqa`;
 const output = path.join(__dirname, "..", "dist", "android-device");
-const saved = path.join(output, "backup-source.json");
-const dump = "/data/local/tmp/koodo-backup.xml";
-const shared = "/sdcard/Download/KoodoReaderCustomTest";
-const tables = ["books", "notes", "bookmarks", "words", "plugins"];
 const hash = (bytes) => createHash("sha256").update(bytes).digest("hex");
 
 async function main() {
   await fs.mkdir(output, { recursive: true });
   const devices = await android.devices({ omitDriverInstall: true });
   const device = devices.find((d) => d.serial() === process.env.ANDROID_SERIAL) || devices[0];
-  assert.ok(device, "Connect an authorized Android device");
-  const primary = process.argv.includes("--primary");
+  assert.ok(device);
+  const primary = process.argv.includes("--primary"), pkg = primary ? appId : qaId;
   const report = { passed: false, checks: [], errors: [] };
-  const checked = (message) => { report.checks.push(message); console.log(`PASS ${message}`); };
-  let page, currentPkg;
+  const checked = (text) => { report.checks.push(text); console.log(`PASS ${text}`); };
+  let page;
   try {
-    const attach = async (pkg) => {
-      currentPkg = pkg;
+    const attach = async () => {
       await device.shell(`am start -n ${pkg}/xyz.koodoreader.custom.android.MainActivity`);
-      page = await (await device.webView({ pkg })).page();
-      page.setDefaultTimeout(60000);
+      page = await (await device.webView({ pkg })).page(); page.setDefaultTimeout(60000);
       page.on("pageerror", (error) => report.errors.push(error.message));
-      await page.context().route("**/*", (route) => {
-        const url = new URL(route.request().url());
-        return url.hostname === "localhost" || ["data:", "blob:"].includes(url.protocol) ? route.continue() : route.abort();
-      });
+      await page.context().route("**/*", (route) => new URL(route.request().url()).hostname === "localhost" || /^(data|blob):/.test(route.request().url()) ? route.continue() : route.abort());
       await expect(page.locator(".android-header, .android-reader").first()).toBeVisible();
     };
+    await attach();
     const native = (request) => page.evaluate(async (data) => (await window.Capacitor.Plugins.KoodoStorage.execute(data)).value, request);
-    const records = async () => {
-      const result = {};
-      for (const dbName of tables) result[dbName] = await native({ channel: "database-command", dbName, statement: "getAllStatement" });
-      return result;
-    };
-    const preferences = async () => (await native({ channel: "preferences", action: "read" })).values;
-    const nodes = async () => {
-      await device.shell(`uiautomator dump --compressed ${dump}`);
-      return [...(await device.shell(`cat ${dump}`)).toString().matchAll(/<node\b[^>]+>/g)].map(([node]) => Object.fromEntries([...node.matchAll(/([\w-]+)="([^"]*)"/g)].map(([, k, v]) => [k, v])));
-    };
-    const tapNode = async (matches) => {
-      let node;
-      await expect.poll(async () => { node = (await nodes()).find(matches); return !!node; }, { timeout: 120000 }).toBe(true);
-      const [left, top, right, bottom] = node.bounds.match(/\d+/g).map(Number);
-      await device.shell(`input tap ${Math.round((left + right) / 2)} ${Math.round((top + bottom) / 2)}`);
-    };
-    const tap = async (locator) => {
-      await locator.scrollIntoViewIfNeeded();
-      const view = (await nodes()).find((node) => node.class === "android.webkit.WebView");
-      assert.ok(view);
-      await expect.poll(() => locator.evaluate((element) => {
-        const rect = element.getBoundingClientRect();
-        const hit = element.ownerDocument.elementFromPoint(rect.x + rect.width / 2, rect.y + rect.height / 2);
-        return hit === element || element.contains(hit);
-      })).toBe(true);
-      const [left, top, right] = view.bounds.match(/\d+/g).map(Number);
-      const rect = await locator.boundingBox();
-      const scale = (right - left) / await page.evaluate(() => innerWidth);
-      await device.shell(`input tap ${Math.round(left + (rect.x + rect.width / 2) * scale)} ${Math.round(top + (rect.y + rect.height / 2) * scale)}`);
-    };
-    const backOutOfPicker = async () => {
-      for (let attempt = 0; attempt < 8; attempt++) {
-        if (!(await nodes()).some((node) => node.package === "com.google.android.documentsui")) return;
-        await device.shell("input keyevent KEYCODE_BACK");
-      }
-      throw new Error("System picker did not close");
-    };
-    const selectFolder = async () => {
-      await tapNode((node) => /^(Show roots|显示根目录|显示根位置)$/.test(node["content-desc"] || ""));
-      await tapNode((node) => node["resource-id"] === "android:id/title" && /^(Downloads|下载|下载内容)$/.test(node.text || ""));
-      await tapNode((node) => node.text === "KoodoReaderCustomTest");
-    };
-    const idle = async () => expect(page.locator(".android-data")).toHaveAttribute("aria-busy", "false", { timeout: 120000 });
+    const rows = async (dbName) => native({ channel: "database-command", dbName, statement: "getAllStatement" });
+    const allRows = async () => Object.fromEntries(await Promise.all(["books", "notes", "bookmarks", "words", "plugins"].map(async (table) => [table, await rows(table)])));
     const openData = async () => {
-      await tap(page.getByRole("button", { name: "Settings", exact: true }));
-      await tap(page.getByRole("button", { name: "Data", exact: true }));
-      await expect(page.locator(".android-backup-section")).toBeVisible();
+      const picker = systemPicker(page, device);
+      await picker.tap(page.getByRole("button", { name: "Settings", exact: true }));
+      await picker.tap(page.getByRole("button", { name: "Data", exact: true }));
     };
-    const readShared = async (name) => {
-      assert.match(name, /^KoodoReader-Android-Backup-\d+\.zip$/);
-      return Buffer.from((await device.shell(`base64 ${shared}/${name}`)).toString(), "base64");
-    };
-    // Startup refreshes platform values and OS-theme timestamps in the sync journal.
-    const corePreferences = (values) => Object.fromEntries(Object.entries(values).filter(([key]) => !key.startsWith("__koodo_native_") && !["appVersion", "appPlatform", "syncRecord"].includes(key)));
-    const sameRecords = (actual, expected) => {
-      for (const table of tables) assert.equal(isDeepStrictEqual(actual[table], expected[table]), true, `${table} records differ`);
-    };
-    const samePreferences = (actual, expected) => {
-      const left = corePreferences(actual), right = corePreferences(expected);
-      for (const key of new Set([...Object.keys(left), ...Object.keys(right)])) assert.equal(left[key] === right[key], true, `Preference differs: ${key}`);
-    };
-    const validateFiles = async (manifest, archive) => {
-      for (const file of manifest.files) {
-        const bytes = await archive.file(`${file.group}/${file.name}`).async("nodebuffer");
-        assert.equal(bytes.length, file.size);
-        assert.equal(hash(bytes), file.sha256);
-        const stored = await native({ channel: "file-command", group: file.group, name: file.name, action: "read" });
-        assert.equal(hash(Buffer.from(stored, "base64")), file.sha256);
-      }
-    };
+    const idle = () => expect(page.locator(".android-data")).toHaveAttribute("aria-busy", "false", { timeout: 120000 });
     if (primary) {
-      await attach(appId);
       if (await page.locator(".android-reader").isVisible()) {
-        await showReadingTools(page);
-        await tap(page.getByRole("button", { name: "Exit reader", exact: true }));
+        await showReadingTools(page); await systemPicker(page, device).tap(page.getByRole("button", { name: "Exit reader", exact: true }));
       }
-      const original = await records();
-      const originalPreferences = await preferences();
-      assert.ok(original.books.some((book) => book.size > 1024 * 1024), "The real test book must be in the primary library");
+      const before = await allRows(); assert.ok(before.books.some((b) => b.size > 1000000));
       await openData();
-      const create = () => page.getByRole("button", { name: "Create full backup", exact: true });
-      await tap(create());
-      await tapNode((node) => node.class === "android.widget.EditText");
-      await backOutOfPicker();
-      await idle();
-      sameRecords(await records(), original);
-      samePreferences(await preferences(), originalPreferences);
-      checked("cancelling a full backup retains the real library and releases the snapshot lock");
-      await tap(create());
-      await selectFolder();
-      const name = (await nodes()).find((node) => node.class === "android.widget.EditText").text;
-      assert.match(name, /^KoodoReader-Android-Backup-\d+\.zip$/);
-      await fs.writeFile(path.join(output, "backup-save-dialog.png"), await device.screenshot());
-      await tapNode((node) => /^(Save|SAVE|保存)$/.test(node.text || ""));
-      await idle();
+      const picker = systemPicker(page, device);
+      await picker.tap(page.getByRole("button", { name: "Back up reading data", exact: true }));
+      await picker.folder();
+      const name = (await picker.nodes()).find((node) => node.class === "android.widget.EditText").text;
+      assert.match(name, /^KoodoReader-Data-\d+\.json$/);
+      await picker.tapNode((node) => /^(Save|SAVE|保存)$/.test(node.text || "")); await idle();
       await expect(page.getByText("Backup saved", { exact: true })).toBeVisible();
-      const bytes = await readShared(name);
-      const archive = await JSZip.loadAsync(bytes);
-      const manifest = JSON.parse(await archive.file("koodo-android-backup.json").async("string"));
-      sameRecords(manifest.tables, original);
-      samePreferences(manifest.preferences, originalPreferences);
-      await validateFiles(manifest, archive);
-      await fs.writeFile(saved, JSON.stringify({ name, sha256: hash(bytes), bookCount: manifest.tables.books.length, files: manifest.files.length, bytes: bytes.length }, null, 2));
-      checked("system Save As produces a full backup with every real book and resource SHA-256 verified");
-      sameRecords(await records(), original);
-      await tap(page.locator(".setting-close-container"));
-      checked("creating and saving a backup leaves all primary records and settings intact");
+      const bytes = Buffer.from((await device.shell(`base64 ${shared}/${name}`)).toString(), "base64");
+      const backup = JSON.parse(bytes.toString("utf8"));
+      assert.equal(backup.format, "koodo-reader-custom-data-backup");
+      assert.equal(Object.hasOwn(backup, "files"), false); assert.equal(Object.hasOwn(backup, "tables"), false);
+      for (const book of before.books) assert.equal(bytes.includes(Buffer.from(book.key)), false, "Device-local book key leaked");
+      assert.ok(bytes.length < 1000000, "Metadata backup unexpectedly contains original bytes");
+      assert.equal(isDeepStrictEqual(before, await allRows()), true, "Primary records changed");
+      report.bytes = bytes.length; report.books = before.books.length; report.notes = before.notes.length;
+      await fs.writeFile(path.join(output, "data-backup.json"), bytes);
+      await fs.writeFile(path.join(output, "data-backup-source.json"), JSON.stringify({ name, sha256: hash(bytes), bytes: bytes.length }));
+      checked("system Save As creates a small shared JSON with no book files or local identifiers");
+      checked("all primary book, note, bookmark, word and plugin rows are unchanged");
+      await fs.writeFile(path.join(output, "data-backup-settings.png"), await device.screenshot());
+      await picker.tap(page.locator(".setting-close-container"));
     } else {
-      const source = JSON.parse(await fs.readFile(saved, "utf8"));
-      const bytes = await readShared(source.name);
-      assert.equal(hash(bytes), source.sha256);
-      const archive = await JSZip.loadAsync(bytes);
-      const manifest = JSON.parse(await archive.file("koodo-android-backup.json").async("string"));
-      await attach(qaId);
-      assert.equal(currentPkg, qaId);
-      assert.equal((await records()).books.length, 0, "Use a fresh isolated QA installation");
-      await page.locator("#import-book-box").setInputFiles(await fontBook());
-      await expect(page.locator(".book-list-item")).toHaveCount(1);
-      const qaOriginal = await records();
-      const qaPreferences = await preferences();
+      const source = JSON.parse(await fs.readFile(path.join(output, "data-backup-source.json"), "utf8"));
+      const backupBytes = await fs.readFile(path.join(output, "data-backup.json")); assert.equal(hash(backupBytes), source.sha256);
+      assert.equal((await rows("books")).length, 0, "Use a fresh isolated QA app");
+      // The real source stays outside the QA app. This temporary test document
+      // is deleted after the isolated package is uninstalled.
+      await device.shell(`am start -n ${appId}/xyz.koodoreader.custom.android.MainActivity`);
+      const primaryPage = await (await device.webView({ pkg: appId })).page();
+      const original = await primaryPage.evaluate(async () => (await window.Capacitor.Plugins.KoodoStorage.execute({ channel: "database-command", dbName: "books", statement: "getAllStatement" })).value);
+      const real = original.find((book) => book.size > 1000000);
+      const base64 = await primaryPage.evaluate(async (name) => (await window.Capacitor.Plugins.KoodoStorage.execute({ channel: "file-command", action: "read", group: "book", name })).value, `${real.key}.${real.format.toLowerCase()}`);
+      await attach();
+      const fixtureName = await importNativeFixture(page, device, { name: "real.epub", buffer: Buffer.from(base64, "base64") });
+      await expect(page.locator(".book-list-item")).toHaveCount(1, { timeout: 120000 });
+      const book = (await rows("books"))[0];
+      assert.notEqual(book.key, real.key);
+      const privateFile = (await device.shell(`run-as ${qaId} sh -c 'test -f files/library-v1/book/${book.key}.epub && echo copied || echo mapped'`)).toString().trim();
+      assert.equal(privateFile, "mapped");
+      checked("system Open Document imports the real EPUB by persistent URI without a private original copy");
       await openData();
-      const invalid = new JSZip(); invalid.file("unrelated.txt", "not a backup");
-      await page.locator('.android-backup-section input[type="file"]').setInputFiles({ name: "invalid.zip", mimeType: "application/zip", buffer: await invalid.generateAsync({ type: "nodebuffer" }) });
-      await idle();
-      await expect(page.getByText("Unsupported or damaged Android full backup. The current library has not been changed.", { exact: true })).toBeVisible();
-      sameRecords(await records(), qaOriginal);
-      samePreferences(await preferences(), qaPreferences);
-      checked("invalid restore files cannot change the isolated library or its preferences");
-      const chooseBackup = async () => {
-        await tap(page.getByRole("button", { name: "Restore full backup", exact: true }));
-        await selectFolder();
-        await tapNode((node) => node.text === source.name || (node["content-desc"] || "").startsWith(`${source.name},`));
-        await expect(page.locator(".android-backup-preview")).toBeVisible({ timeout: 120000 });
-        await idle();
+      const input = page.locator('.android-backup-section input[type="file"]');
+      await input.setInputFiles({ name: "damaged.json", mimeType: "application/json", buffer: Buffer.from('{"format":"broken"}') }); await idle();
+      await expect(page.getByText("Unsupported or damaged reading data backup. The current library has not been changed.", { exact: true })).toBeVisible();
+      const restore = async () => {
+        const picker = systemPicker(page, device);
+        await picker.tap(page.getByRole("button", { name: "Restore reading data", exact: true }));
+        await picker.folder(); await picker.select(source.name);
+        await expect(page.getByRole("dialog", { name: "Restore reading data" })).toBeVisible();
+        const loaded = page.waitForEvent("load", { timeout: 120000 });
+        await picker.tap(page.getByRole("button", { name: "Restore matching reading data", exact: true }));
+        await loaded;
+        await expect(page.locator(".android-header")).toBeVisible({ timeout: 120000 });
       };
-      await chooseBackup();
-      await device.shell("input keyevent KEYCODE_BACK");
-      await expect(page.locator(".android-backup-preview")).toHaveCount(0);
-      sameRecords(await records(), qaOriginal);
-      checked("system selection validates the real archive and native Back cancels its restore preview");
-      await chooseBackup();
-      await fs.writeFile(path.join(output, "backup-restore-preview.png"), await device.screenshot());
-      assert.equal(currentPkg, qaId, "Never perform replacement tests on the primary app");
-      await tap(page.getByRole("button", { name: "Replace library and restore", exact: true }));
-      await expect.poll(async () => { try { return (await records()).books.length; } catch { return -1; } }, { timeout: 120000 }).toBe(manifest.tables.books.length);
-      await expect(page.locator(".android-backup-preview")).toHaveCount(0, { timeout: 120000 });
-      sameRecords(await records(), manifest.tables);
-      samePreferences(await preferences(), manifest.preferences);
-      await validateFiles(manifest, archive);
-      checked("confirmed restore replaces every record, setting and file together in the QA app");
-      await device.shell(`am force-stop ${qaId}`);
-      await expect.poll(() => device.webViews().filter((view) => view.pkg() === qaId).length).toBe(0);
-      await attach(qaId);
-      sameRecords(await records(), manifest.tables);
-      samePreferences(await preferences(), manifest.preferences);
-      checked("process restart retains the restored library and preference version");
-      const real = manifest.tables.books.find((book) => book.size > 1024 * 1024);
-      await tap(page.locator(".book-list-item").filter({ hasText: real.name }).locator(".book-item-cover"));
+      await restore();
+      const first = await allRows();
+      assert.equal(first.books.length, 1); assert.equal(first.books[0].key, book.key);
+      assert.equal(first.books[0].path, book.path);
+      const document = JSON.parse(backupBytes.toString("utf8")).document;
+      const sourceHash = hash(Buffer.from(base64, "base64"));
+      const expectedNotes = Object.values(document.entries).filter((versions) => versions[0].kind === "note" && !versions[0].deleted && versions[0].value.book === sourceHash).length;
+      assert.equal(first.notes.length, expectedNotes);
+      const persisted = (await native({ channel: "preferences", action: "read" })).values;
+      const progress = document.entries[`progress/${sourceHash}`]?.[0];
+      if (progress && !progress.deleted) assert.equal(isDeepStrictEqual(JSON.parse(persisted.recordLocation)[book.key], progress.value), true, "Mapped progress differs");
+      checked("shared backup restores matching progress/statistics while keeping the QA book key and URI");
+      await openData(); await restore();
+      assert.equal(isDeepStrictEqual(first, await allRows()), true, "Repeated restore changed or duplicated records");
+      await device.shell(`am force-stop ${qaId}`); await attach();
+      await systemPicker(page, device).tap(page.locator(".book-item-cover").first());
       await expect(page.locator("#page-area")).toHaveAttribute("aria-busy", "false", { timeout: 120000 });
       await expect(page.locator("#page-area > iframe")).toBeVisible();
-      const content = await page.frameLocator("#page-area > iframe").locator("body").evaluate((body) => ({ text: body.innerText.length, images: body.querySelectorAll("img, image").length }));
-      assert.ok(content.text > 0 || content.images > 0);
       await showReadingTools(page);
-      await tap(page.getByRole("button", { name: "Next page", exact: true }));
-      await tap(page.getByRole("button", { name: "Exit reader", exact: true }));
-      await expect(page.locator(".android-header")).toBeVisible();
-      checked("the restored real EPUB opens, renders and turns a page in the isolated app");
-      await attach(appId);
-      sameRecords(await records(), manifest.tables);
-      samePreferences(await preferences(), manifest.preferences);
-      checked("all replacement and reading tests leave the primary real library unchanged");
+      await systemPicker(page, device).tap(page.getByRole("button", { name: "Next page", exact: true }));
+      checked("mapped real EPUB still renders and turns pages after process restart and repeated restore");
+      report.fixtureName = fixtureName;
     }
-    assert.deepEqual(report.errors, []);
-    report.passed = true;
+    assert.deepEqual(report.errors, []); report.passed = true;
   } catch (error) {
     report.error = error.message;
-    if (device) await fs.writeFile(path.join(output, "backup-failure.png"), await device.screenshot()).catch(() => {});
+    await fs.writeFile(path.join(output, "data-backup-failure.png"), await device.screenshot()).catch(() => {});
     throw error;
   } finally {
-    if (device) await device.shell(`rm -f ${dump}`).catch(() => {});
-    await fs.writeFile(path.join(output, primary ? "backup-primary-report.json" : "backup-restore-report.json"), JSON.stringify(report, null, 2));
+    await fs.writeFile(path.join(output, primary ? "data-backup-primary-report.json" : "data-backup-qa-report.json"), JSON.stringify(report, null, 2));
     await Promise.all(devices.map((d) => d.close()));
   }
 }
-
 main().catch((error) => { console.error(error); process.exitCode = 1; });
