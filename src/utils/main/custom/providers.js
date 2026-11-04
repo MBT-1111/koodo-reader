@@ -65,7 +65,15 @@ const catchUpMegaStorage = async (storage) => {
     if (packet === -15) throw new Error("CUSTOM_MEGA_AUTH_FAILED");
     if (typeof packet === "number") throw new Error("CUSTOM_MEGA_NETWORK_FAILED");
     if (!packet || typeof packet !== "object" || (packet.a !== undefined && !Array.isArray(packet.a))) throw new Error("CUSTOM_MEGA_INVALID_TREE");
-    if (packet.a?.length) storage.api.emit("sc", packet.a);
+    if (packet.a?.length) {
+      const incoming = new Set(packet.a.flatMap((event) => event?.a === "t" && Array.isArray(event.t?.f) ? event.t.f.map((node) => node.h) : []));
+      const events = packet.a.filter((event) => event?.a !== "d" || storage.files[event.n] || incoming.has(event.n));
+      // MEGA may repeat a deletion already reflected in the listing. Also,
+      // SDK reload() adds another SC listener; apply each packet just once.
+      const handlers = storage.api.listeners("sc"), handler = handlers.at(-1);
+      if (!handler) throw new Error("CUSTOM_MEGA_INVALID_TREE");
+      if (events.length) handler.call(storage.api, events);
+    }
     if (typeof packet.sn === "string") state.sequence = packet.sn;
     if (typeof packet.w === "string" && packet.w) return;
     if (packet.w !== undefined && typeof packet.w !== "string") throw new Error("CUSTOM_MEGA_INVALID_TREE");

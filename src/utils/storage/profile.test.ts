@@ -36,6 +36,21 @@ const fixture = (name: string, external = true) => {
 };
 
 describe("application profile follows the library storage location", () => {
+  it("reopens a selected library when replacing its unchanged startup pointer is unavailable", () => {
+    const f = fixture("unchanged-pointer"); activateProfile(f.app, f.runtime);
+    const pointer = path.join(f.runtime.bootstrapProfile, BOOTSTRAP), before = fs.readFileSync(pointer);
+    const rename = fs.renameSync;
+    const blocked = vi.spyOn(fs, "renameSync").mockImplementation((from, to) => {
+      if (String(to) === pointer) throw Object.assign(new Error("Synthetic cross-device rename"), { code: "EXDEV", syscall: "rename" });
+      return rename(from, to);
+    });
+    try {
+      const restarted = launch(f.testRoot);
+      expect(restarted.runtime.profile).toBe(f.runtime.profile);
+      expect(restarted.app.getPath("userData")).toBe(f.runtime.profile);
+      expect(fs.readFileSync(pointer)).toEqual(before);
+    } finally { blocked.mockRestore(); }
+  });
   it("moves an existing external-library profile and restores settings before startup", () => {
     const f = fixture("existing");
     const bootstrap = f.runtime.profile;

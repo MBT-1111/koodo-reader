@@ -138,7 +138,10 @@ const activateProfile = (app, runtime) => {
     updateProfile(profile, storage);
   }
   // The pointer is committed only after the complete profile and library are available.
-  atomicWrite(bootstrapFile, { version: 1, profile, storage });
+  // Reopening an established profile does not require replacing an unchanged pointer.
+  if (bootstrap?.version !== 1 || bootstrap.profile !== profile || bootstrap.storage !== storage || pending) {
+    atomicWrite(bootstrapFile, { version: 1, profile, storage });
+  }
   runtime.profile = profile;
   runtime.storagePath = storage;
   configurePaths(app, profile);

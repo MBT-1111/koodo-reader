@@ -11,11 +11,11 @@ interface RemoteNode { h: string; t: number; p?: string; a?: string; k?: string;
 interface Command { a: string; t?: string; n?: string | { t: number; a: string; k: string; h: string }[]; s?: number; ssl?: number }
 // Exercise the installed SDK's encryption, node-tree reconstruction and transfer
 // streams against a local in-memory server, without real accounts or credentials.
-const server = (cached = false) => {
+const server = (cached = false, reloadAgain = false) => {
   const nodes: RemoteNode[] = [{ h: "root0000", t: 2, ts: 0 }];
   const uploads = new Map<string, { bytes: Buffer; chunks: Set<number>; received: number }>(), contents = new Map<string, Buffer>();
   const commands: Command[] = [];
-  const changes: { a: string; t: { f: RemoteNode[] } }[] = [];
+  const changes: ({ a: "t"; t: { f: RemoteNode[] } } | { a: "d"; n: string })[] = [];
   let uploadFailure = false, downloadFailure = false, reverseTree = false, corruptTree = false;
   const fetch: typeof globalThis.fetch = async (input, options) => {
     const url = new URL(String(input));
@@ -57,13 +57,34 @@ const server = (cached = false) => {
   };
   const open = async () => {
     const storage = prepareMegaStorage(Storage.fromJSON({ key: Buffer.alloc(16, 1).toString("base64url"), sid: "synthetic-session", name: "Fixture", user: "fixture", options: { email: "fixture@example.invalid", password: "", keepalive: false, fetch: fetch as unknown as MegaFetch } }));
-    await storage.ready; await storage.reload(true); await catchUpMegaStorage(storage);
+    await storage.ready; await storage.reload(true); if (reloadAgain) await storage.reload(true); await catchUpMegaStorage(storage);
     return storage;
   };
-  return { nodes, commands, open, failUpload: (value: boolean) => { uploadFailure = value; }, failDownload: (value: boolean) => { downloadFailure = value; }, reverseTree: () => { reverseTree = true; }, corruptTree: () => { corruptTree = true; } };
+  return { nodes, commands, open, staleDeletion: () => { changes.push({ a: "d", n: "gone0000" }); }, deleteNode: (id: string) => { nodes.splice(nodes.findIndex((node) => node.h === id), 1); changes.push({ a: "d", n: id }); }, failUpload: (value: boolean) => { uploadFailure = value; }, failDownload: (value: boolean) => { downloadFailure = value; }, reverseTree: () => { reverseTree = true; }, corruptTree: () => { corruptTree = true; } };
 };
 
 describe("MEGA transfers through the installed SDK", () => {
+  it("ignores a repeated deletion already absent from the directory listing", async () => {
+    const remote = server(true), state = envelope(reconcile(freshCheckpoint(), {}, []));
+    const first = new MegaProvider(await remote.open(), "default");
+    await first.append(state); await first.close();
+    remote.staleDeletion();
+    const restored = new MegaProvider(await remote.open(), "default");
+    expect(await restored.read()).toEqual([state]); await restored.close();
+    expect(remote.commands.filter((command) => command.a === "p")).toHaveLength(2);
+  });
+  it("applies cached deletion once after reload without removing the surviving snapshot", async () => {
+    const remote = server(true, true), state = envelope(reconcile(freshCheckpoint(), {}, []));
+    const first = new MegaProvider(await remote.open(), "default");
+    await first.append(state);
+    const removed = remote.nodes.find((node) => node.t === 0)!.h;
+    const next = { ...state, sequence: state.sequence + 1 };
+    await first.append(next); await first.close(); remote.deleteNode(removed);
+    const restored = new MegaProvider(await remote.open(), "default");
+    expect(await restored.read()).toEqual([next]);
+    expect((await restored.folders())[0].children).toHaveLength(1);
+    await restored.close();
+  });
   it("creates a directory, uploads encrypted bytes, restores the tree and reads the same snapshot", async () => {
     const remote = server(), state = envelope(reconcile(freshCheckpoint(), {}, []));
     const first = new MegaProvider(await remote.open(), "default");

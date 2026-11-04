@@ -43,6 +43,10 @@ MEGA 的完整文件列表在交给 SDK 导入前按父子依赖排序。本地�
 
 MEGA 的 `f` 列表可能是缓存基线，必须从其 `sn` 消费 `sc` 变更，直到返回等待地址后才能查找同步目录。客户端禁用后台 keepalive，改为在每次恢复会话后有限追赶，再交给 SDK 原有处理器应用变更；不进入长期轮询。缺失序号、无效响应或追赶失败均停止操作，不能将旧列表当作当前目录创建新目录。参见 [MEGA SDK 关于缓存列表和变更包的说明](https://github.com/meganz/sdk/issues/2759)。
 
+2026-11-04 Windows 修复：真实账号的服务器请求已返回成功，但缓存变更中含有已不在文件列表中的重复删除，MEGAJS 访问缺失节点的 `parent` 后抛异常，界面因此误报连接服务器失败。现在忽略已不存在节点的删除通知，同时保留本批新建节点的删除；SDK 重载安装的目录变更处理器每批只调用一次，避免重复删除误移除其他文件。新增回归覆盖缺失节点及重载后的有效删除；类型检查与全量 140 项测试通过。真实会话只读检查复现修复前异常，修复后追赶完成，原配置及登录文件摘要不变；未运行真实书库同步或上传测试数据。诊断报告在忽略跟踪的 `dist/windows-mega/before.json` 和 `after.json`。
+
+Windows 安装版的 MEGA 补丁在正常退出后应用，仅替换 `src/utils/main/custom/providers.js`，原归档备份于 `dist/windows-mega/backup/app.asar`。归档其他成员元数据及原始载荷保持不变，更新后摘要与候选一致。使用安装后的模块再次只读连接并下载校验已有快照成功，见 `dist/windows-mega/installed.json`；不注销或重建已有登录。安装目录写入经 Windows 管理员权限确认，补丁清单与安装摘要见同目录 `patch-manifest.json`、`installed-report.json`。重开时另发现未变化的启动指针重写失败，后续修复及 141 项完整回归见 [PROFILE_STORAGE_AND_MEGA.md](PROFILE_STORAGE_AND_MEGA.md)。
+
 MEGAJS 为分块上传手动设置的 `Content-Length` 必须从注入的传输层移除；Electron `net.fetch` 会以 `net::ERR_INVALID_ARGUMENT` 拒绝该请求头，长度应由实际请求体推导。保留其他请求头、原始字节和取消信号。
 
 文件传输显式使用 HTTPS、两个连接与错误直接上报，避免单连接流读取错误悬挂以及 SDK 的后台分块重试。请求仍有 30 秒超时；操作允许连续正常请求超过一分钟，60 秒无新请求或累计 150 秒会中止，早于 180 秒会话租约到期。失败或完成时取消该操作的剩余网络请求，并停止本地 API 轮询；不注销已保存的登录会话。
