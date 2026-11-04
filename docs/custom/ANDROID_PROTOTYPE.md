@@ -1,5 +1,7 @@
 # Android 手机原型
 
+2026-11-04 常用格式收尾：MOBI/AZW/AZW3 及嵌入字体的单栏、双栏中文文字 PDF 已完成阅读、连续朗读、正文跟随、书签与进程重启恢复验收。修复 PDF 保存偏页和页脚偏页，223 项单测、22 项浏览器回归、36 项原生仪器测试及 16 项整机检查通过；最终 APK 已覆盖安装并保留主书库、设置及登录。按所有者范围可进入日常使用、边用边修，详见 [ANDROID_AMAZON_PDF.md](ANDROID_AMAZON_PDF.md)。
+
 2026-11-04 最新格式补验：Markdown、HTML、FB2、DOCX、CBZ 已通过真实系统选书器、翻页及进程重启后恢复。修复 Markdown/DOCX 导入筛选遗漏和安卓漫画跳页、位置偏移；216 项单测、10 项浏览器回归及 7 项隔离整机检查通过，新版已覆盖安装，原书库与登录保留。范围与控制台日志限制见 [ANDROID_FORMATS.md](ANDROID_FORMATS.md)。
 
 2026-11-04 最新编码补验：七份无 BOM/CRLF/多 MB TXT 已通过系统选书器、中文正文、目录、进程强制结束后文件访问和阅读位置恢复检查。9 项隔离整机检查及 13 项浏览器回归通过，主书库与登录保持一致，QA 包和样本已清理。详见 [ANDROID_TEXT_ENCODING.md](ANDROID_TEXT_ENCODING.md)。

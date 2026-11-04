@@ -1,7 +1,20 @@
 export interface SpeechChapter { index: number; title: string; text: string[]; anchors?: string[] }
 interface ChapterDocument {
   label?: string;
-  text: { createDocument?: () => Promise<Document>; load?: () => Promise<string> };
+  text: { createDocument?: () => Promise<Document>; load?: () => Promise<string>; getTextContent?: () => Promise<{ items: { str?: string; hasEOL?: boolean }[] }> };
+}
+
+// Keep PDF content order (including columns) and join glyph runs on the same line.
+export function pdfSpeechText(content: { items: { str?: string; hasEOL?: boolean }[] }): string[] {
+  const lines: string[] = [];
+  let line = "";
+  const flush = () => { const text = line.trim(); if (text) lines.push(text); line = ""; };
+  for (const item of content.items) {
+    if (typeof item.str === "string") line += item.str;
+    if (item.hasEOL) flush();
+  }
+  flush();
+  return lines;
 }
 interface ChapterRendition {
   getPosition(): { chapterDocIndex?: string | number };
@@ -32,7 +45,7 @@ export function speechDocumentText(root: Node): string[] {
   return paragraphs;
 }
 
-export async function prepareSpeechChapters(rendition: ChapterRendition, currentText: string[], applyRules: (text: string) => string, signal: AbortSignal) {
+export async function prepareSpeechChapters(rendition: ChapterRendition, currentText: string[], applyRules: (text: string) => string, signal: AbortSignal, pdf = false) {
   const docs = rendition.getChapterDoc();
   const index = Number(rendition.getPosition().chapterDocIndex);
   if (!Number.isInteger(index) || index < 0 || index >= docs.length || docs.length > 20000) throw new Error("ANDROID_SPEECH_CHAPTERS");
@@ -41,27 +54,33 @@ export async function prepareSpeechChapters(rendition: ChapterRendition, current
   for (let next = index + 1; next < docs.length; next++) {
     signal.throwIfAborted();
     const source = docs[next].text;
-    let doc: Document;
-    if (source?.createDocument) doc = await source.createDocument();
-    else if (source?.load) {
-      const url = await source.load(); signal.throwIfAborted();
-      if (new URL(url).protocol !== "blob:") throw new Error("ANDROID_SPEECH_CHAPTERS");
-      const response = await fetch(url, { signal });
-      if (!response.ok) throw new Error("ANDROID_SPEECH_CHAPTERS");
-      doc = new DOMParser().parseFromString(await response.text(), "text/html");
-    } else throw new Error("ANDROID_SPEECH_CHAPTERS");
+    let original: string[];
+    if (pdf && source?.getTextContent) original = pdfSpeechText(await source.getTextContent());
+    else {
+      let doc: Document;
+      if (source?.createDocument) doc = await source.createDocument();
+      else if (source?.load) {
+        const url = await source.load(); signal.throwIfAborted();
+        if (new URL(url).protocol !== "blob:") throw new Error("ANDROID_SPEECH_CHAPTERS");
+        const response = await fetch(url, { signal });
+        if (!response.ok) throw new Error("ANDROID_SPEECH_CHAPTERS");
+        doc = new DOMParser().parseFromString(await response.text(), "text/html");
+      } else throw new Error("ANDROID_SPEECH_CHAPTERS");
+      signal.throwIfAborted();
+      const body = doc.querySelector("body");
+      if (!body) throw new Error("ANDROID_SPEECH_CHAPTERS");
+      original = speechDocumentText(body);
+    }
     signal.throwIfAborted();
-    const body = doc.querySelector("body");
-    if (!body) throw new Error("ANDROID_SPEECH_CHAPTERS");
-    const paragraphs = speechDocumentText(body).map(anchor => ({ anchor, text: applyRules(anchor) })).filter(value => value.text.trim());
+    const paragraphs = original.map(anchor => ({ anchor, text: applyRules(anchor) })).filter(value => value.text.trim());
     const text = paragraphs.map(value => value.text);
     size += text.reduce((sum, value) => sum + value.length, 0); count += text.length;
     if (size > 2000000 || count > 20000) throw new Error("ANDROID_SPEECH_CHAPTER_LIMIT");
-    if (text.length) followingChapters.push({ index: next, title: (docs[next].label || String(next + 1)).slice(0, 512), text, anchors: paragraphs.map(value => value.anchor) });
+    if (text.length) followingChapters.push({ index: next, title: (pdf ? String(next + 1) : docs[next].label || String(next + 1)).slice(0, 512), text, anchors: paragraphs.map(value => value.anchor) });
     // Let Stop/reader exit cancel preparation even when chapter documents are cached.
     await new Promise<void>(resolve => setTimeout(resolve, 0));
   }
   signal.throwIfAborted();
   if (size > 2000000 || count > 20000) throw new Error("ANDROID_SPEECH_CHAPTER_LIMIT");
-  return { chapterIndex: index, chapterTitle: (docs[index].label || String(index + 1)).slice(0, 512), followingChapters };
+  return { chapterIndex: index, chapterTitle: (pdf ? String(index + 1) : docs[index].label || String(index + 1)).slice(0, 512), followingChapters };
 }

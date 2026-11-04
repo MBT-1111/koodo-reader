@@ -15,7 +15,7 @@
   "android.stats.moreActivity": "More",
   "android.speech.fromSelection": "This reading starts from the sentence selected in the book.",
   "android.speech.autoChapters": "Continue to next chapters",
-  "android.speech.autoChaptersHelp": "EPUB and TXT can continue with system, cloud or multi-role voices. The text follows each audio segment and saves your reading position. Multi-role speech analyzes only the next chapter ahead.",
+  "android.speech.autoChaptersHelp": "EPUB, TXT, MOBI, AZW and AZW3 can continue by chapter; text PDFs continue by page. System, cloud and multi-role speech follow the text and save your reading position. Multi-role speech analyzes only the next chapter or page ahead.",
   "android.speech.continuousScope": "Reads from the current position through the remaining chapters, including in the background. Closing this panel keeps speech playing; exiting the reader stops it.",
   "android.speech.preparingChapters": "Preparing chapters…",
   "android.speech.chapterLimit": "The remaining text exceeds the continuous reading limit. Turn off next chapters to read only this chapter.",

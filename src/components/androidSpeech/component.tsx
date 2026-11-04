@@ -6,7 +6,7 @@ import { useAppStore } from "../../store/useAppStore";
 import { androidSpeech, hasAndroidSpeech, speechFromVisible, stopAndroidSpeech, type AndroidSpeechState, type AndroidVoice } from "../../custom/android/speech";
 import { ANDROID_READER_CLOSE_EVENT } from "../../custom/android/navigation";
 import TTSUtil from "../../utils/reader/ttsUtil";
-import { getTextRules } from "../../utils/common";
+import { getTextRules, isFixedLayoutComic, isReadingRawPDF } from "../../utils/common";
 import { cloudSpeechPlugins, getAndroidCloudVoices, speechVoiceKey, type SpeechSource } from "../../custom/android/cloudSpeech";
 import DatabaseService from "../../utils/storage/databaseService";
 import EmotionSelect from "../../custom/tts/EmotionSelect";
@@ -69,7 +69,8 @@ const AndroidSpeech = ({ open, onClose }: AndroidSpeechProps) => {
   }, [htmlBook, book.key, position?.id]);
   const active = !!playback && playback.bookKey === book.key && ["buffering", "playing", "paused"].includes(playback.status);
   const locked = busy || analyzing || preparing || active;
-  const supportsAutoChapters = ["EPUB", "TXT"].includes(book.format);
+  const pdf = isReadingRawPDF(book);
+  const supportsAutoChapters = (["EPUB", "TXT", "MOBI", "AZW", "AZW3"].includes(book.format) && !isFixedLayoutComic(book)) || book.format === "PDF";
   const speaking = playback?.status === "playing" || playback?.status === "buffering";
   const playbackError = playback?.status === "error" && playback.bookKey === book.key && (!playback.source || playback.source === source);
   const plugin = source === "system" ? undefined : (plugins || []).find((item) => item.key === cloudSpeechPlugins[source]);
@@ -138,14 +139,14 @@ const AndroidSpeech = ({ open, onClose }: AndroidSpeechProps) => {
         TTSUtil.setTextRules(getTextRules(book.key));
         const anchors = speechFromVisible(text, visible, selectedStart);
         const paragraphs = anchors.map((item) => TTSUtil.applyTextRules(item));
-        const canFollow = ["EPUB", "TXT"].includes(book.format);
+        const canFollow = supportsAutoChapters;
         const chapterIndex = Number(htmlBook.rendition.getPosition().chapterDocIndex);
         let chapters: Awaited<ReturnType<typeof prepareSpeechChapters>> | undefined = canFollow ? {
-          chapterIndex, chapterTitle: htmlBook.rendition.getChapterDoc()[chapterIndex]?.label || "", followingChapters: [],
+          chapterIndex, chapterTitle: pdf ? String(chapterIndex + 1) : htmlBook.rendition.getChapterDoc()[chapterIndex]?.label || "", followingChapters: [],
         } : undefined;
         if (autoChapters && supportsAutoChapters) {
           const controller = new AbortController(); roleRequest.current = controller; setPreparing(true);
-          chapters = await prepareSpeechChapters(htmlBook.rendition, paragraphs, item => TTSUtil.applyTextRules(item), controller.signal);
+          chapters = await prepareSpeechChapters(htmlBook.rendition, paragraphs, item => TTSUtil.applyTextRules(item), controller.signal, pdf);
           if (current !== generation.current || useAppStore.getState().reader.htmlBook !== htmlBook || useAppStore.getState().reader.isSpeechAutoStart) return;
         }
         let classified: Awaited<ReturnType<typeof analyzeAndroidSpeech>> | undefined;
@@ -164,7 +165,7 @@ const AndroidSpeech = ({ open, onClose }: AndroidSpeechProps) => {
           return option ? [[role, { source: option.source, config: voiceConfig(option.voice, option.config) }]] : [];
         }));
         result = await androidSpeech.execute({ action, bookKey: book.key, title: book.name, text: classified?.text || paragraphs, voice, speed: Number(speed), source,
-          anchors: classified?.anchors || anchors, saveReadingPosition: canFollow,
+          anchors: classified?.anchors || anchors, saveReadingPosition: canFollow, isPdf: pdf,
           ...chapters,
           ...(source !== "system" && plugin && cloudVoice ? { config: voiceConfig(cloudVoice, plugin.config) } : {}),
           ...(classified ? { roles: classified.roles, roleVoices, ...(chapters?.followingChapters.length ? { roleAI: androidRoleRequest() } : {}) } : {}) });

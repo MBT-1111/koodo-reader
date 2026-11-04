@@ -4,10 +4,14 @@ const { _android: android } = require("playwright"), { expect } = require("@play
 const { encodedTextFixtures, textBoundaryFixtures } = require("../e2e/android/encoding-fixtures.cjs");
 const { formatFixtures, savedPosition, showReadingTools, visibleComicColor, readFormatState, expectFormatState } = require("../e2e/android/format-fixtures.cjs");
 const { importNativeFixture, shared, systemPicker } = require("./android-system-picker.cjs");
+const { amazonPdfFixtures, visiblePdfPage } = require("../e2e/android/amazon-pdf-fixtures.cjs");
+const { amazonPdfSpeech } = require("./android-amazon-pdf-speech.cjs");
 const primary = "xyz.koodoreader.custom.android", qa = `${primary}.restoreqa`;
 const output = path.join(__dirname, "..", "dist", "android-device");
 const boundaries = process.argv.includes("--boundaries");
-const formats = process.argv.includes("--formats");
+const amazonPdf = process.argv.includes("--amazon-pdf");
+const formats = process.argv.includes("--formats") || amazonPdf;
+const reportName = amazonPdf ? "amazon-pdf" : formats ? "formats" : boundaries ? "text-boundary" : "encoding";
 const canonical = value => Array.isArray(value) ? value.map(canonical) : value && typeof value === "object" ? Object.fromEntries(Object.keys(value).sort().map(key => [key, canonical(value[key])])) : value;
 const hash = value => createHash("sha256").update(value).digest("hex");
 
@@ -17,7 +21,7 @@ async function main() {
   const selected = devices.filter(item => !process.env.ANDROID_SERIAL || item.serial() === process.env.ANDROID_SERIAL);
   assert.equal(selected.length, 1, "Connect one unlocked test phone or select ANDROID_SERIAL");
   const device = selected[0], files = [], report = { passed: false, checks: [], cases: [], errors: [] };
-  let primaryPage, page, baseline, originalPreferences, originalCredential, ownsQa = false;
+  let primaryPage, page, baseline, originalPreferences, originalCredential, speechFixture, ownsQa = false;
   const checked = text => { report.checks.push(text); console.log(`PASS ${text}`); };
   const native = (target, request) => target.evaluate(async data => (await window.Capacitor.Plugins.KoodoStorage.execute(data)).value, request);
   const allRows = async target => Object.fromEntries(await Promise.all(["books", "notes", "bookmarks", "words", "plugins"].map(async dbName => {
@@ -49,10 +53,10 @@ async function main() {
     const adb = process.env.ADB_PATH || "adb";
     const existing = execFileSync(adb, ["-s", device.serial(), "shell", "pm", "list", "packages", "--user", "0", qa], { encoding: "utf8" });
     assert.equal(existing.trim(), "", "Preserve the existing QA app; this test requires a new installation");
-    const apk = process.env.ANDROID_QA_APK || path.join(output, formats ? "formats-qa-debug.apk" : boundaries ? "text-boundary-qa-debug.apk" : "encoding-qa-debug.apk");
+    const apk = process.env.ANDROID_QA_APK || path.join(output, `${reportName}-qa-debug.apk`);
     const metadata = execFileSync(process.env.AAPT_PATH || "aapt", ["dump", "badging", apk], { encoding: "utf8" });
     assert.equal(/^package: name='([^']+)'/m.exec(metadata)?.[1], qa, "Install only the isolated QA package");
-    report.mode = formats ? "formats" : boundaries ? "text-boundaries" : "encodings";
+    report.mode = amazonPdf ? "amazon-pdf" : formats ? "formats" : boundaries ? "text-boundaries" : "encodings";
     report.apkSha256 = hash(await fs.readFile(apk));
     await device.shell(`am start --user 0 -n ${primary}/.MainActivity`);
     primaryPage = await (await device.webView({ pkg: primary })).page(); await expect(primaryPage.locator(".android-header")).toBeVisible();
@@ -64,8 +68,24 @@ async function main() {
     assert.deepEqual(Object.values(await allRows(page)).map(value => value.count), [0, 0, 0, 0, 0], "Use a fresh isolated QA app");
     assert.equal(await native(page, { channel: "credential", slot: "mega", action: "read" }), null, "The QA app must have no real MEGA session");
     await page.evaluate(() => { const config = JSON.parse(localStorage.getItem("readerConfig") || "{}"); config.lang = "en"; localStorage.setItem("readerConfig", JSON.stringify(config)); }); await page.reload();
+    if (amazonPdf) {
+      const testApk = path.join(output, "amazon-pdf-qa-test.apk");
+      assert.equal(execFileSync(adb, ["-s", device.serial(), "shell", "pm", "list", "packages", "--user", "0", `${qa}.test`], { encoding: "utf8" }).trim(), "", "Preserve an existing QA instrumentation package");
+      const metadata = execFileSync(process.env.AAPT_PATH || "aapt", ["dump", "badging", testApk], { encoding: "utf8" });
+      assert.equal(/^package: name='([^']+)'/m.exec(metadata)?.[1], `${qa}.test`);
+      execFileSync(adb, ["-s", device.serial(), "install", "--user", "0", testApk]);
+      try {
+        const result = execFileSync(adb, ["-s", device.serial(), "shell", "am", "instrument", "-w", `${qa}.test/androidx.test.runner.AndroidJUnitRunner`], { encoding: "utf8" });
+        await fs.writeFile(path.join(output, "amazon-pdf-instrumentation.log"), result);
+        assert.match(result, /OK \(36 tests\)/); checked("36 isolated native instrumentation tests including PDF progress persistence");
+      } finally { execFileSync(adb, ["-s", device.serial(), "shell", "pm", "uninstall", "--user", "0", `${qa}.test`]); }
+      await attachQA();
+      await page.evaluate(() => { const config = JSON.parse(localStorage.getItem("readerConfig") || "{}"); config.lang = "en"; localStorage.setItem("readerConfig", JSON.stringify(config)); }); await page.reload();
+      speechFixture = await amazonPdfSpeech(device, checked);
+      await speechFixture.setup(page);
+    }
     const fingerprints = [];
-    const fixtures = formats ? await formatFixtures(page) : boundaries ? textBoundaryFixtures() : encodedTextFixtures();
+    const fixtures = amazonPdf ? await amazonPdfFixtures() : formats ? await formatFixtures(page) : boundaries ? textBoundaryFixtures() : encodedTextFixtures();
     for (const fixture of fixtures) {
       const timing = {}, mark = async (key, action) => { const start = performance.now(); const value = await action(); timing[key] = Math.round(performance.now() - start); return value; };
       const before = await native(page, { channel: "database-command", dbName: "books", statement: "getAllStatement" });
@@ -85,7 +105,8 @@ async function main() {
       await mark("openMs", async () => {
         await ui.tap(card().locator(".book-item-cover"));
         await expect(page.locator("#page-area")).toHaveAttribute("aria-busy", "false");
-        if (fixture.anchor) await expect(body()).toContainText(fixture.anchor);
+        if (fixture.format === "pdf") await expect.poll(async () => (await visiblePdfPage(page))?.text).toContain(fixture.anchor);
+        else if (fixture.anchor) await expect(body()).toContainText(fixture.anchor);
         if (fixture.colors) await expect.poll(() => visibleComicColor(page)).toEqual([...fixture.colors[0], 255]);
       });
       await mark("chapterMs", async () => {
@@ -95,6 +116,7 @@ async function main() {
           await showReadingTools(page); await page.locator(".next-chapter-single-container").click();
           await expect.poll(async () => (await savedPosition(page))?.percentage).not.toBe(initial.percentage);
           if (fixture.colors) await expect.poll(() => visibleComicColor(page)).toEqual([...fixture.colors[1], 255]);
+          if (fixture.format === "pdf") await expect.poll(async () => (await visiblePdfPage(page))?.index).toBe(1);
           return;
         }
         const toggle = page.locator(".android-reader-menu-toggle"); if (await toggle.isVisible()) await ui.tap(toggle);
@@ -103,6 +125,7 @@ async function main() {
         await (fixture.name.startsWith("large-") ? chapters.last() : chapters.filter({ hasText: "第二章" })).click();
         await expect(body()).toContainText(fixture.secondAnchor);
       });
+      if (speechFixture) await speechFixture.verify(page, fixture, book);
       const position = () => page.evaluate(key => JSON.parse(localStorage.getItem("recordLocation") || "{}")[key], book.key);
       if (!formats) await expect.poll(async () => Number((await position())?.chapterDocIndex)).toBeGreaterThan(0);
       const chapterValue = (await position()).chapterDocIndex;
@@ -122,6 +145,7 @@ async function main() {
       checked(`${fixture.name}: system picker import, readable content, navigation, reload progress and original bytes`);
     }
     await device.shell(`am force-stop ${qa}`); await attachQA();
+    const requestsBeforeReopen = speechFixture?.requests.length;
     const preferences = (await native(page, { channel: "preferences", action: "read" })).values;
     const locations = JSON.parse(preferences.recordLocation || "{}");
     for (const entry of fingerprints) {
@@ -136,6 +160,13 @@ async function main() {
       }
     }
     checked(`all ${fixtures.length} document mappings, original bytes and saved positions survive process restart`);
+    if (amazonPdf) {
+      const bookmarks = await native(page, { channel: "database-command", dbName: "bookmarks", statement: "getAllStatement" });
+      assert(fingerprints.every(entry => bookmarks.some(bookmark => bookmark.bookKey === entry.key)), "Keep each format's bookmark after process restart");
+      assert.equal((await page.evaluate(() => window.Capacitor.Plugins.KoodoSpeech.execute({ action: "state" }))).status, "idle");
+      assert.equal(speechFixture.requests.length, requestsBeforeReopen, "Reopening must not generate cloud speech or AI requests");
+      checked("five-format bookmarks survive restart; no automatic playback or new cloud/AI requests");
+    }
     assert.deepEqual(report.errors, []); report.passed = true;
   } catch (error) { report.error = error.message; report.stack = error.stack; throw error; }
   finally {
@@ -145,7 +176,7 @@ async function main() {
         await device.shell(`am force-stop ${qa}`);
         execFileSync(process.env.ADB_PATH || "adb", ["-s", device.serial(), "shell", "pm", "uninstall", "--user", "0", qa]);
         for (const file of files) {
-          assert.match(file.name, /^Koodo-Mapped-Fixture-\d+\.(txt|md|html|fb2|docx|cbz)$/);
+          assert.match(file.name, /^Koodo-Mapped-Fixture-\d+\.(txt|md|html|fb2|docx|cbz|mobi|azw|azw3|pdf)$/);
           const bytes = Buffer.from((await device.shell(`base64 ${shared}/${file.name}`)).toString(), "base64");
           assert.equal(hash(bytes), file.sha256, "Preserve a test document if its content changed");
           await device.shell(`rm -f ${shared}/${file.name}`);
@@ -170,7 +201,7 @@ async function main() {
         checked("isolated QA app and verified temporary files removed; primary library and preferences preserved");
       }
     } catch (error) { report.passed = false; report.cleanupError = error.message; throw error; }
-    finally { await fs.writeFile(path.join(output, formats ? "formats-device-report.json" : boundaries ? "text-boundary-device-report.json" : "encoding-device-report.json"), JSON.stringify(report, null, 2)); await Promise.all(devices.map(item => item.close())); }
+    finally { await fs.writeFile(path.join(output, `${reportName}-device-report.json`), JSON.stringify(report, null, 2)); await speechFixture?.close(); await Promise.all(devices.map(item => item.close())); }
   }
 }
 main().catch(error => { console.error(error.message); process.exitCode = 1; });

@@ -1,6 +1,7 @@
 const JSZip = require("jszip");
 const { expect } = require("@playwright/test");
 const { showReadingTools, visibleParagraphs } = require("./fixtures.cjs");
+const { visiblePdfPage } = require("./amazon-pdf-fixtures.cjs");
 const stamp = new Date("2026-01-01T00:00:00Z");
 const paragraphs = label => Array.from({ length: 70 }, (_, i) => `${label}第${i + 1}段。中文格式兼容样本，验证手机正文显示、翻页和阅读位置恢复。`);
 const pack = async zip => { zip.forEach((_name, entry) => { entry.date = stamp; }); return zip.generateAsync({ type: "nodebuffer", compression: "DEFLATE" }); };
@@ -61,12 +62,14 @@ const visibleComicColor = page => page.locator("#page-area").evaluate(area => {
 });
 async function readFormatState(page, fixture) {
   const position = await savedPosition(page);
+  if (fixture.format === "pdf") return { position, pdf: (await visiblePdfPage(page))?.index };
   if (fixture.colors) return { position, color: await visibleComicColor(page) };
   const anchor = (await visibleParagraphs(page))[0]; expect(anchor).toBeTruthy();
   return { position, anchor };
 }
 async function expectFormatState(page, state) {
-  if (state.color) await expect.poll(() => visibleComicColor(page)).toEqual(state.color);
+  if (state.pdf !== undefined) await expect.poll(async () => (await visiblePdfPage(page))?.index).toBe(state.pdf);
+  else if (state.color) await expect.poll(() => visibleComicColor(page)).toEqual(state.color);
   else await expect.poll(() => visibleParagraphs(page)).toContain(state.anchor);
 }
 module.exports = { formatFixtures, savedPosition, showReadingTools, visibleParagraphs, visibleComicColor, readFormatState, expectFormatState };

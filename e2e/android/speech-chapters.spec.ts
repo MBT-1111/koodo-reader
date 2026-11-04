@@ -84,7 +84,7 @@ test("stopping or exiting during slow preparation never creates a late native qu
   await page.waitForTimeout(1800); expect(await starts(page)).toHaveLength(0);
 });
 
-test("oversized continuous text leaves the current chapter available and PDF does not offer continuous chapters", async ({ page }) => {
+test("oversized continuous text leaves the current chapter available and text PDF continues page by page", async ({ page }) => {
   await open(page, 0, `<p>${"x".repeat(2000001)}</p>`);
   const checkbox = page.getByRole("checkbox", { name: "Continue to next chapters", exact: true });
   await checkbox.check(); await page.getByRole("button", { name: "Read aloud", exact: true }).click();
@@ -101,5 +101,11 @@ test("oversized continuous text leaves the current chapter available and PDF doe
   await page.locator(".book-list-item").filter({ hasText: "安卓 PDF 样本" }).locator(".book-item-cover").click();
   await expect(page.locator("#page-area")).toHaveAttribute("aria-busy", "false");
   await showReadingTools(page); await page.getByRole("button", { name: "Text to speech", exact: true }).click();
-  await expect(checkbox).toBeDisabled(); await expect(checkbox).not.toBeChecked();
+  await expect(checkbox).toBeEnabled(); await checkbox.check();
+  await page.getByRole("button", { name: "Read aloud", exact: true }).click();
+  await expect.poll(() => starts(page)).toHaveLength(2);
+  const pdf = (await starts(page))[1];
+  expect(pdf).toMatchObject({ isPdf: true, saveReadingPosition: true, chapterIndex: 0 });
+  expect(pdf.followingChapters).toHaveLength(7);
+  expect(JSON.stringify(pdf.followingChapters)).toContain("PDF page 8");
 });

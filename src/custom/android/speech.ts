@@ -1,7 +1,7 @@
 import { Capacitor, registerPlugin, type PluginListenerHandle } from "@capacitor/core";
 
 export interface AndroidVoice { name: string; locale: string; network: boolean }
-export interface AndroidSpeechPosition { id: string; bookKey: string; chapterDocIndex: number; chapterTitle: string; text: string }
+export interface AndroidSpeechPosition { id: string; bookKey: string; chapterDocIndex: number; chapterTitle: string; text: string; page?: number }
 export interface AndroidSpeechState {
   status: "idle" | "buffering" | "playing" | "paused" | "completed" | "error";
   bookKey: string;

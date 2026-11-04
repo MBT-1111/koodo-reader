@@ -17,8 +17,12 @@ final class NativeSpeechProgress {
         } catch (Exception ignored) { return null; }
     }
     static synchronized JSObject save(Context context, String bookKey, int chapter, String title, String text) {
+        return save(context, bookKey, chapter, title, text, false);
+    }
+    static synchronized JSObject save(Context context, String bookKey, int chapter, String title, String text, boolean pdf) {
         JSObject position = new JSObject().put("id", UUID.randomUUID().toString()).put("bookKey", bookKey)
             .put("chapterDocIndex", chapter).put("chapterTitle", title).put("text", NativeSpeechQueue.readingAnchor(text));
+        if (pdf) position.put("page", chapter);
         if (!store(context).edit().putString(bookKey, position.toString()).commit()) throw new IllegalStateException("ANDROID_SPEECH_PROGRESS");
         return position;
     }

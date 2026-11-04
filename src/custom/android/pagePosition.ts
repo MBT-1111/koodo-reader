@@ -7,7 +7,7 @@ interface ComicRendition {
   goToChapterIndex?(index: number): unknown;
 }
 
-export function visibleComicIndex(area: HTMLElement | null): number | undefined {
+export function visiblePageIndex(area: HTMLElement | null): number | undefined {
   const outer = area?.querySelector<HTMLIFrameElement>("iframe"), doc = outer?.contentDocument, view = area?.ownerDocument.defaultView;
   if (!area || !outer || !doc || !view) return;
   const bounds = area.getBoundingClientRect(), offset = outer.getBoundingClientRect();
@@ -24,8 +24,8 @@ export function visibleComicIndex(area: HTMLElement | null): number | undefined 
   return selected;
 }
 
-// Save the dominant visible comic page, rather than a partly visible next page.
-export function adaptAndroidComicPosition(rendition: ComicRendition, readVisibleIndex: () => number | undefined) {
+// Save the dominant visible PDF/comic page, rather than a partly visible next page.
+export function adaptAndroidPagePosition(rendition: ComicRendition, readVisibleIndex: () => number | undefined, pdf = false) {
   const original = rendition.getPosition.bind(rendition);
   let lastVisible: number | undefined;
   const currentIndex = () => {
@@ -38,7 +38,8 @@ export function adaptAndroidComicPosition(rendition: ComicRendition, readVisible
     if (index === undefined) return position;
     const chapter = chapters[index];
     if (!chapter || typeof chapter.href !== "string") return position;
-    return { ...position, chapterDocIndex: String(index), chapterHref: chapter.href, chapterTitle: chapter.label || chapter.href, percentage: String((index + 1) / chapters.length) };
+    return { ...position, chapterDocIndex: String(index), chapterHref: chapter.href, chapterTitle: pdf ? String(index + 1) : chapter.label || chapter.href,
+      percentage: String(pdf ? index / Math.max(1, chapters.length - 1) : (index + 1) / chapters.length), ...(pdf ? { page: String(index) } : {}) };
   };
   const jump = rendition.goToChapterIndex?.bind(rendition);
   if (jump) for (const method of ["next", "prev"] as const) {

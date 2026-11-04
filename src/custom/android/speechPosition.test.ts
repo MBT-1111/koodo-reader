@@ -4,7 +4,7 @@ vi.mock("../../assets/lib/kookit-extra-browser.min", () => ({ ConfigService: { s
 vi.mock("./bootstrap", () => ({ flushAndroidPreferences: mocks.flush }));
 vi.mock("../../utils/platform", () => ({ isNativeAndroid: true }));
 vi.mock("./speech", () => ({ hasAndroidSpeech: () => true, androidSpeech: { readingPosition: mocks.native } }));
-import { flushSpeechReadingPositions, followSpeechPosition } from "./speechPosition";
+import { flushSpeechReadingPositions, followSpeechPosition, speechReadingPosition } from "./speechPosition";
 const position = { id: "test-position", bookKey: "test-book", chapterDocIndex: 1, chapterTitle: "Next", text: "Original sentence." };
 beforeEach(() => { vi.clearAllMocks(); mocks.native.mockResolvedValue({ positions: [position] }); mocks.flush.mockResolvedValue(undefined); });
 it("persists suspended speech anchors into normal reading progress before acknowledging them", async () => {
@@ -17,6 +17,11 @@ it("retains native anchors when saving the reading preferences fails", async () 
   mocks.flush.mockRejectedValue(new Error("storage failed"));
   await expect(flushSpeechReadingPositions()).rejects.toThrow("storage failed");
   expect(mocks.native).toHaveBeenCalledTimes(1);
+});
+it("restores a PDF page using its zero-based index without changing reflowable book positions", () => {
+  expect(speechReadingPosition({ ...position, page: 2 })).toMatchObject({ page: "2", chapterDocIndex: "1" });
+  expect(speechReadingPosition({ ...position, page: 0 })).toHaveProperty("page", "0");
+  expect(speechReadingPosition(position)).not.toHaveProperty("page");
 });
 it("does not save or highlight a stale navigation after the reader changes", async () => {
   let current = true;

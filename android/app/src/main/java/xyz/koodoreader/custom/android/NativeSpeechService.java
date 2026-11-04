@@ -47,7 +47,7 @@ public class NativeSpeechService extends Service {
     private File cloudDirectory;
     private final Map<Integer, File> clips = new LinkedHashMap<>();
     private int cloudPosition;
-    private boolean saveReadingPosition;
+    private boolean saveReadingPosition, pdfReadingPosition;
     private String savedPositionToken = "";
     private JSObject readingPosition;
     private NativeRoleSpeech roleAI;
@@ -179,6 +179,7 @@ public class NativeSpeechService extends Service {
         }
         List<Integer> chapterIndexes = null;
         if (request.has("saveReadingPosition") && !(request.get("saveReadingPosition") instanceof Boolean)) throw new IllegalArgumentException("ANDROID_SPEECH_INPUT");
+        if (request.has("isPdf") && !(request.get("isPdf") instanceof Boolean)) throw new IllegalArgumentException("ANDROID_SPEECH_INPUT");
         if (Arrays.asList("__proto__", "constructor", "prototype").contains(key)) throw new IllegalArgumentException("ANDROID_SPEECH_INPUT");
         List<RoleChapter> pendingRoles = new ArrayList<>();
         long preparedSize = text.stream().mapToLong(String::length).sum();
@@ -241,6 +242,7 @@ public class NativeSpeechService extends Service {
             }
             stop(); cloud = nextCloud; roleVoices.putAll(nextVoices); chapterNames.putAll(nextChapterNames); multiRole = roles != null; source = requestedSource;
             saveReadingPosition = request.optBoolean("saveReadingPosition", false);
+            pdfReadingPosition = request.optBoolean("isPdf", false);
             queue = next; bookKey = key; title = name; error = "";
             roleAI = nextAI; roleChapters.addAll(pendingRoles); queuedRoleChapter = next.chapters.get(0);
             resumeSafely(); return;
@@ -255,6 +257,7 @@ public class NativeSpeechService extends Service {
         queue = next; bookKey = key; title = name; error = ""; source = "system";
         chapterNames.putAll(nextChapterNames);
         saveReadingPosition = request.optBoolean("saveReadingPosition", false);
+        pdfReadingPosition = request.optBoolean("isPdf", false);
         resumeSafely();
     }
 
@@ -402,7 +405,7 @@ public class NativeSpeechService extends Service {
         if (engine != null) engine.stop();
         closeCloud();
         queue = null; status = "idle"; bookKey = ""; error = ""; multiRole = false; chapterNames.clear();
-        saveReadingPosition = false; savedPositionToken = ""; readingPosition = null;
+        saveReadingPosition = false; pdfReadingPosition = false; savedPositionToken = ""; readingPosition = null;
         releasePlayback(); session.setActive(false);
         getSystemService(NotificationManager.class).cancel(NOTIFICATION);
         publish();
@@ -425,7 +428,7 @@ public class NativeSpeechService extends Service {
         if (!saveReadingPosition || queue == null || bookKey.isEmpty() || savedPositionToken.equals(queue.positionToken())) return;
         int chapter = queue.chapters.get(queue.index);
         try {
-            readingPosition = NativeSpeechProgress.save(this, bookKey, chapter, chapterNames.getOrDefault(chapter, ""), queue.anchors.get(queue.index));
+            readingPosition = NativeSpeechProgress.save(this, bookKey, chapter, chapterNames.getOrDefault(chapter, ""), queue.anchors.get(queue.index), pdfReadingPosition);
             savedPositionToken = queue.positionToken();
         } catch (RuntimeException failure) {
             queue.pause(); if (engine != null) engine.stop(); closeCloud(); status = "error"; error = "ANDROID_SPEECH_FAILED";

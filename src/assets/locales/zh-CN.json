@@ -15,7 +15,7 @@
   "android.stats.moreActivity": "较多",
   "android.speech.fromSelection": "本次朗读从书内选中的句子开始。",
   "android.speech.autoChapters": "自动朗读后续章节",
-  "android.speech.autoChaptersHelp": "支持 EPUB、TXT 的系统、云语音与多角色连续朗读。正文按音频片段跟随并保存阅读位置，多角色只提前分析下一章。",
+  "android.speech.autoChaptersHelp": "EPUB、TXT、MOBI、AZW、AZW3 可逐章连续朗读，文字 PDF 可逐页连续朗读。系统、云语音与多角色朗读均跟随正文并保存阅读位置，多角色只提前分析下一章或下一页。",
   "android.speech.continuousScope": "从当前位置连续朗读后续章节，后台也可继续；关闭面板继续朗读，退出阅读器停止。",
   "android.speech.preparingChapters": "正在准备章节…",
   "android.speech.chapterLimit": "后续文字超出连续朗读的限制。可关闭自动朗读后续章节，仅朗读本章。",

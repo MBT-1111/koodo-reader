@@ -20,6 +20,7 @@ import { useAppStore } from "../../store/useAppStore";
 import { personalMode } from "../../custom/personal";
 import { hasReadingAI, readingAIIdentity, readingAIErrorKey } from "../../custom/ai/reader";
 import { clearTranslationLoading, getPageTranslationTexts } from "../../custom/ai/pageTranslation";
+import { isAndroid } from "../../utils/platform";
 
 export interface PageWidgetState {
   isSingle: boolean;
@@ -271,6 +272,10 @@ const PageWidget = () => {
     let pageInfo = await rendition.getProgress();
     if (!pageInfo) {
       return;
+    }
+    if (isAndroid && isReadingRawPDF(currentBook)) {
+      const page = Number(rendition.getPosition()?.chapterDocIndex);
+      if (Number.isInteger(page) && page >= 0) pageInfo = { ...pageInfo, currentPage: page + 1 };
     }
     if (
       isReadingRawPDF(currentBook) ||

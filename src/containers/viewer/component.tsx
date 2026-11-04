@@ -1,6 +1,6 @@
 import { useLatest } from "../../utils/hooks/useLatest";
 import { flushSpeechReadingPositions } from "../../custom/android/speechPosition";
-import { adaptAndroidComicPosition, visibleComicIndex } from "../../custom/android/comicPosition";
+import { adaptAndroidPagePosition, visiblePageIndex } from "../../custom/android/pagePosition";
 import { useEffect, useRef, useState } from "react";
 import { flushSync } from "react-dom";
 import BookUtil from "../../utils/file/bookUtil";
@@ -583,7 +583,9 @@ const Viewer = (props: ViewerProps) => {
       },
       Kookit
     );
-    if (isAndroid && propsRef.current.currentBook.format.startsWith("CB")) adaptAndroidComicPosition(rendition, () => visibleComicIndex(document.getElementById("page-area")));
+    if (isAndroid && (propsRef.current.currentBook.format.startsWith("CB") || isReadingRawPDF(propsRef.current.currentBook))) {
+      adaptAndroidPagePosition(rendition, () => visiblePageIndex(document.getElementById("page-area")), isReadingRawPDF(propsRef.current.currentBook));
+    }
     if (propsRef.current.currentBook.format === "TXT") {
       let bookLocation = ConfigService.getObjectConfig(
         propsRef.current.currentBook.key,

@@ -14,7 +14,8 @@ interface SpeechRendition {
 }
 
 export function speechReadingPosition(position: AndroidSpeechPosition) {
-  return { text: position.text, chapterDocIndex: String(position.chapterDocIndex), chapterTitle: position.chapterTitle, chapterHref: "", count: "ignore" };
+  return { text: position.text, chapterDocIndex: String(position.chapterDocIndex), chapterTitle: position.chapterTitle, chapterHref: "", count: "ignore",
+    ...(Number.isInteger(position.page) && position.page! >= 0 ? { page: String(position.page) } : {}) };
 }
 
 // Native anchors survive a suspended WebView or process death, and enter the same
