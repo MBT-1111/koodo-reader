@@ -868,7 +868,7 @@ const Header = (props: HeaderProps) => {
             ></span>
           </span>
         </div>
-        {!personalMode && !isAuthed && (
+        {!personalMode && !isAuthed && window.location.hostname !== "web.koodoreader.cn" && (
           <div
             className="setting-icon-container"
             onClick={() => {

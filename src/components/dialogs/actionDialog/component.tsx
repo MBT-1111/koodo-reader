@@ -7,6 +7,7 @@ import { useAppStore } from "../../../store/useAppStore";
 import toast from "react-hot-toast";
 import MoreAction from "../moreAction";
 import MarkAction from "../markAction";
+import DeleteDialog from "../deleteDialog";
 import {
   ConfigService,
   CollectionUtil,
@@ -14,7 +15,6 @@ import {
 import {
   CONTEXT_MENU_WIDTH,
   shouldSubmenuOpenLeft,
-  vexComfirmAsync,
 } from "../../../utils/common";
 
 import BookModel from "../../../models/Book";
@@ -39,9 +39,7 @@ export interface ActionDialogState {
 const collectionUtil = new CollectionUtil(ConfigService);
 declare var window: any;
 
-const ActionDialog = (
-  props: Pick<ActionDialogProps, "left" | "top">
-) => {
+const ActionDialog = (props: Pick<ActionDialogProps, "left" | "top">) => {
   const currentBook = useAppStore((s) => s.book.currentBook);
   const mode = useAppStore((s) => s.sidebar.mode);
   const handleEditDialog = useAppStore((s) => s.handleEditDialog);
@@ -66,13 +64,14 @@ const ActionDialog = (
   const handleAddCollectionDialog = useAppStore(
     (s) => s.handleAddCollectionDialog
   );
-  const { t } = useTranslation();
   const navigate = useNavigate();
+  const { t } = useTranslation();
   const [state, setState] = useState<ActionDialogState>(() => ({
     isShowExport: false,
     isShowMark: false,
     isExceed: shouldSubmenuOpenLeft(props.left, CONTEXT_MENU_WIDTH),
   }));
+  const [isOpenDissolvePopup, setIsOpenDissolvePopup] = useState(false);
 
   const updateState = (patch: Partial<ActionDialogState>) => {
     setState((prev) => ({ ...prev, ...patch }));
@@ -115,19 +114,16 @@ const ActionDialog = (
     handleReadingBook(currentBook);
     handleActionDialog(false);
   };
-  const handleDissolveCollection = async () => {
-    let key = currentBook.key;
-    let collection = collectionUtil.getCollection(key);
-    if (!collection) return;
-    let result = await vexComfirmAsync(
-      `<h3>${t("Dissolve collection")}</h3><p>${t(
-        "The collection will be removed and all books will be kept in your library."
-      )}</p>`
-    );
-    if (!result) return;
-    collectionUtil.dissolveCollection(key);
-    toast.success(t("Deletion successful"));
-    handleActionDialog(false);
+  const handleDissolveCollection = () => {
+    if (!collectionUtil.getCollection(currentBook.key)) return;
+    setIsOpenDissolvePopup(true);
+  };
+  const handleDissolvePopup = (isOpen: boolean) => {
+    setIsOpenDissolvePopup(isOpen);
+    if (!isOpen) handleActionDialog(false);
+  };
+  const handleDissolveConfirm = () => {
+    collectionUtil.dissolveCollection(currentBook.key);
     handleFetchBooks();
   };
   const handleRestoreBook = () => {
@@ -169,7 +165,8 @@ const ActionDialog = (
       }
     }
     if (
-      Object.keys(ConfigService.getAllListConfig("favoriteBooks")).length === 0 &&
+      Object.keys(ConfigService.getAllListConfig("favoriteBooks")).length ===
+        0 &&
       mode === "favorite"
     ) {
       navigate("/manager/empty");
@@ -191,9 +188,8 @@ const ActionDialog = (
     : null;
   const isFavorite = collection
     ? collectionUtil.isCollectionFavorite(collection)
-    : ConfigService.getAllListConfig("favoriteBooks").indexOf(
-        currentBook.key
-      ) > -1;
+    : ConfigService.getAllListConfig("favoriteBooks").indexOf(currentBook.key) >
+      -1;
   const moreActionProps = {
     left: props.left,
     top: props.top,
@@ -208,6 +204,14 @@ const ActionDialog = (
     isExceed: state.isExceed,
     handleMarkAction: handleMarkAction,
     menuItemIndex: isCollection ? 6 : 7,
+  };
+  const dissolveDialogProps = {
+    name: currentBook.name,
+    title: "Dissolve collection",
+    description:
+      "The collection will be removed and all books will be kept in your library.",
+    handleClose: () => handleDissolvePopup(false),
+    handleConfirm: handleDissolveConfirm,
   };
   if (mode === "trash") {
     return (
@@ -245,7 +249,7 @@ const ActionDialog = (
       <div
         className="action-dialog-container"
         onMouseLeave={() => {
-          handleActionDialog(false);
+          if (!isOpenDissolvePopup) handleActionDialog(false);
         }}
         onMouseEnter={() => {
           handleActionDialog(true);
@@ -291,8 +295,8 @@ const ActionDialog = (
               }}
             >
               <span
-                className="icon-folder view-icon"
-                style={{ fontSize: "14px" }}
+                className="icon-stack view-icon"
+                style={{ fontSize: "18px" }}
               ></span>
               <p className="action-name">
                 <Trans>Add to collection</Trans>
@@ -346,7 +350,11 @@ const ActionDialog = (
           >
             <span className="icon-trash-line view-icon"></span>
             <p className="action-name">
-              <Trans>Delete</Trans>
+              {isCollection ? (
+                <Trans>Delete collection</Trans>
+              ) : (
+                <Trans>Delete</Trans>
+              )}
             </p>
           </div>
           <div
@@ -366,10 +374,7 @@ const ActionDialog = (
               updateState({
                 isShowMark: true,
                 isShowExport: false,
-                isExceed: shouldSubmenuOpenLeft(
-                  props.left,
-                  CONTEXT_MENU_WIDTH
-                ),
+                isExceed: shouldSubmenuOpenLeft(props.left, CONTEXT_MENU_WIDTH),
               });
               const e = event || window.event;
               let x = e.clientX;
@@ -482,6 +487,7 @@ const ActionDialog = (
       </div>
       <MarkAction {...(markActionProps as any)} />
       <MoreAction {...(moreActionProps as any)} />
+      {isOpenDissolvePopup && <DeleteDialog {...dissolveDialogProps} />}
     </>
   );
 };

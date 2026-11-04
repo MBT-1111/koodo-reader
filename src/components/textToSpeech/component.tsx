@@ -1277,7 +1277,6 @@ const TextToSpeech = () => {
               let [voiceName, plugin] = selectedValue.split("#");
               const previousEngine =
                 ConfigService.getReaderConfig("voiceEngine");
-              ConfigService.setReaderConfig("voiceName", voiceName);
               let voice = voicesRef.current.find(
                 (item) => item.name === voiceName && item.plugin === plugin
               );
@@ -1296,6 +1295,7 @@ const TextToSpeech = () => {
                 handleSettingMode("account");
                 return;
               }
+              ConfigService.setReaderConfig("voiceName", voiceName);
               ConfigService.setReaderConfig("voiceEngine", newEngine);
               if (
                 voice.plugin === "official-ai-voice-plugin" &&

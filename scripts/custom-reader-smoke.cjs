@@ -32,6 +32,19 @@ const { isInside } = require('../src/utils/main/custom/runtime');
   });
   const page = await app.firstWindow(), errors = [];
   page.on('pageerror', error => { errors.push(error.message); console.error('PAGE_ERROR', error.message); });
+    const bridgeWindow = app.waitForEvent('window');
+    await app.evaluate(async ({ BrowserWindow }, preload) => {
+      const testWindow = new BrowserWindow({ show: false, webPreferences: { preload, contextIsolation: true, nodeIntegration: false } });
+      await testWindow.loadURL('about:blank');
+    }, path.resolve('preload.js'));
+    const bridgePage = await bridgeWindow;
+    await bridgePage.setContent('<input type="file" id="synthetic-file">');
+    const dropFixture = path.join(root, 'synthetic-drop.txt'); fs.writeFileSync(dropFixture, 'Synthetic file path fixture');
+    await bridgePage.locator('#synthetic-file').setInputFiles(dropFixture);
+    assert.equal(await bridgePage.evaluate(() => window.electronAPI.getPathForFile(document.querySelector('input').files[0])), dropFixture);
+    assert.equal(await bridgePage.evaluate(() => { try { window.electronAPI.getPathForFile({}); return false; } catch { return true; } }), true);
+    await bridgePage.close();
+    console.log('PASS current preload resolves genuine selected files and rejects arbitrary objects');
     await page.goto('http://127.0.0.1:3000/');
     await page.waitForTimeout(1000);
     await page.evaluate(async () => {
@@ -55,6 +68,25 @@ const { isInside } = require('../src/utils/main/custom/runtime');
     await page.reload();
     await page.waitForFunction(async () => (await import('/src/store/useAppStore.ts')).useAppStore.getState().reader.htmlBook?.rendition?.audioText);
     await page.waitForTimeout(1800);
+    const originalPosition = await page.evaluate(async () => {
+      const { useAppStore } = await import('/src/store/useAppStore.ts');
+      const rendition = useAppStore.getState().reader.htmlBook.rendition;
+      window.__originalNextPage = rendition.next.bind(rendition);
+      rendition.next = async () => { throw new Error('Synthetic toolbar page failure'); };
+      window.__turnFailureObserved = false;
+      window.addEventListener('unhandledrejection', event => {
+        if (event.reason?.message === 'Synthetic toolbar page failure') { event.preventDefault(); window.__turnFailureObserved = true; }
+      }, { once: true });
+      return { position: rendition.getPosition(), page: (await rendition.getProgress()).currentPage };
+    });
+    await page.locator('.reader-bottom-toolbar .next-chapter-single-container').evaluate(node => node.click());
+    await page.waitForFunction(() => window.__turnFailureObserved);
+    await page.evaluate(async () => { const { useAppStore } = await import('/src/store/useAppStore.ts'); useAppStore.getState().reader.htmlBook.rendition.next = window.__originalNextPage; });
+    await page.waitForTimeout(250);
+    await page.locator('.reader-bottom-toolbar .next-chapter-single-container').evaluate(node => node.click());
+    await page.waitForFunction(async previous => { const { useAppStore } = await import('/src/store/useAppStore.ts'); return (await useAppStore.getState().reader.htmlBook.rendition.getProgress()).currentPage > previous; }, originalPosition.page);
+    await page.evaluate(async position => { const { useAppStore } = await import('/src/store/useAppStore.ts'); await useAppStore.getState().reader.htmlBook.rendition.goToPosition(JSON.stringify(position)); }, originalPosition.position);
+    console.log('PASS new bottom-toolbar page turning recovers after an injected failure');
     const navigationIsHidden = () => page.waitForFunction(() => document.querySelector('.navigation-panel-container').getBoundingClientRect().right <= 0, undefined, { timeout: 5000 });
     const clickBook = () => page.evaluate(async () => {
       const { useAppStore } = await import('/src/store/useAppStore.ts');
@@ -293,7 +325,7 @@ const { isInside } = require('../src/utils/main/custom/runtime');
     assert.equal(await page.evaluate(() => document.documentElement.dataset.theme), 'dark');
     console.log('PASS disabling E-ink restores the saved dark theme');
     assert.deepEqual(errors, [], 'The source renderer must not raise uncaught errors');
-    fs.writeFileSync(path.join(output, 'custom-reader-smoke.json'), JSON.stringify({ passed: true, mode: 'isolated Windows runtime with localhost source renderer', checks: ['stale-navigation-lock', 'navigation-mouse-leave', 'navigation-ime-lifecycle', 'full-book-search-ime', 'navigation-pin-restoration', 'selection-during-speech', 'new-note-tag-feedback', 'existing-note-tag-feedback', 'speech-panel-reopen', 'system-pause-resume', 'custom-loading-pause', 'custom-position-resume', 'custom-fast-pause-resume', 'stop-after-reopen', 'monochrome-book-style', 'eink-theme-restoration', 'dialog-animation-lifecycle'] }, null, 2));
+    fs.writeFileSync(path.join(output, 'custom-reader-smoke.json'), JSON.stringify({ passed: true, mode: 'isolated Windows runtime with localhost source renderer', checks: ['preload-native-file-path', 'toolbar-error-unlock', 'stale-navigation-lock', 'navigation-mouse-leave', 'navigation-ime-lifecycle', 'full-book-search-ime', 'navigation-pin-restoration', 'selection-during-speech', 'new-note-tag-feedback', 'existing-note-tag-feedback', 'speech-panel-reopen', 'system-pause-resume', 'custom-loading-pause', 'custom-position-resume', 'custom-fast-pause-resume', 'stop-after-reopen', 'monochrome-book-style', 'eink-theme-restoration', 'dialog-animation-lifecycle'] }, null, 2));
   } finally {
     if (app) await app.close();
     if (root && path.dirname(path.resolve(root)) === path.resolve(require('os').tmpdir()) && path.basename(root).startsWith('krc-test-reader-')) fs.rmSync(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });

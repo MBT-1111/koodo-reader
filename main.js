@@ -322,11 +322,7 @@ const getReaderWindowChromeOptions = (isMergeWord) => {
     return { frame: false };
   }
   if (isMacOS) {
-    return {
-      frame: true,
-      titleBarStyle: "hidden",
-      trafficLightPosition: { x: 14, y: 16 },
-    };
+    return { frame: false, titleBarStyle: "customButtonsOnHover" };
   }
   return { frame: false };
 };
@@ -1232,7 +1228,7 @@ const createMainWin = () => {
     }
     ttsCacheUtil.resetTTSAudioIndex(dirPath);
   });
-  // 查询缓存大小（字节）：type 为 "tts" 或 "temp"
+  // 查询缓存大小（字节）：type 为 "tts"、"temp" 或 "all"
   ipcMain.handle("get-cache-size", async (event, config) => {
     const cacheType = config && config.type;
     if (cacheType === "tts") {
@@ -1242,6 +1238,12 @@ const createMainWin = () => {
         (total, cacheDir) => total + getDirSize(cacheDir),
         0
       );
+    } else if (cacheType === "all") {
+      if (config.storagePath !== undefined && (
+        typeof config.storagePath !== "string" || !path.isAbsolute(config.storagePath) ||
+        path.relative(dataPath, config.storagePath) !== ""
+      )) throw new Error("Invalid cache size request");
+      return getDirSize(dataPath) + getDirSize(getTTSCacheDirPath());
     }
     throw new Error("Invalid cache size request");
   });

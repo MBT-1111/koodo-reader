@@ -1,5 +1,7 @@
 # 上游维护策略
 
+2026-11-05：官方 `2650709b` 的 30 个新提交已在专用升级分支完成预合并及本地兼容检查，所有者已授权本轮合入 `custom/dev`、提交和推送。范围、冲突取舍、交付方式与验证边界见 [本轮桌面上游预检](UPSTREAM_UPGRADE_2026-11-05.md)。
+
 ## Phase 0 核验关系（历史）
 
 2026-10-31，`dev`、`custom/dev`、`origin/dev`、`origin/custom/dev`、本地缓存的 `upstream/dev` 均指向 `42443d83f9a536a3e1c501991ac8b6f635e69bc1`。`dev...custom/dev` 和 `custom/dev...upstream/dev` 的左右提交数均为 `0 0`。本轮未 fetch，不能据此断言远端实时没有新提交。

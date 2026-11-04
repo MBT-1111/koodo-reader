@@ -48,6 +48,7 @@ export interface SettingInfoState {
   snapshotList: { file: string; time: number }[];
   ttsCacheSize: string;
   tempCacheSize: string;
+  allDataSize: string;
   exportNotesFormat: string;
   exportHighlightsFormat: string;
   exportWordsFormat: string;
@@ -74,6 +75,7 @@ const DataSetting = () => {
     snapshotList: [],
     ttsCacheSize: "",
     tempCacheSize: "",
+    allDataSize: "",
     exportNotesFormat: "",
     exportHighlightsFormat: "",
     exportWordsFormat: "",
@@ -105,9 +107,7 @@ const DataSetting = () => {
     const prev = stateRef.current;
     const partial =
       typeof patch === "function"
-        ? (patch as (prev: SettingInfoState) => Partial<SettingInfoState>)(
-            prev
-          )
+        ? (patch as (prev: SettingInfoState) => Partial<SettingInfoState>)(prev)
         : patch;
     const next = { ...prev, ...partial };
     stateRef.current = next;
@@ -153,9 +153,14 @@ const DataSetting = () => {
       const tempSize = await window.electronAPI.invoke("get-cache-size", {
         type: "temp",
       });
+      const allSize = await window.electronAPI.invoke("get-cache-size", {
+        type: "all",
+        storagePath: getStorageLocation(),
+      });
       setState({
         ttsCacheSize: getCacheSizeLabel(ttsSize),
         tempCacheSize: getCacheSizeLabel(tempSize),
+        allDataSize: getCacheSizeLabel(allSize),
       });
     } catch (error) {
       console.error("Error loading cache sizes:", error);
@@ -282,9 +287,7 @@ const DataSetting = () => {
       });
     } catch (error) {
       toast.error(
-        error instanceof Error
-          ? error.message
-          : t("Validation failed"),
+        error instanceof Error ? error.message : t("Validation failed"),
         {
           id: "ko-reader-sync",
         }
@@ -565,9 +568,7 @@ const DataSetting = () => {
           setState({
             storageLocation: directoryHandle.name,
           });
-          toast.success(
-            t("Local folder access granted successfully")
-          );
+          toast.success(t("Local folder access granted successfully"));
           handleFetchBooks();
           setTimeout(() => {
             navigate("/manager/home");
@@ -620,10 +621,10 @@ const DataSetting = () => {
       skipped: number;
     };
     toast.success(
-      t(
-        "Imported {{imported}} records, skipped {{skipped}} existing records",
-        { imported, skipped }
-      )
+      t("Imported {{imported}} records, skipped {{skipped}} existing records", {
+        imported,
+        skipped,
+      })
     );
     handleFetchBooks();
   };
@@ -906,7 +907,11 @@ const DataSetting = () => {
               let dictHistory = await DatabaseService.getAllRecords("words");
               let books = await DatabaseService.getAllRecords("books");
               if (dictHistory.length > 0) {
-                const result = await exportDictionaryHistory(dictHistory, books, fmt);
+                const result = await exportDictionaryHistory(
+                  dictHistory,
+                  books,
+                  fmt
+                );
                 if (result === "success") {
                   toast.success(t("Export successful"), { id: "exporting" });
                 } else if (result === "failed") {
@@ -944,31 +949,7 @@ const DataSetting = () => {
             }
           </Trans>
         </p>
-        <div className="setting-dialog-new-title">
-          <Trans>Clear all data</Trans>
-          <span
-            className="change-location-button"
-            onClick={async () => {
-              let answer = await vexPromptAsync(
-                t("Please type 'CLEAR' to confirm"),
-                "",
-                ""
-              );
-              window.vex.closeAll(); // 关闭对话框
-              if (answer === "CLEAR") {
-                await clearAllData();
-                toast.success(t("Clear successful"));
-                setTimeout(() => {
-                  reloadManager();
-                }, 300);
-              } else if (answer) {
-                toast.error(t("Please type 'CLEAR' to confirm"));
-              }
-            }}
-          >
-            <Trans>Clear</Trans>
-          </span>
-        </div>
+
         {isElectron && (
           <>
             <div className="setting-dialog-new-title">
@@ -1033,6 +1014,45 @@ const DataSetting = () => {
             </p>
           </>
         )}
+        <div className="setting-dialog-new-title">
+          <Trans>Clear all data</Trans>
+          <div
+            style={{
+              display: "flex",
+              justifyContent: "flex-end",
+              alignItems: "center",
+            }}
+          >
+            <span
+              id="all-data-size"
+              style={{ marginRight: "10px", opacity: 0.6, fontSize: 13 }}
+            >
+              {stateRef.current.allDataSize}
+            </span>
+            <span
+              className="change-location-button"
+              onClick={async () => {
+                let answer = await vexPromptAsync(
+                  t("Please type 'CLEAR' to confirm"),
+                  "",
+                  ""
+                );
+                window.vex.closeAll(); // 关闭对话框
+                if (answer === "CLEAR") {
+                  await clearAllData();
+                  toast.success(t("Clear successful"));
+                  setTimeout(() => {
+                    reloadManager();
+                  }, 300);
+                } else if (answer) {
+                  toast.error(t("Please type 'CLEAR' to confirm"));
+                }
+              }}
+            >
+              <Trans>Clear</Trans>
+            </span>
+          </div>
+        </div>
       </>
     );
   };
