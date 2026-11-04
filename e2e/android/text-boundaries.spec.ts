@@ -1,13 +1,8 @@
 import { expect, test } from "@playwright/test";
-import { encodedTextFixtures } from "./encoding-fixtures.cjs";
+import { textBoundaryFixtures } from "./encoding-fixtures.cjs";
 import { showReadingTools } from "./fixtures.cjs";
 
-const small = encodedTextFixtures();
-const fixtures = [
-  ...small.filter(fixture => ["utf16le", "utf16be"].includes(fixture.encoding)).map(fixture => ({ ...fixture, title: `no-bom-${fixture.title}`, name: `no-bom-${fixture.name}`, buffer: fixture.buffer.subarray(2) })),
-  ...small.filter(fixture => ["utf8", "gb18030"].includes(fixture.encoding)).map(fixture => ({ ...fixture, title: `crlf-${fixture.title}`, name: `crlf-${fixture.name}`, buffer: Buffer.from(fixture.buffer.toString("latin1").replace(/\n/g, "\r\n"), "latin1") })),
-  ...encodedTextFixtures(35000).filter(fixture => ["utf8", "gb18030", "big5"].includes(fixture.encoding)).map(fixture => ({ ...fixture, title: `large-${fixture.title}`, name: `large-${fixture.name}` })),
-];
+const fixtures = textBoundaryFixtures();
 
 for (const fixture of fixtures) {
   test(`${fixture.name}: preserves Chinese text, chapter navigation and reload progress`, async ({ page, context }, testInfo) => {

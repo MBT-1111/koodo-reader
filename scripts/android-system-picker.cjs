@@ -31,11 +31,16 @@ function systemPicker(page, device) {
     await tapNode((node) => node.text === "KoodoReaderCustomTest");
   };
   const select = async (name) => {
-    const matches = (node) => node.text === name || (node["content-desc"] || "").startsWith(`${name},`);
+    const stem = name.replace(/\.[^.]+$/, "");
+    // File previews have their own accessibility labels; select the filename first.
+    const exact = (node) => node.text === name || node.text === stem;
+    const described = (node) => (node["content-desc"] || "").startsWith(`${name},`) || (node["content-desc"] || "").startsWith(`${stem},`);
     // DocumentsUI can remember a middle/bottom scroll position when reopening a folder.
     for (const [from, to, attempts] of [[1800, 750, 12], [750, 1800, 24]]) {
       for (let attempt = 0; attempt < attempts; attempt++) {
-        if ((await nodes()).some(matches)) { await tapNode(matches); return; }
+        const current = await nodes();
+        if (current.some(exact)) { await tapNode(exact); return; }
+        if (current.some(described)) { await tapNode(described); return; }
         await device.shell(`input swipe 540 ${from} 540 ${to} 300`);
       }
     }

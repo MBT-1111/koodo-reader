@@ -1,5 +1,9 @@
 # Android 手机原型
 
+2026-11-04 最新格式补验：Markdown、HTML、FB2、DOCX、CBZ 已通过真实系统选书器、翻页及进程重启后恢复。修复 Markdown/DOCX 导入筛选遗漏和安卓漫画跳页、位置偏移；216 项单测、10 项浏览器回归及 7 项隔离整机检查通过，新版已覆盖安装，原书库与登录保留。范围与控制台日志限制见 [ANDROID_FORMATS.md](ANDROID_FORMATS.md)。
+
+2026-11-04 最新编码补验：七份无 BOM/CRLF/多 MB TXT 已通过系统选书器、中文正文、目录、进程强制结束后文件访问和阅读位置恢复检查。9 项隔离整机检查及 13 项浏览器回归通过，主书库与登录保持一致，QA 包和样本已清理。详见 [ANDROID_TEXT_ENCODING.md](ANDROID_TEXT_ENCODING.md)。
+
 2026-11-04 后续范围：增加首页手动云同步、停用安卓自动调度；实现 EPUB/TXT 正文随朗读定位、保存普通阅读进度，以及原生多角色逐章分析。真实 MEGA 已在独立测试空间通过双向和部分书库合并，真实空间未混入样本。说明和最新验收见 [ANDROID_READING_SPEECH.md](ANDROID_READING_SPEECH.md)。
 
 2026-11-04 编码边界补充：推送检查点后修复安卓新导入的无 BOM UTF-16 TXT 乱码，补齐 CRLF 与约 3.8–5.3 MB 文本的目录、重载进度验收。200 项单测及 13 项生产浏览器回归通过；本批没有连接手机，新 APK 尚未安装。范围见 [ANDROID_TEXT_ENCODING.md](ANDROID_TEXT_ENCODING.md)。

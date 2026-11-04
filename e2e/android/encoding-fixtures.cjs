@@ -29,4 +29,12 @@ function encodedTextFixtures(paragraphsPerChapter = 35) {
   return buffers.map(([encoding, buffer]) => ({ encoding, name: `Koodo-Encoding-${encoding}.txt`, title: `Koodo-Encoding-${encoding}`, mimeType: "text/plain", buffer,
     anchor: (anchors[encoding] || anchors.gb18030)[0], secondAnchor: (anchors[encoding] || anchors.gb18030)[1] }));
 }
-module.exports = { encodedTextFixtures };
+function textBoundaryFixtures() {
+  const small = encodedTextFixtures();
+  return [
+    ...small.filter(fixture => ["utf16le", "utf16be"].includes(fixture.encoding)).map(fixture => ({ ...fixture, title: `no-bom-${fixture.title}`, name: `no-bom-${fixture.name}`, buffer: fixture.buffer.subarray(2) })),
+    ...small.filter(fixture => ["utf8", "gb18030"].includes(fixture.encoding)).map(fixture => ({ ...fixture, title: `crlf-${fixture.title}`, name: `crlf-${fixture.name}`, buffer: Buffer.from(fixture.buffer.toString("latin1").replace(/\n/g, "\r\n"), "latin1") })),
+    ...encodedTextFixtures(35000).filter(fixture => ["utf8", "gb18030", "big5"].includes(fixture.encoding)).map(fixture => ({ ...fixture, title: `large-${fixture.title}`, name: `large-${fixture.name}` })),
+  ];
+}
+module.exports = { encodedTextFixtures, textBoundaryFixtures };

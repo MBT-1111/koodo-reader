@@ -53,12 +53,16 @@ export interface ImportLocalState {
 
 // Convert supportedFormats to react-dropzone v14+ accept format
 // Key is MIME type, value is array of file extensions
+const formatMimeFallbacks: Record<string, string> = {
+  md: "text/markdown",
+  docx: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+};
 const supportedFormatsAccept = supportedFormats.reduce<
   Record<string, string[]>
 >((obj, ext) => {
   const extension = ext.replace(".", "");
   // CAJ and OFD have no widely registered MIME type, so the picker needs one from here.
-  const mimeType = CommonTool.getMimeType(extension);
+  const mimeType = CommonTool.getMimeType(extension) || formatMimeFallbacks[extension];
   if (mimeType) {
     if (!obj[mimeType]) obj[mimeType] = [];
     obj[mimeType].push(ext);

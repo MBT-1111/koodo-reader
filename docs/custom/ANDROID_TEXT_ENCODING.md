@@ -1,6 +1,6 @@
 # Android TXT 编码兼容验收
 
-2026-11-04 后续：下文无 BOM 识别修复已随最新主应用安装到手机；本文件保留该批本地编码测试的范围，不能据此扩大为无 BOM/大 TXT 真机验收。最新整体结果见 [ANDROID_READING_SPEECH.md](ANDROID_READING_SPEECH.md)。
+2026-11-04 最新：已补齐无 BOM UTF-16、CRLF 和三份多 MB 中文 TXT 的隔离真机检查，见文末“编码边界与大 TXT 真机补验”。下文保留前期各批次的验证范围；朗读与同步结果见 [ANDROID_READING_SPEECH.md](ANDROID_READING_SPEECH.md)。
 
 2026-11-04，分支 `codex/android-phone-prototype`。自动跨章真机通过后继续补齐 TXT 的非 UTF-8 编码验收。本批新增合成样本、浏览器回归及隔离真机脚本；现有解码路径已通过这些样本，没有增加转换依赖。
 
@@ -67,3 +67,32 @@ yarn test:android text-boundaries.spec.ts encoding.spec.ts
 | Big5 | 3,757,820 | 1119 | 1239 | 790 | 3326 |
 
 以上为 Windows Chrome 手机视口的一次观察，不作为手机性能或上限承诺。原始报告及单例用时在 `dist/android-device/text-boundary-browser.json`，构建摘要在 `text-boundary-local-report.json`。更新后的主应用 APK 已编译；本批没有检测到 ADB 手机，没有覆盖安装，也不将本地结果记为真机通过。实际系统选书器、原生持久映射及手机内存表现仍待补充。
+
+## 编码边界与大 TXT 真机补验
+
+返回安卓分支 `codex/android-phone-prototype` 后，在 SM-S9110 / Android 16 完成七份样本的系统选书器导入、中文显示、目录跳转、退出重载和原文件 SHA-256 检查：无 BOM UTF-16LE/BE 两份、CRLF 的 UTF-8/GB18030 两份，以及三份大 TXT。无 BOM 两份均持久保存为对应的 UTF-16LE/BE 编码。
+
+| 大文本编码 | 原始字节数 | 目录跳转后的分块索引 | 进程重启后 |
+| --- | ---: | ---: | --- |
+| UTF-8 | 5,332,834 | 280 | 分块记录保留，后半部正文可读 |
+| GB18030 | 3,827,820 | 280 | 分块记录保留，后半部正文可读 |
+| Big5 | 3,757,820 | 280 | 分块记录保留，后半部正文可读 |
+
+完成全部导入后强制结束 QA 进程，再逐本重开七份样本，均能继续访问系统文档、显示后半部中文并保留保存的位置。9 项整机检查、共享样本的 13 项生产浏览器回归、类型检查和 QA APK 编译通过；无页面脚本错误。本轮没有发现需要再修改正文解码逻辑的问题。
+
+浏览器与真机共用 `textBoundaryFixtures()`，新增可重复入口：
+
+```powershell
+yarn android:sync
+# SDK/JDK 环境沿用 ANDROID_PROTOTYPE.md 中的本机构建配置
+.\android\gradlew.bat -p android --offline --no-daemon -PrestoreQa :app:assembleDebug
+Copy-Item android/app/build/outputs/apk/debug/app-debug.apk dist/android-device/text-boundary-qa-debug.apk
+# adb/aapt 不在 PATH 时，先设置 ADB_PATH / AAPT_PATH
+yarn test:android:text-boundaries
+```
+
+脚本先核对包名、没有既有 QA 包、空书库和无真实 MEGA 会话，再执行测试；网页请求限制在本机和内嵌资源。主应用只读比较书库记录、设置和设备内计算的登录摘要，不将 MEGA 会话原文传出手机；设置不一致时仅报告摘要。结束后核验样本内容再清理，独立复查确认 QA 包和本轮 TXT 均已移除。主应用五张表、设置及 MEGA 登录摘要一致，本轮 `syncRecord` 也未变化。
+
+验收 APK 摘要为 `64c256fcd5b997b82d525db849a6de7fc02a0c0ce59a9003df885f3a20a6623f`，资源与本轮网页构建一致。报告在忽略跟踪的 `dist/android-device/text-boundary-device-report.json`、`text-boundary-browser-current.json`、`text-boundary-qa-artifact.json`。测试运行在独立 QA 包，未覆盖安装主应用；本轮改动尚未提交。
+
+这些结果覆盖当前手机上的七份合成样本，不代表任意无 BOM、混合/损坏编码或更大文件均可靠。报告中的耗时包含系统选书器、ADB 与触控自动化开销，不作纯解析性能比较，也未测量整机内存上限。

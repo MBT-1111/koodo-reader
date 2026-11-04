@@ -132,6 +132,7 @@
     "test:android:speech-progress": "node scripts/android-speech-progress-device.cjs",
     "test:android:mega-live": "node scripts/android-mega-live.cjs",
     "test:android:encoding": "node scripts/android-encoding-device.cjs",
+    "test:android:text-boundaries": "node scripts/android-encoding-device.cjs --boundaries",
     "test:android:screen": "node scripts/android-screen-device.cjs",
     "test:android:cloud-speech": "node scripts/android-cloud-speech-device.cjs",
     "test:android:eink": "node scripts/android-eink-device.cjs",
