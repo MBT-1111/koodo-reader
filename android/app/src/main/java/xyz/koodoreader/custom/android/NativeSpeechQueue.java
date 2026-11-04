@@ -8,6 +8,7 @@ import java.util.List;
 final class NativeSpeechQueue {
     final List<String> text = new ArrayList<>();
     final List<String> roles = new ArrayList<>();
+    final List<Integer> chapters = new ArrayList<>();
     int index;
     private long revision;
     private final String session = java.util.UUID.randomUUID().toString();
@@ -17,13 +18,29 @@ final class NativeSpeechQueue {
         this(paragraphs, limit, true);
     }
 
+    NativeSpeechQueue(List<String> paragraphs, int limit, List<Integer> chapterIndexes) {
+        this(paragraphs, limit, true, null, chapterIndexes);
+    }
+
     private NativeSpeechQueue(List<String> paragraphs, int limit, boolean sentences) {
         this(paragraphs, limit, sentences, null);
     }
 
     private NativeSpeechQueue(List<String> paragraphs, int limit, boolean sentences, List<String> speakers) {
+        this(paragraphs, limit, sentences, speakers, null);
+    }
+
+    private NativeSpeechQueue(List<String> paragraphs, int limit, boolean sentences, List<String> speakers, List<Integer> chapterIndexes) {
         if (limit < 2 || paragraphs.size() > 20000) throw new IllegalArgumentException("ANDROID_SPEECH_TEXT");
         if (speakers != null && (speakers.size() != paragraphs.size() || speakers.stream().anyMatch(role -> !Arrays.asList("narrator", "male", "female", "child").contains(role)))) throw new IllegalArgumentException("ANDROID_SPEECH_ROLES");
+        if (chapterIndexes != null) {
+            if (chapterIndexes.size() != paragraphs.size()) throw new IllegalArgumentException("ANDROID_SPEECH_CHAPTERS");
+            int previous = -1;
+            for (Integer chapter : chapterIndexes) {
+                if (chapter == null || chapter < previous || chapter < 0 || chapter >= 20000) throw new IllegalArgumentException("ANDROID_SPEECH_CHAPTERS");
+                previous = chapter;
+            }
+        }
         int size = 0;
         for (int index = 0; index < paragraphs.size(); index++) {
             String paragraph = paragraphs.get(index);
@@ -36,6 +53,7 @@ final class NativeSpeechQueue {
                     if (end < remaining.length() && Character.isHighSurrogate(remaining.charAt(end - 1))) end--;
                     text.add(remaining.substring(0, end));
                     roles.add(speakers == null ? "narrator" : speakers.get(index));
+                    chapters.add(chapterIndexes == null ? 0 : chapterIndexes.get(index));
                     if (text.size() > 20000) throw new IllegalArgumentException("ANDROID_SPEECH_TEXT");
                     remaining = remaining.substring(end).trim();
                 }
@@ -49,17 +67,24 @@ final class NativeSpeechQueue {
     }
 
     static NativeSpeechQueue cloud(List<String> paragraphs, List<String> speakers) {
-        NativeSpeechQueue queue = new NativeSpeechQueue(paragraphs, 1200, false, speakers);
+        return cloud(paragraphs, speakers, null);
+    }
+
+    static NativeSpeechQueue cloud(List<String> paragraphs, List<String> speakers, List<Integer> chapterIndexes) {
+        NativeSpeechQueue queue = new NativeSpeechQueue(paragraphs, 1200, false, speakers, chapterIndexes);
         List<String> combined = new ArrayList<>();
         List<String> combinedRoles = new ArrayList<>();
+        List<Integer> combinedChapters = new ArrayList<>();
         for (int index = 0; index < queue.text.size(); index++) {
             String part = queue.text.get(index), role = queue.roles.get(index);
             int last = combined.size() - 1;
-            if (last >= 0 && combinedRoles.get(last).equals(role) && combined.get(last).length() + part.length() + 1 <= 1200) combined.set(last, combined.get(last) + "\n" + part);
-            else { combined.add(part); combinedRoles.add(role); }
+            int chapter = queue.chapters.get(index);
+            if (last >= 0 && combinedChapters.get(last) == chapter && combinedRoles.get(last).equals(role) && combined.get(last).length() + part.length() + 1 <= 1200) combined.set(last, combined.get(last) + "\n" + part);
+            else { combined.add(part); combinedRoles.add(role); combinedChapters.add(chapter); }
         }
         queue.text.clear(); queue.text.addAll(combined);
         queue.roles.clear(); queue.roles.addAll(combinedRoles);
+        queue.chapters.clear(); queue.chapters.addAll(combinedChapters);
         return queue;
     }
 

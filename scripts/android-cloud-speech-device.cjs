@@ -16,6 +16,7 @@ async function main() {
   const report = { passed: false, checks: [], errors: [], requests: { azure: 0, mimo: 0, roles: 0 } };
   const mode = { status: 200, invalid: false, delay: 0, seconds: 6, analysisStatus: 200, analysisDelay: 0 };
   const synthesized = [];
+  const synthesisRequests = [], plans = new Map();
   const server = http.createServer(async (request, response) => {
     const chunks = []; for await (const chunk of request) chunks.push(chunk);
     if (request.url.startsWith("/v1beta/")) {
@@ -32,14 +33,15 @@ async function main() {
     }
     const azure = request.url.startsWith("/azure"), source = azure ? "azure" : "mimo";
     const body = Buffer.concat(chunks).toString(); report.requests[source]++;
-    const status = mode.status, delay = mode.delay, invalid = mode.invalid, seconds = mode.seconds;
+    const payload = azure ? null : JSON.parse(body), text = azure ? body : payload.messages[0].content;
+    synthesisRequests.push({ source, text });
+    const { status, delay, invalid, seconds } = { ...mode, ...plans.get(text) };
     if (delay) await new Promise(resolve => setTimeout(resolve, delay));
     if (response.destroyed) return;
     if (status !== 200) { response.writeHead(status); response.end("Synthetic failure"); return; }
     let valid = request.headers[azure ? "ocp-apim-subscription-key" : "api-key"] === "synthetic-cloud-key";
     if (azure) valid &&= body.includes("<speak") && body.includes('name="zh-CN-XiaoxiaoNeural"') && body.includes('style="cheerful" styledegree="1.5"') && body.includes('rate="+25%"') && request.headers["x-microsoft-outputformat"] === "audio-16khz-128kbitrate-mono-mp3";
     else {
-      const payload = JSON.parse(body);
       valid &&= payload.model === "mimo-v2.5-tts" && payload.messages[0].role === "assistant" && payload.audio.voice === "冰糖" && payload.audio.format === "mp3";
     }
     if (!valid) { response.writeHead(400); response.end("Synthetic contract mismatch"); return; }
@@ -98,6 +100,7 @@ async function main() {
     mode.status = 200;
     await tap(panel().getByRole("button", { name: "Read aloud", exact: true }));
     await expect.poll(async () => (await state()).status).toBe("playing");
+    await expect.poll(cacheCount).toBe(2);
     await tap(panel().getByRole("button", { name: "Pause", exact: true }));
     const paused = await state(), calls = report.requests.azure;
     await page.waitForTimeout(900); assert.equal((await state()).index, paused.index);
@@ -163,6 +166,62 @@ async function main() {
     await speech({ action: "start", source: "mimo", bookKey: fixtureBook.key, title: "Cloud speech QA", text: ["短队列。".repeat(300)], voice: "冰糖", speed: 1, config: fixtures[1].voiceList[0].config });
     await expect.poll(async () => (await state()).status, { timeout: 12000 }).toBe("completed"); await released();
     checked("cloud queue completion removes temporary clips, media notification and foreground service");
+
+    const text = Array.from({ length: 4 }, (_, index) => `预生成测试第${index + 1}段。` + "测".repeat(800));
+    const requestsFor = part => synthesisRequests.filter(request => request.text === part).length;
+    const startPrefetch = () => speech({ action: "start", source: "mimo", bookKey: fixtureBook.key, title: "Cloud prefetch QA", text, voice: "冰糖", speed: 1, config: fixtures[1].voiceList[0].config });
+    mode.seconds = 4;
+    plans.set(text[2], { delay: 2000 }); plans.set(text[3], { delay: 5000 });
+    await startPrefetch();
+    await expect.poll(cacheCount).toBe(2);
+    assert.equal((await state()).index, 0);
+    assert.equal(requestsFor(text[0]), 1); assert.equal(requestsFor(text[1]), 1); assert.equal(requestsFor(text[2]), 0);
+    await speech({ action: "pause" });
+    await page.waitForTimeout(500);
+    assert.equal((await state()).index, 0); assert.equal(await cacheCount(), 2);
+    await speech({ action: "resume" });
+    await expect.poll(async () => (await state()).status).toBe("playing");
+    assert.equal(requestsFor(text[0]), 1); assert.equal(requestsFor(text[1]), 1);
+    checked("cloud playback prepares exactly one following segment and cached pause/resume sends no duplicate request");
+    await expect.poll(async () => (await state()).index, { timeout: 8000 }).toBe(1);
+    await expect.poll(() => requestsFor(text[2])).toBe(1);
+    assert.equal(requestsFor(text[1]), 1); assert.ok(await cacheCount() <= 2);
+    await speech({ action: "next" });
+    await expect.poll(async () => (await state()).status).toBe("buffering");
+    assert.equal((await state()).index, 2);
+    await expect.poll(async () => (await state()).status).toBe("playing");
+    await expect.poll(() => requestsFor(text[3])).toBe(1);
+    assert.equal(requestsFor(text[2]), 1); assert.ok(await cacheCount() <= 2);
+    checked("automatic progression reuses prepared audio and Next adopts slow prefetch without resubmitting");
+    await speech({ action: "stop" }); await released();
+    await page.waitForTimeout(5500);
+    assert.equal((await state()).status, "idle"); await released();
+    checked("stopping in-flight prefetch discards its delayed result without reviving audio or cache");
+
+    plans.clear(); plans.set(text[1], { delay: 2000 }); mode.seconds = 6;
+    const pendingPrefetch = requestsFor(text[1]);
+    await startPrefetch();
+    await expect.poll(() => requestsFor(text[1])).toBe(pendingPrefetch + 1);
+    await speech({ action: "pause" });
+    await page.waitForTimeout(2500);
+    assert.equal((await state()).status, "paused"); assert.equal((await state()).index, 0);
+    assert.equal(await cacheCount(), 1); assert.equal(requestsFor(text[1]), pendingPrefetch + 1);
+    await speech({ action: "resume" });
+    await expect.poll(cacheCount).toBe(2);
+    assert.equal(requestsFor(text[1]), pendingPrefetch + 2);
+    await speech({ action: "stop" }); await released();
+    checked("pausing cancels pending prefetch, ignores late audio and only resubmits after explicit resume");
+
+    plans.clear(); plans.set(text[1], { status: 429 }); mode.seconds = 3;
+    const failedPrefetch = requestsFor(text[1]);
+    await startPrefetch();
+    await expect.poll(() => requestsFor(text[1])).toBe(failedPrefetch + 1);
+    await page.waitForTimeout(400);
+    assert.equal((await state()).status, "playing"); assert.equal((await state()).index, 0);
+    await expect.poll(async () => (await state()).error, { timeout: 6000 }).toBe("ANDROID_SPEECH_QUOTA");
+    assert.equal(requestsFor(text[1]), failedPrefetch + 1); await released();
+    checked("failed prefetch preserves current audio, then reports quota error without automatically retrying");
+    plans.clear(); await speech({ action: "stop" });
     await page.evaluate(endpoint => {
       const config = JSON.parse(localStorage.getItem("readerConfig") || "{}");
       Object.assign(config, { aiAssistanceModel: "android-role-qa", androidSpeechSource: "azure" });
@@ -189,11 +248,13 @@ async function main() {
     await page.waitForTimeout(4500); assert.equal(synthesized.length, beforeRoles); assert.equal((await state()).status, "idle");
     checked("Gemini analysis errors allow retry and stopping delayed analysis never starts cloud synthesis");
     mode.analysisDelay = 0; mode.seconds = 8;
+    const roleStart = synthesized.length;
     await tap(panel().getByRole("button", { name: "Read aloud", exact: true }));
     for (const [index, role] of ["narrator", "male", "female", "child"].entries()) {
       await expect.poll(async () => { const value = await state(); return value.status === "playing" ? value.role : ""; }, { timeout: 30000 }).toBe(role);
-      assert.equal((await state()).multiRole, true); assert.equal(synthesized.at(-1), index % 2 ? "mimo" : "azure");
+      assert.equal((await state()).multiRole, true); assert.equal(synthesized[roleStart + index], index % 2 ? "mimo" : "azure");
       if (index === 1) {
+        await expect.poll(cacheCount).toBe(2);
         const calls = synthesized.length;
         await speech({ action: "pause" }); await speech({ action: "resume" });
         await expect.poll(async () => (await state()).status).toBe("playing"); assert.equal(synthesized.length, calls);

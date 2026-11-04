@@ -14,6 +14,7 @@ import { selectedAzureDegree, selectedAzureStyle } from "../../custom/tts/emotio
 import type { PluginConfig, PluginVoice } from "../../utils/plugins/types";
 import { hasReadingAI, readingAIErrorKey } from "../../custom/ai/reader";
 import { analyzeAndroidSpeech, dialogueRoles, roleConfigKey, speechRoleLabels } from "../../custom/android/roleSpeech";
+import { prepareSpeechChapters } from "../../custom/android/speechChapters";
 import "./androidSpeech.css";
 
 interface AndroidSpeechProps { open: boolean; onClose: () => void }
@@ -42,13 +43,16 @@ const AndroidSpeech = ({ open, onClose }: AndroidSpeechProps) => {
   const [analysisError, setAnalysisError] = useState("");
   const [analysisNotice, setAnalysisNotice] = useState(0);
   const [analyzing, setAnalyzing] = useState(false);
+  const [preparing, setPreparing] = useState(false);
+  const [autoChapters, setAutoChapters] = useState(ConfigService.getReaderConfig("androidSpeechAutoChapters") === "yes");
   const [multiRole, setMultiRole] = useState(ConfigService.getAllListConfig("multiRoleVoiceBooks").includes(book.key));
   const [roleSelections, setRoleSelections] = useState(() => Object.fromEntries(dialogueRoles.map(role => [role, JSON.stringify([ConfigService.getReaderConfig(roleConfigKey(role, "Engine")), ConfigService.getReaderConfig(roleConfigKey(role, "Voice"))])])));
   const roleRequest = useRef<AbortController | null>(null);
   const voicesLoaded = useRef(false);
   const generation = useRef(0);
   const active = !!playback && playback.bookKey === book.key && ["buffering", "playing", "paused"].includes(playback.status);
-  const locked = busy || analyzing || active;
+  const locked = busy || analyzing || preparing || active;
+  const supportsAutoChapters = ["EPUB", "TXT"].includes(book.format) && (source === "system" || !multiRole);
   const speaking = playback?.status === "playing" || playback?.status === "buffering";
   const playbackError = playback?.status === "error" && playback.bookKey === book.key && (!playback.source || playback.source === source);
   const plugin = source === "system" ? undefined : (plugins || []).find((item) => item.key === cloudSpeechPlugins[source]);
@@ -68,8 +72,8 @@ const AndroidSpeech = ({ open, onClose }: AndroidSpeechProps) => {
     let listener: PluginListenerHandle | undefined;
     void androidSpeech.addListener("stateChanged", (state) => { if (!disposed) setPlayback(state); })
       .then((handle) => { if (disposed) void handle.remove(); else listener = handle; }).catch(() => { if (!disposed) setError(true); });
-    setMultiRole(ConfigService.getAllListConfig("multiRoleVoiceBooks").includes(book.key)); setAnalyzing(false); setAnalysisError("");
-    const closing = () => { generation.current++; roleRequest.current?.abort(); setAnalyzing(false); setBusy(false); handleSpeechAutoStart(false); handleSpeechStartText(""); };
+    setMultiRole(ConfigService.getAllListConfig("multiRoleVoiceBooks").includes(book.key)); setAnalyzing(false); setPreparing(false); setBusy(false); setAnalysisError("");
+    const closing = () => { generation.current++; roleRequest.current?.abort(); setAnalyzing(false); setPreparing(false); setBusy(false); handleSpeechAutoStart(false); handleSpeechStartText(""); };
     window.addEventListener(ANDROID_READER_CLOSE_EVENT, closing);
     return () => {
       disposed = true; generation.current++; roleRequest.current?.abort();
@@ -101,7 +105,7 @@ const AndroidSpeech = ({ open, onClose }: AndroidSpeechProps) => {
   const command = async (action: string) => {
     const current = ++generation.current;
     roleRequest.current?.abort(); roleRequest.current = null;
-    setBusy(true); setError(false); setAnalysisError(""); setAnalysisNotice(0);
+    setBusy(true); setPreparing(false); setError(false); setAnalysisError(""); setAnalysisNotice(0);
     try {
       let result: AndroidSpeechState;
       if (action === "start") {
@@ -116,6 +120,12 @@ const AndroidSpeech = ({ open, onClose }: AndroidSpeechProps) => {
         if (current !== generation.current || useAppStore.getState().reader.htmlBook !== htmlBook || useAppStore.getState().reader.isSpeechAutoStart) return;
         TTSUtil.setTextRules(getTextRules(book.key));
         const paragraphs = speechFromVisible(text, visible, selectedStart).map((item) => TTSUtil.applyTextRules(item));
+        let chapters: Awaited<ReturnType<typeof prepareSpeechChapters>> | undefined;
+        if (autoChapters && supportsAutoChapters) {
+          const controller = new AbortController(); roleRequest.current = controller; setPreparing(true);
+          chapters = await prepareSpeechChapters(htmlBook.rendition, paragraphs, item => TTSUtil.applyTextRules(item), controller.signal);
+          if (current !== generation.current || useAppStore.getState().reader.htmlBook !== htmlBook || useAppStore.getState().reader.isSpeechAutoStart) return;
+        }
         let classified: Awaited<ReturnType<typeof analyzeAndroidSpeech>> | undefined;
         if (source !== "system" && multiRole) {
           const controller = new AbortController(); roleRequest.current = controller; setAnalyzing(true);
@@ -132,6 +142,7 @@ const AndroidSpeech = ({ open, onClose }: AndroidSpeechProps) => {
           return option ? [[role, { source: option.source, config: voiceConfig(option.voice, option.config) }]] : [];
         }));
         result = await androidSpeech.execute({ action, bookKey: book.key, title: book.name, text: classified?.text || paragraphs, voice, speed: Number(speed), source,
+          ...chapters,
           ...(source !== "system" && plugin && cloudVoice ? { config: voiceConfig(cloudVoice, plugin.config) } : {}),
           ...(classified ? { roles: classified.roles, roleVoices } : {}) });
         if (current === generation.current && !useAppStore.getState().reader.isSpeechAutoStart && useAppStore.getState().reader.speechStartText === selectedStart) handleSpeechStartText("");
@@ -143,16 +154,18 @@ const AndroidSpeech = ({ open, onClose }: AndroidSpeechProps) => {
     } catch (failure) {
       if (current === generation.current) {
         if (failure instanceof Error && failure.message === "ANDROID_SPEECH_SELECTION") setAnalysisError("android.speech.selectionMissing");
+        else if (failure instanceof Error && failure.message === "ANDROID_SPEECH_CHAPTER_LIMIT") setAnalysisError("android.speech.chapterLimit");
+        else if (failure instanceof Error && failure.message === "ANDROID_SPEECH_CHAPTERS") setAnalysisError("android.speech.chapterFailed");
         else setError(true);
       }
     }
-    finally { if (current === generation.current) { setBusy(false); setAnalyzing(false); roleRequest.current = null; } }
+    finally { if (current === generation.current) { setBusy(false); setAnalyzing(false); setPreparing(false); roleRequest.current = null; } }
   };
 
   useEffect(() => {
     if (!open || !isSpeechAutoStart) return;
     if (!hasAndroidSpeech()) { handleSpeechAutoStart(false); return; }
-    if (analyzing) { generation.current++; roleRequest.current?.abort(); setAnalyzing(false); setBusy(false); return; }
+    if (analyzing || preparing) { generation.current++; roleRequest.current?.abort(); setAnalyzing(false); setPreparing(false); setBusy(false); return; }
     if (busy || analyzing || !voicesLoaded.current || !htmlBook || htmlBook.key !== book.key) return;
     // Consume the intent before starting; another render or a delayed reply must not replay it.
     if (!useAppStore.getState().reader.isSpeechAutoStart) return;
@@ -162,7 +175,7 @@ const AndroidSpeech = ({ open, onClose }: AndroidSpeechProps) => {
     void command("start");
     // The store intent and voice readiness trigger this action, not command's identity.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, isSpeechAutoStart, busy, analyzing, voice, voices.length, htmlBook, book.key]);
+  }, [open, isSpeechAutoStart, busy, analyzing, preparing, voice, voices.length, htmlBook, book.key]);
 
   if (!open) return null;
   return (
@@ -171,11 +184,15 @@ const AndroidSpeech = ({ open, onClose }: AndroidSpeechProps) => {
       <section className="android-speech" role="dialog" aria-modal="true" aria-label={t("Text to speech")} aria-busy={busy}>
         <div className="android-reader-sheet-heading"><span>{t("Text to speech")}</span><button type="button" aria-label={t("Close")} onClick={onClose}><span className="icon-close" aria-hidden="true" /></button></div>
         {!hasAndroidSpeech() ? <p>{t("android.speech.nativeOnly")}</p> : <div className="android-speech-body">
-          <p>{t(source === "system" ? "android.speech.scope" : "android.speech.cloudScope")}</p>
+          <p>{t(autoChapters && supportsAutoChapters ? "android.speech.continuousScope" : source === "system" ? "android.speech.scope" : "android.speech.cloudScope")}</p>
+          <label className="android-speech-auto"><input type="checkbox" checked={autoChapters && supportsAutoChapters} disabled={locked || !supportsAutoChapters} onChange={event => {
+            setAutoChapters(event.target.checked); ConfigService.setReaderConfig("androidSpeechAutoChapters", event.target.checked ? "yes" : "no");
+          }} />{t("android.speech.autoChapters")}</label>
+          <p>{t("android.speech.autoChaptersHelp")}</p>
           {speechStartText && <p role="status">{t("android.speech.fromSelection")}</p>}
           <label>{t("android.speech.service")}<select aria-label={t("android.speech.service")} disabled={active} value={source} onChange={(event) => {
             const next = event.target.value as SpeechSource;
-            generation.current++; roleRequest.current?.abort(); setAnalyzing(false); setAnalysisError(""); setAnalysisNotice(0);
+            generation.current++; roleRequest.current?.abort(); setAnalyzing(false); setPreparing(false); setBusy(false); setAnalysisError(""); setAnalysisNotice(0);
             setSource(next); setVoice(ConfigService.getReaderConfig(speechVoiceKey(next)) || "");
           }}>
             <option value="system">{t("android.speech.system")}</option><option value="azure">{t("android.speech.azure")}</option><option value="mimo">{t("android.speech.mimo")}</option>
@@ -218,9 +235,10 @@ const AndroidSpeech = ({ open, onClose }: AndroidSpeechProps) => {
             {[0.5, 0.75, 1, 1.25, 1.5, 2, 2.5, 3].map((value) => <option key={value} value={value}>{value}×</option>)}
           </select></label>
           {analyzing && <p role="status">{t("Analyzing roles, please wait...")}</p>}
+          {preparing && <p role="status">{t("android.speech.preparingChapters")}</p>}
           {!!analysisNotice && <p role="status">{t("custom.ai.roleFallback", { count: analysisNotice })}</p>}
           {analysisError && <p role="alert">{t(analysisError)}</p>}
-          {!analyzing && playback?.bookKey === book.key && playback.total > 0 && <p role="status">{t(`android.speech.${playback.status}`)} · {playback.index + 1}/{playback.total}{playback.multiRole && playback.role ? ` · ${t(speechRoleLabels[playback.role])}` : ""}</p>}
+          {!analyzing && playback?.bookKey === book.key && playback.total > 0 && <p role="status">{t(`android.speech.${playback.status}`)} · {playback.chapterTitle ? `${playback.chapterTitle} · ` : ""}{playback.index + 1}/{playback.total}{playback.multiRole && playback.role ? ` · ${t(speechRoleLabels[playback.role])}` : ""}</p>}
           {(error || playbackError) && <p role="alert">{t(playbackError && playback?.error === "ANDROID_SPEECH_AUTH" ? "android.speech.authFailed" : playbackError && playback?.error === "ANDROID_SPEECH_QUOTA" ? "android.speech.quotaFailed" : "android.speech.failed")}</p>}
           <div className="android-speech-actions">
             {active && <button type="button" disabled={busy} onClick={() => void command("previous")}>{t(source === "system" ? "android.speech.previous" : "android.speech.previousSegment")}</button>}
@@ -229,7 +247,7 @@ const AndroidSpeech = ({ open, onClose }: AndroidSpeechProps) => {
             </button>
             {active && <button type="button" disabled={busy} onClick={() => void command("next")}>{t(source === "system" ? "android.speech.next" : "android.speech.nextSegment")}</button>}
             {active && <button type="button" disabled={busy} onClick={() => void command("stop")}>{t("android.speech.stop")}</button>}
-            {(analyzing || (!!speechStartText && !active)) && <button type="button" disabled={busy && !analyzing} onClick={() => void command("stop")}>{t("android.speech.stop")}</button>}
+            {(analyzing || preparing || (!!speechStartText && !active)) && <button type="button" disabled={busy && !analyzing && !preparing} onClick={() => void command("stop")}>{t("android.speech.stop")}</button>}
           </div>
         </div>}
       </section>

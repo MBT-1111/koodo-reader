@@ -54,4 +54,28 @@ public class NativeSpeechQueueTest {
         assertThrows(IllegalArgumentException.class, () -> new NativeSpeechQueue(Collections.singletonList("  \n "), 100));
         assertThrows(IllegalArgumentException.class, () -> new NativeSpeechQueue(Collections.singletonList("a".repeat(2000001)), 3500));
     }
+
+    @Test public void continuousCloudKeepsChaptersSeparateAndSkipsEmptyText() {
+        NativeSpeechQueue queue = NativeSpeechQueue.cloud(Arrays.asList("First.", "Again.", " ", "Next."), null, Arrays.asList(4, 4, 5, 6));
+        assertEquals(Arrays.asList("First.\nAgain.", "Next."), queue.text);
+        assertEquals(Arrays.asList(4, 6), queue.chapters);
+        queue.resume(); String first = queue.token();
+        assertTrue(queue.finish(first)); assertEquals(6, (int) queue.chapters.get(queue.index));
+        queue.move(-1); assertFalse(queue.finish(first)); assertEquals(4, (int) queue.chapters.get(queue.index));
+        queue.resume(); assertTrue(queue.finish(queue.token()));
+        assertTrue(queue.finish(queue.token())); assertFalse(queue.playing);
+    }
+
+    @Test public void continuousSystemRetainsChapterForEverySplitSentence() {
+        NativeSpeechQueue queue = new NativeSpeechQueue(Arrays.asList("First. Second.", "😀".repeat(4)), 5, Arrays.asList(0, 1));
+        assertEquals(Arrays.asList(0, 0, 0, 0, 1, 1), queue.chapters);
+        assertEquals("First. Second.".replace(" ", "") + "😀".repeat(4), String.join("", queue.text));
+    }
+
+    @Test public void rejectsInvalidChapterMappings() {
+        assertThrows(IllegalArgumentException.class, () -> NativeSpeechQueue.cloud(Arrays.asList("One", "Two"), null, Collections.singletonList(0)));
+        assertThrows(IllegalArgumentException.class, () -> NativeSpeechQueue.cloud(Arrays.asList("One", "Two"), null, Arrays.asList(1, 0)));
+        assertThrows(IllegalArgumentException.class, () -> new NativeSpeechQueue(Collections.singletonList("One"), 100, Collections.singletonList(-1)));
+        assertThrows(IllegalArgumentException.class, () -> new NativeSpeechQueue(Collections.singletonList("One"), 100, Collections.singletonList(20000)));
+    }
 }

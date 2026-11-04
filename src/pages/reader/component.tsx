@@ -35,7 +35,8 @@ import { READING_PANEL_TOGGLE_EVENT, toggleNavTab } from "../../utils/reader/mou
 import { isPaginatedBook, isReadingRawPDF, throttle } from "../../utils/common";
 import { getOuterDoc } from "../../utils/reader/docUtil";
 import { useAppStore } from "../../store/useAppStore";
-import { isAndroid } from "../../utils/platform";
+import { isAndroid, isNativeAndroid } from "../../utils/platform";
+import { setNativeKeepScreenOn } from "../../custom/android/storage";
 import { ANDROID_READER_CLOSE_EVENT, ANDROID_READER_DISMISS_EVENT, closeAndroidReader, dismissAndroidReaderOverlay } from "../../custom/android/navigation";
 import "../../components/androidHeader/android.css";
 import AndroidReaderControls from "../../components/androidReaderControls";
@@ -97,6 +98,14 @@ const PANEL_OPEN_STATE: Record<
   bottom: "isOpenBottomPanel",
 };
 const Reader = () => {
+  useEffect(() => {
+    if (!isNativeAndroid) return;
+    const keepScreenOn = (enabled: boolean) => {
+      void setNativeKeepScreenOn(enabled).catch(() => console.error("ANDROID_SCREEN_FAILED"));
+    };
+    keepScreenOn(true);
+    return () => keepScreenOn(false);
+  }, []);
   const currentBook = useAppStore((s) => s.book.currentBook);
   const htmlBook = useAppStore((s) => s.reader.htmlBook);
   const readerMode = useAppStore((s) => s.reader.readerMode);

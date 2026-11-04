@@ -13,6 +13,7 @@ import android.net.Uri;
 import android.database.Cursor;
 import android.provider.OpenableColumns;
 import android.util.Base64;
+import android.view.WindowManager;
 import org.json.JSONObject;
 import org.json.JSONArray;
 import java.io.InputStream;
@@ -26,6 +27,17 @@ public class KoodoStoragePlugin extends Plugin {
     private NativeLibraryManager store;
     private volatile boolean exportPending;
     private boolean pickerPending;
+
+    @PluginMethod
+    public void setKeepScreenOn(PluginCall call) {
+        if (!(call.getData().opt("enabled") instanceof Boolean)) { call.reject("ANDROID_SCREEN_INPUT"); return; }
+        boolean enabled = call.getBoolean("enabled", false);
+        bridge.executeOnMainThread(() -> {
+            if (enabled) getActivity().getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+            else getActivity().getWindow().clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+            call.resolve(new JSObject().put("enabled", (getActivity().getWindow().getAttributes().flags & WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON) != 0));
+        });
+    }
 
     @PluginMethod
     public void pickBooks(PluginCall call) {

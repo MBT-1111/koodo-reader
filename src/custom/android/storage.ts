@@ -8,6 +8,7 @@ export interface PreferencesSnapshot {
 }
 
 interface StoragePlugin {
+  setKeepScreenOn(request: { enabled: boolean }): Promise<{ enabled: boolean }>;
   pickBooks(): Promise<{ books: { uri: string; name: string; data: string }[] }>;
   execute(request: Record<string, unknown>): Promise<{ value: unknown }>;
   saveDocument(request: { name: string; mime: string; data: string; size: number; sha256: string }): Promise<
@@ -16,6 +17,7 @@ interface StoragePlugin {
 }
 
 const plugin = registerPlugin<StoragePlugin>("KoodoStorage");
+export const setNativeKeepScreenOn = (enabled: boolean) => plugin.setKeepScreenOn({ enabled });
 export const saveNativeDocument: StoragePlugin["saveDocument"] = (request) => plugin.saveDocument(request);
 export async function pickNativeBooks(): Promise<File[]> {
   const { books } = await plugin.pickBooks();

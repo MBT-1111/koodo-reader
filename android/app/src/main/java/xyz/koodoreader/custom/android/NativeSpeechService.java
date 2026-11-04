@@ -37,8 +37,12 @@ public class NativeSpeechService extends Service {
     private NativeCloudSpeech cloud;
     private final Map<String, NativeCloudSpeech> roleVoices = new HashMap<>();
     private boolean multiRole;
+    private final Map<Integer, String> chapterNames = new HashMap<>();
     private final ExecutorService cloudWorker = Executors.newSingleThreadExecutor();
     private Future<?> cloudTask;
+    private int cloudTaskIndex = -1, cloudErrorIndex = -1;
+    private long cloudRevision;
+    private String cloudError = "";
     private MediaPlayer player;
     private File cloudDirectory;
     private final Map<Integer, File> clips = new LinkedHashMap<>();
@@ -111,9 +115,14 @@ public class NativeSpeechService extends Service {
     }
 
     JSObject state() {
-        return new JSObject().put("status", status).put("bookKey", bookKey).put("index", queue == null ? 0 : queue.index)
+        JSObject result = new JSObject().put("status", status).put("bookKey", bookKey).put("index", queue == null ? 0 : queue.index)
             .put("total", queue == null ? 0 : queue.text.size()).put("error", error).put("source", source)
             .put("multiRole", multiRole).put("role", queue == null ? "narrator" : queue.roles.get(queue.index));
+        if (queue != null && !chapterNames.isEmpty()) {
+            int chapter = queue.chapters.get(queue.index);
+            result.put("chapterDocIndex", chapter).put("chapterTitle", chapterNames.get(chapter));
+        }
+        return result;
     }
 
     void start(JSONObject request) throws Exception {
@@ -141,8 +150,37 @@ public class NativeSpeechService extends Service {
             }
             if (requestedSource.equals("system")) throw new IllegalArgumentException("ANDROID_SPEECH_ROLES");
         }
+        List<Integer> chapterIndexes = null;
+        Map<Integer, String> nextChapterNames = new HashMap<>();
+        if (request.has("followingChapters")) {
+            if (roles != null) throw new IllegalArgumentException("ANDROID_SPEECH_CHAPTERS");
+            Object firstIndex = request.get("chapterIndex");
+            if (!(firstIndex instanceof Integer) || (Integer) firstIndex < 0 || (Integer) firstIndex >= 20000 || !(request.get("chapterTitle") instanceof String)) throw new IllegalArgumentException("ANDROID_SPEECH_CHAPTERS");
+            int chapter = (Integer) firstIndex;
+            String chapterTitle = request.getString("chapterTitle");
+            if (chapterTitle.length() > 512) throw new IllegalArgumentException("ANDROID_SPEECH_CHAPTERS");
+            chapterIndexes = new ArrayList<>(Collections.nCopies(text.size(), chapter));
+            nextChapterNames.put(chapter, chapterTitle);
+            JSONArray following = request.getJSONArray("followingChapters");
+            if (following.length() > 20000) throw new IllegalArgumentException("ANDROID_SPEECH_CHAPTERS");
+            for (int i = 0; i < following.length(); i++) {
+                JSONObject item = following.getJSONObject(i);
+                Object index = item.get("index");
+                if (!(index instanceof Integer) || (Integer) index <= chapter || (Integer) index >= 20000 || !(item.get("title") instanceof String)) throw new IllegalArgumentException("ANDROID_SPEECH_CHAPTERS");
+                chapter = (Integer) index;
+                String label = item.getString("title");
+                if (label.length() > 512) throw new IllegalArgumentException("ANDROID_SPEECH_CHAPTERS");
+                nextChapterNames.put(chapter, label);
+                JSONArray paragraphs = item.getJSONArray("text");
+                if (text.size() + paragraphs.length() > 20000) throw new IllegalArgumentException("ANDROID_SPEECH_TEXT");
+                for (int j = 0; j < paragraphs.length(); j++) {
+                    if (!(paragraphs.get(j) instanceof String)) throw new IllegalArgumentException("ANDROID_SPEECH_TEXT");
+                    text.add(paragraphs.getString(j)); chapterIndexes.add(chapter);
+                }
+            }
+        }
         if (!requestedSource.equals("system")) {
-            NativeSpeechQueue next = NativeSpeechQueue.cloud(text, roles);
+            NativeSpeechQueue next = NativeSpeechQueue.cloud(text, roles, chapterIndexes);
             NativeCloudSpeech nextCloud = new NativeCloudSpeech(requestedSource, request.getJSONObject("config"), speed);
             Map<String, NativeCloudSpeech> nextVoices = new HashMap<>();
             if (roles != null) {
@@ -155,10 +193,10 @@ public class NativeSpeechService extends Service {
                     nextVoices.put(role, new NativeCloudSpeech(voice.getString("source"), voice.getJSONObject("config"), speed));
                 }
             }
-            stop(); cloud = nextCloud; roleVoices.putAll(nextVoices); multiRole = roles != null; source = requestedSource;
+            stop(); cloud = nextCloud; roleVoices.putAll(nextVoices); chapterNames.putAll(nextChapterNames); multiRole = roles != null; source = requestedSource;
             queue = next; bookKey = key; title = name; error = ""; resumeSafely(); return;
         }
-        NativeSpeechQueue next = new NativeSpeechQueue(text, Math.min(3500, TextToSpeech.getMaxSpeechInputLength()));
+        NativeSpeechQueue next = new NativeSpeechQueue(text, Math.min(3500, TextToSpeech.getMaxSpeechInputLength()), chapterIndexes);
         Voice voice = engine.getVoices() == null ? null : engine.getVoices().stream().filter(item -> item.getName().equals(voiceName)
             && !item.getFeatures().contains(TextToSpeech.Engine.KEY_FEATURE_NOT_INSTALLED)).findFirst().orElse(null);
         if (voice == null) throw new IllegalArgumentException("ANDROID_SPEECH_UNAVAILABLE");
@@ -166,6 +204,7 @@ public class NativeSpeechService extends Service {
         if (engine.setVoice(voice) != TextToSpeech.SUCCESS || engine.setSpeechRate((float) speed) != TextToSpeech.SUCCESS)
             throw new IllegalStateException("ANDROID_SPEECH_UNAVAILABLE");
         queue = next; bookKey = key; title = name; error = ""; source = "system";
+        chapterNames.putAll(nextChapterNames);
         resumeSafely();
     }
 
@@ -191,33 +230,66 @@ public class NativeSpeechService extends Service {
     }
 
     private void speakCloud() {
+        status = "buffering"; publish();
+        trimCloudClips();
+        File cached = clips.get(queue.index);
+        if (cached != null && cached.isFile()) { playCloud(cached, queue, queue.token()); return; }
+        if (cloudErrorIndex == queue.index) { failCloud(cloudError); return; }
+        requestCloud(queue.index);
+    }
+
+    private void trimCloudClips() {
+        Iterator<Map.Entry<Integer, File>> entries = clips.entrySet().iterator();
+        while (entries.hasNext()) {
+            Map.Entry<Integer, File> entry = entries.next();
+            if (entry.getKey() < queue.index || entry.getKey() > queue.index + 1) {
+                releaseClip(entry.getValue()); entries.remove();
+            }
+        }
+    }
+
+    private void prefetchCloud() {
+        trimCloudClips();
+        int next = queue.index + 1;
+        if (next < queue.text.size() && !clips.containsKey(next) && cloudErrorIndex != next) requestCloud(next);
+    }
+
+    private void requestCloud(int index) {
+        // A segment ending (or Next) can adopt the in-flight prefetch without a second paid request.
+        if (cloudTask != null) {
+            if (cloudTaskIndex == index) return;
+            cancelCloudWork();
+        }
         final NativeSpeechQueue expected = queue;
         final NativeCloudSpeech sessionCloud = cloud;
-        final NativeCloudSpeech client = roleVoices.getOrDefault(queue.roles.get(queue.index), cloud);
-        final String token = queue.token();
-        final int index = queue.index;
-        status = "buffering"; publish();
-        File cached = clips.get(index);
-        if (cached != null && cached.isFile()) { playCloud(cached, expected, token); return; }
+        final NativeCloudSpeech client = roleVoices.getOrDefault(queue.roles.get(index), cloud);
+        final long revision = cloudRevision;
+        cloudTaskIndex = index;
         cloudTask = cloudWorker.submit(() -> {
             try {
                 File file = client.synthesize(expected.text.get(index), cloudDirectory);
                 main.post(() -> {
-                    if (cloud != sessionCloud || queue != expected || !queue.playing || !queue.token().equals(token)) { client.release(file); return; }
+                    if (cloud != sessionCloud || queue != expected || !queue.playing || cloudRevision != revision) { client.release(file); return; }
+                    cloudTask = null; cloudTaskIndex = -1;
                     clips.put(index, file);
-                    while (clips.size() > 2) { Integer old = clips.keySet().iterator().next(); releaseClip(clips.remove(old)); }
-                    playCloud(file, expected, token);
+                    if (index == queue.index) playCloud(file, expected, queue.token());
                 });
             } catch (Exception failure) {
                 main.post(() -> {
-                    if (cloud == sessionCloud && queue == expected && queue.playing && queue.token().equals(token)) {
-                        String code = failure.getMessage();
-                        fail();
-                        if ("ANDROID_SPEECH_AUTH".equals(code) || "ANDROID_SPEECH_QUOTA".equals(code)) { error = code; publish(); }
+                    if (cloud == sessionCloud && queue == expected && queue.playing && cloudRevision == revision) {
+                        cloudTask = null; cloudTaskIndex = -1;
+                        // Let the current audio finish; surface the next segment's error without retrying it.
+                        if (index == queue.index) failCloud(failure.getMessage());
+                        else { cloudErrorIndex = index; cloudError = failure.getMessage(); }
                     }
                 });
             }
         });
+    }
+
+    private void failCloud(String code) {
+        fail();
+        if ("ANDROID_SPEECH_AUTH".equals(code) || "ANDROID_SPEECH_QUOTA".equals(code)) { error = code; publish(); }
     }
 
     private void playCloud(File file, NativeSpeechQueue expected, String token) {
@@ -228,7 +300,7 @@ public class NativeSpeechService extends Service {
             next.setDataSource(file.getAbsolutePath());
             Runnable start = () -> {
                 if (player != next || queue != expected || !queue.playing || !queue.token().equals(token)) return;
-                try { next.setPlaybackParams(new PlaybackParams().setSpeed(roleVoices.getOrDefault(queue.roles.get(queue.index), cloud).playbackSpeed())); next.start(); status = "playing"; publish(); }
+                try { next.setPlaybackParams(new PlaybackParams().setSpeed(roleVoices.getOrDefault(queue.roles.get(queue.index), cloud).playbackSpeed())); next.start(); status = "playing"; publish(); prefetchCloud(); }
                 catch (RuntimeException failure) { fail(); }
             };
             next.setOnPreparedListener(value -> { if (player != next) return; if (cloudPosition > 0) { next.setOnSeekCompleteListener(seeked -> start.run()); next.seekTo(cloudPosition); } else start.run(); });
@@ -245,8 +317,8 @@ public class NativeSpeechService extends Service {
 
     private void releasePlayer() { if (player != null) { player.release(); player = null; } }
     private void releaseClip(File file) { if (cloud != null) cloud.release(file); for (NativeCloudSpeech voice : roleVoices.values()) voice.release(file); }
-    private void cancelCloudWork() { if (cloudTask != null) { cloudTask.cancel(true); cloudTask = null; } if (cloud != null) cloud.cancel(); for (NativeCloudSpeech voice : roleVoices.values()) voice.cancel(); }
-    private void closeCloud() { cancelCloudWork(); releasePlayer(); if (cloud != null) cloud.close(); for (NativeCloudSpeech voice : roleVoices.values()) voice.close(); roleVoices.clear(); cloud = null; clips.clear(); cloudPosition = 0; }
+    private void cancelCloudWork() { cloudRevision++; cloudTaskIndex = -1; if (cloudTask != null) { cloudTask.cancel(true); cloudTask = null; } if (cloud != null) cloud.cancel(); for (NativeCloudSpeech voice : roleVoices.values()) voice.cancel(); }
+    private void closeCloud() { cancelCloudWork(); releasePlayer(); if (cloud != null) cloud.close(); for (NativeCloudSpeech voice : roleVoices.values()) voice.close(); roleVoices.clear(); cloud = null; clips.clear(); cloudPosition = 0; cloudErrorIndex = -1; cloudError = ""; }
 
     void pause() {
         if (queue == null || !queue.playing) return;
@@ -262,7 +334,11 @@ public class NativeSpeechService extends Service {
     void move(int delta) {
         if (queue == null) return;
         boolean playing = queue.playing;
-        queue.move(delta); engine.stop(); cancelCloudWork(); releasePlayer(); cloudPosition = 0;
+        int target = Math.max(0, Math.min(queue.text.size() - 1, queue.index + delta));
+        boolean adoptPrefetch = playing && cloud != null && cloudTaskIndex == target;
+        queue.move(delta); engine.stop();
+        if (!adoptPrefetch) cancelCloudWork();
+        releasePlayer(); cloudPosition = 0;
         if (playing) { queue.resume(); speak(); }
         else { status = "paused"; publish(); }
     }
@@ -271,7 +347,7 @@ public class NativeSpeechService extends Service {
         if (queue != null) queue.pause();
         if (engine != null) engine.stop();
         closeCloud();
-        queue = null; status = "idle"; bookKey = ""; error = ""; multiRole = false;
+        queue = null; status = "idle"; bookKey = ""; error = ""; multiRole = false; chapterNames.clear();
         releasePlayback(); session.setActive(false);
         getSystemService(NotificationManager.class).cancel(NOTIFICATION);
         publish();

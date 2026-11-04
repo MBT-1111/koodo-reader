@@ -3,6 +3,8 @@
 .android-speech > p, .android-speech-body { margin: 0; padding: 8px 20px 24px; }
 .android-speech p { line-height: 1.5; font-size: 13px; }
 .android-speech label { display: grid; gap: 8px; margin: 16px 0; font-size: 14px; }
+.android-speech label.android-speech-auto { display: flex; align-items: center; min-height: 44px; }
+.android-speech-auto input { width: 20px; height: 20px; margin: 0; flex-shrink: 0; }
 .android-speech select { width: 100%; min-height: 44px; box-sizing: border-box; border: 1px solid var(--reader-muted); border-radius: 12px; padding: 8px; background: var(--reader-surface); color: inherit; }
 .android-speech-actions { display: flex; flex-wrap: wrap; gap: 8px; }
 .android-speech-actions button { flex: 1; min-height: 44px; border: 0; border-radius: 12px; padding: 8px; background: var(--reader-tint); color: var(--reader-accent); }

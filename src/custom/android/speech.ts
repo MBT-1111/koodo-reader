@@ -10,6 +10,8 @@ export interface AndroidSpeechState {
   source?: "system" | "azure" | "mimo";
   multiRole?: boolean;
   role?: "narrator" | "male" | "female" | "child";
+  chapterDocIndex?: number;
+  chapterTitle?: string;
 }
 interface SpeechPlugin {
   execute(request: Record<string, unknown>): Promise<AndroidSpeechState & { voices?: AndroidVoice[] }>;

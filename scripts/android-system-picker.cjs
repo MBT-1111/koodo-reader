@@ -32,9 +32,12 @@ function systemPicker(page, device) {
   };
   const select = async (name) => {
     const matches = (node) => node.text === name || (node["content-desc"] || "").startsWith(`${name},`);
-    for (let attempt = 0; attempt < 12; attempt++) {
-      if ((await nodes()).some(matches)) { await tapNode(matches); return; }
-      await device.shell("input swipe 540 1800 540 750 300");
+    // DocumentsUI can remember a middle/bottom scroll position when reopening a folder.
+    for (const [from, to, attempts] of [[1800, 750, 12], [750, 1800, 24]]) {
+      for (let attempt = 0; attempt < attempts; attempt++) {
+        if ((await nodes()).some(matches)) { await tapNode(matches); return; }
+        await device.shell(`input swipe 540 ${from} 540 ${to} 300`);
+      }
     }
     throw new Error("Test document is not visible in the system picker");
   };
@@ -49,8 +52,15 @@ async function importNativeFixture(page, device, fixture) {
   await device.push(fixture.buffer, `${shared}/${name}`);
   await device.shell(`am broadcast -a android.intent.action.MEDIA_SCANNER_SCAN_FILE -d file://${shared}/${name}`);
   const picker = systemPicker(page, device);
-  await picker.tap(page.locator(".import-from-local > button.import-book-box"));
-  await picker.folder(); await picker.select(name);
-  return name;
+  try {
+    await picker.tap(page.locator(".import-from-local > button.import-book-box"));
+    await picker.folder(); await picker.select(name);
+    return name;
+  } catch (error) {
+    const bytes = Buffer.from((await device.shell(`base64 ${shared}/${name}`)).toString(), "base64");
+    assert.ok(bytes.equals(Buffer.from(fixture.buffer)), "Preserve a temporary document whose contents changed");
+    await device.shell(`rm -f ${shared}/${name}`);
+    throw error;
+  }
 }
 module.exports = { systemPicker, importNativeFixture, shared };

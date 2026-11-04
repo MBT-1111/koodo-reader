@@ -1,5 +1,7 @@
 # Android 系统朗读原型
 
+2026-11-04 后续：系统语音的 EPUB/TXT 自动跨章已完成本地及短时 Home 真机检查，见 [ANDROID_CHAPTER_SPEECH.md](ANDROID_CHAPTER_SPEECH.md)。
+
 后续已接入手机 Azure / MiMo 云朗读，详见 [ANDROID_CLOUD_SPEECH.md](ANDROID_CLOUD_SPEECH.md)。本文保留系统语音批次的历史范围与验收记录。
 
 阅读工具栏的扬声器按钮打开手机朗读面板。音色来自设备的默认 TTS 引擎，支持选择音色、0.5–3 倍语速、暂停/继续、上一句、下一句和停止。没有安装语音时提示到安卓系统设置添加；需要联网的音色单独标记。普通浏览器预览只显示原生能力说明。
