@@ -47,8 +47,23 @@ public class NativeSpeechService extends Service {
     private File cloudDirectory;
     private final Map<Integer, File> clips = new LinkedHashMap<>();
     private int cloudPosition;
+    private boolean saveReadingPosition;
+    private String savedPositionToken = "";
+    private JSObject readingPosition;
+    private NativeRoleSpeech roleAI;
+    private final ExecutorService roleWorker = Executors.newSingleThreadExecutor();
+    private Future<?> roleTask;
+    private long roleRevision;
+    private int queuedRoleChapter = -1;
+    private boolean waitingForChapter;
+    private String roleError = "";
+    private static final class RoleChapter {
+        final int index; final List<String> text, anchors;
+        RoleChapter(int index, List<String> text, List<String> anchors) { this.index = index; this.text = text; this.anchors = anchors; }
+    }
+    private final ArrayDeque<RoleChapter> roleChapters = new ArrayDeque<>();
     private final BroadcastReceiver noisy = new BroadcastReceiver() {
-        @Override public void onReceive(Context context, Intent intent) { pause(); }
+        @Override public void onReceive(Context context, Intent intent) { stop(); }
     };
 
     final class LocalBinder extends Binder { NativeSpeechService service() { return NativeSpeechService.this; } }
@@ -65,7 +80,7 @@ public class NativeSpeechService extends Service {
             .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH).build();
         focus = new AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN).setAudioAttributes(attributes)
             .setWillPauseWhenDucked(true).setOnAudioFocusChangeListener(change -> {
-                if (change < 0) pause(); // Never restart speech unexpectedly after an interruption.
+                if (change < 0) stop(); // Interruption ends playback; only the reading anchor is retained.
             }, main).build();
         wake = ((PowerManager) getSystemService(POWER_SERVICE)).newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, getPackageName() + ":speech");
         wake.setReferenceCounted(false);
@@ -92,8 +107,7 @@ public class NativeSpeechService extends Service {
                 @Override public void onStart(String id) {}
                 @Override public void onDone(String id) { main.post(() -> {
                     if (queue == null || !queue.finish(id)) return;
-                    if (queue.playing) speak();
-                    else { status = "completed"; releasePlayback(); session.setActive(false); publish(); }
+                    afterSegment();
                 }); }
                 @Override public void onError(String id) { main.post(() -> {
                     if (queue != null && queue.playing && queue.token().equals(id)) fail();
@@ -122,6 +136,8 @@ public class NativeSpeechService extends Service {
             int chapter = queue.chapters.get(queue.index);
             result.put("chapterDocIndex", chapter).put("chapterTitle", chapterNames.get(chapter));
         }
+        if (queue != null) result.put("anchor", queue.anchors.get(queue.index));
+        if (readingPosition != null) result.put("position", readingPosition);
         return result;
     }
 
@@ -150,10 +166,26 @@ public class NativeSpeechService extends Service {
             }
             if (requestedSource.equals("system")) throw new IllegalArgumentException("ANDROID_SPEECH_ROLES");
         }
+        List<String> sourceAnchors = null;
+        if (request.has("anchors")) {
+            JSONArray values = request.getJSONArray("anchors");
+            if (values.length() != text.size()) throw new IllegalArgumentException("ANDROID_SPEECH_TEXT");
+            sourceAnchors = new ArrayList<>();
+            int size = 0;
+            for (int i = 0; i < values.length(); i++) {
+                if (!(values.get(i) instanceof String) || (size += values.getString(i).length()) > 2000000) throw new IllegalArgumentException("ANDROID_SPEECH_TEXT");
+                sourceAnchors.add(values.getString(i));
+            }
+        }
         List<Integer> chapterIndexes = null;
+        if (request.has("saveReadingPosition") && !(request.get("saveReadingPosition") instanceof Boolean)) throw new IllegalArgumentException("ANDROID_SPEECH_INPUT");
+        if (Arrays.asList("__proto__", "constructor", "prototype").contains(key)) throw new IllegalArgumentException("ANDROID_SPEECH_INPUT");
+        List<RoleChapter> pendingRoles = new ArrayList<>();
+        long preparedSize = text.stream().mapToLong(String::length).sum();
+        long preparedAnchors = sourceAnchors == null ? 0 : sourceAnchors.stream().mapToLong(String::length).sum();
+        int preparedCount = text.size();
         Map<Integer, String> nextChapterNames = new HashMap<>();
         if (request.has("followingChapters")) {
-            if (roles != null) throw new IllegalArgumentException("ANDROID_SPEECH_CHAPTERS");
             Object firstIndex = request.get("chapterIndex");
             if (!(firstIndex instanceof Integer) || (Integer) firstIndex < 0 || (Integer) firstIndex >= 20000 || !(request.get("chapterTitle") instanceof String)) throw new IllegalArgumentException("ANDROID_SPEECH_CHAPTERS");
             int chapter = (Integer) firstIndex;
@@ -172,15 +204,29 @@ public class NativeSpeechService extends Service {
                 if (label.length() > 512) throw new IllegalArgumentException("ANDROID_SPEECH_CHAPTERS");
                 nextChapterNames.put(chapter, label);
                 JSONArray paragraphs = item.getJSONArray("text");
-                if (text.size() + paragraphs.length() > 20000) throw new IllegalArgumentException("ANDROID_SPEECH_TEXT");
+                JSONArray anchors = item.optJSONArray("anchors");
+                if (anchors != null && anchors.length() != paragraphs.length()) throw new IllegalArgumentException("ANDROID_SPEECH_TEXT");
+                if ((preparedCount += paragraphs.length()) > 20000) throw new IllegalArgumentException("ANDROID_SPEECH_TEXT");
+                List<String> futureText = new ArrayList<>(), futureAnchors = new ArrayList<>();
                 for (int j = 0; j < paragraphs.length(); j++) {
                     if (!(paragraphs.get(j) instanceof String)) throw new IllegalArgumentException("ANDROID_SPEECH_TEXT");
-                    text.add(paragraphs.getString(j)); chapterIndexes.add(chapter);
+                    String paragraph = paragraphs.getString(j);
+                    if ((preparedSize += paragraph.length()) > 2000000) throw new IllegalArgumentException("ANDROID_SPEECH_TEXT");
+                    if (anchors != null && !(anchors.get(j) instanceof String)) throw new IllegalArgumentException("ANDROID_SPEECH_TEXT");
+                    String anchor = anchors == null ? paragraph : anchors.getString(j);
+                    if ((preparedAnchors += anchor.length()) > 2000000) throw new IllegalArgumentException("ANDROID_SPEECH_TEXT");
+                    if (roles != null) { futureText.add(paragraph); futureAnchors.add(anchor); continue; }
+                    text.add(paragraph); chapterIndexes.add(chapter);
+                    if (sourceAnchors != null) {
+                        sourceAnchors.add(anchor);
+                    }
                 }
+                if (roles != null && futureText.stream().anyMatch(value -> !value.trim().isEmpty())) pendingRoles.add(new RoleChapter(chapter, futureText, futureAnchors));
             }
         }
         if (!requestedSource.equals("system")) {
-            NativeSpeechQueue next = NativeSpeechQueue.cloud(text, roles, chapterIndexes);
+            NativeSpeechQueue next = NativeSpeechQueue.cloud(text, roles, chapterIndexes, sourceAnchors);
+            NativeRoleSpeech nextAI = pendingRoles.isEmpty() ? null : new NativeRoleSpeech(request.getJSONObject("roleAI"));
             NativeCloudSpeech nextCloud = new NativeCloudSpeech(requestedSource, request.getJSONObject("config"), speed);
             Map<String, NativeCloudSpeech> nextVoices = new HashMap<>();
             if (roles != null) {
@@ -194,9 +240,12 @@ public class NativeSpeechService extends Service {
                 }
             }
             stop(); cloud = nextCloud; roleVoices.putAll(nextVoices); chapterNames.putAll(nextChapterNames); multiRole = roles != null; source = requestedSource;
-            queue = next; bookKey = key; title = name; error = ""; resumeSafely(); return;
+            saveReadingPosition = request.optBoolean("saveReadingPosition", false);
+            queue = next; bookKey = key; title = name; error = "";
+            roleAI = nextAI; roleChapters.addAll(pendingRoles); queuedRoleChapter = next.chapters.get(0);
+            resumeSafely(); return;
         }
-        NativeSpeechQueue next = new NativeSpeechQueue(text, Math.min(3500, TextToSpeech.getMaxSpeechInputLength()), chapterIndexes);
+        NativeSpeechQueue next = new NativeSpeechQueue(text, Math.min(3500, TextToSpeech.getMaxSpeechInputLength()), chapterIndexes, sourceAnchors);
         Voice voice = engine.getVoices() == null ? null : engine.getVoices().stream().filter(item -> item.getName().equals(voiceName)
             && !item.getFeatures().contains(TextToSpeech.Engine.KEY_FEATURE_NOT_INSTALLED)).findFirst().orElse(null);
         if (voice == null) throw new IllegalArgumentException("ANDROID_SPEECH_UNAVAILABLE");
@@ -205,6 +254,7 @@ public class NativeSpeechService extends Service {
             throw new IllegalStateException("ANDROID_SPEECH_UNAVAILABLE");
         queue = next; bookKey = key; title = name; error = ""; source = "system";
         chapterNames.putAll(nextChapterNames);
+        saveReadingPosition = request.optBoolean("saveReadingPosition", false);
         resumeSafely();
     }
 
@@ -224,6 +274,8 @@ public class NativeSpeechService extends Service {
 
     private void speak() {
         wake.acquire(30 * 60 * 1000L);
+        if (waitingForChapter) { status = "buffering"; prefetchRoleChapter(); publish(); return; }
+        prefetchRoleChapter();
         if (cloud != null) { speakCloud(); return; }
         if (engine.speak(queue.text.get(queue.index), TextToSpeech.QUEUE_FLUSH, null, queue.token()) != TextToSpeech.SUCCESS) { fail(); return; }
         publish();
@@ -307,8 +359,7 @@ public class NativeSpeechService extends Service {
             next.setOnCompletionListener(value -> {
                 if (player != next || queue != expected || !queue.finish(token)) return;
                 releasePlayer(); cloudPosition = 0;
-                if (queue.playing) speak();
-                else { closeCloud(); status = "completed"; releasePlayback(); session.setActive(false); publish(); }
+                afterSegment();
             });
             next.setOnErrorListener((value, what, extra) -> { if (player == next) fail(); return true; });
             next.prepareAsync();
@@ -318,11 +369,12 @@ public class NativeSpeechService extends Service {
     private void releasePlayer() { if (player != null) { player.release(); player = null; } }
     private void releaseClip(File file) { if (cloud != null) cloud.release(file); for (NativeCloudSpeech voice : roleVoices.values()) voice.release(file); }
     private void cancelCloudWork() { cloudRevision++; cloudTaskIndex = -1; if (cloudTask != null) { cloudTask.cancel(true); cloudTask = null; } if (cloud != null) cloud.cancel(); for (NativeCloudSpeech voice : roleVoices.values()) voice.cancel(); }
-    private void closeCloud() { cancelCloudWork(); releasePlayer(); if (cloud != null) cloud.close(); for (NativeCloudSpeech voice : roleVoices.values()) voice.close(); roleVoices.clear(); cloud = null; clips.clear(); cloudPosition = 0; cloudErrorIndex = -1; cloudError = ""; }
+    private void closeCloud() { closeRole(); cancelCloudWork(); releasePlayer(); if (cloud != null) cloud.close(); for (NativeCloudSpeech voice : roleVoices.values()) voice.close(); roleVoices.clear(); cloud = null; clips.clear(); cloudPosition = 0; cloudErrorIndex = -1; cloudError = ""; }
 
     void pause() {
         if (queue == null || !queue.playing) return;
         queue.pause(); engine.stop();
+        cancelRoleWork();
         if (cloud != null) {
             if (player != null) { try { cloudPosition = player.getCurrentPosition(); } catch (RuntimeException ignored) {} }
             cancelCloudWork(); releasePlayer();
@@ -333,6 +385,7 @@ public class NativeSpeechService extends Service {
 
     void move(int delta) {
         if (queue == null) return;
+        if (waitingForChapter && delta < 0) waitingForChapter = false;
         boolean playing = queue.playing;
         int target = Math.max(0, Math.min(queue.text.size() - 1, queue.index + delta));
         boolean adoptPrefetch = playing && cloud != null && cloudTaskIndex == target;
@@ -344,10 +397,12 @@ public class NativeSpeechService extends Service {
     }
 
     void stop() {
+        saveProgress();
         if (queue != null) queue.pause();
         if (engine != null) engine.stop();
         closeCloud();
         queue = null; status = "idle"; bookKey = ""; error = ""; multiRole = false; chapterNames.clear();
+        saveReadingPosition = false; savedPositionToken = ""; readingPosition = null;
         releasePlayback(); session.setActive(false);
         getSystemService(NotificationManager.class).cancel(NOTIFICATION);
         publish();
@@ -366,10 +421,73 @@ public class NativeSpeechService extends Service {
         stopSelf();
     }
 
+    private void saveProgress() {
+        if (!saveReadingPosition || queue == null || bookKey.isEmpty() || savedPositionToken.equals(queue.positionToken())) return;
+        int chapter = queue.chapters.get(queue.index);
+        try {
+            readingPosition = NativeSpeechProgress.save(this, bookKey, chapter, chapterNames.getOrDefault(chapter, ""), queue.anchors.get(queue.index));
+            savedPositionToken = queue.positionToken();
+        } catch (RuntimeException failure) {
+            queue.pause(); if (engine != null) engine.stop(); closeCloud(); status = "error"; error = "ANDROID_SPEECH_FAILED";
+            releasePlayback(); session.setActive(false);
+        }
+    }
+
+    private void afterSegment() {
+        if (queue.playing) { speak(); return; }
+        if (roleAI != null && (!roleChapters.isEmpty() || roleTask != null || !roleError.isEmpty())) {
+            queue.resume(); waitingForChapter = true;
+            if (!roleError.isEmpty()) { failRole(roleError); return; }
+            status = "buffering"; prefetchRoleChapter(); publish(); return;
+        }
+        closeCloud(); status = "completed"; releasePlayback(); session.setActive(false); publish();
+    }
+    private void prefetchRoleChapter() {
+        if (roleAI == null || roleTask != null || roleChapters.isEmpty() || !roleError.isEmpty() || !queue.playing || queuedRoleChapter > queue.chapters.get(queue.index)) return;
+        RoleChapter chapter = roleChapters.peekFirst(); NativeSpeechQueue expected = queue;
+        NativeRoleSpeech client = roleAI; long revision = roleRevision;
+        roleTask = roleWorker.submit(() -> {
+            try {
+                NativeRoleSpeech.Result result = client.analyze(chapter.text, chapter.anchors);
+                NativeSpeechQueue next = NativeSpeechQueue.cloud(result.text, result.roles, Collections.nCopies(result.text.size(), chapter.index), result.anchors);
+                main.post(() -> {
+                    if (roleAI != client || queue != expected || revision != roleRevision) return;
+                    roleTask = null;
+                    try { queue.append(next); } catch (Exception failure) { roleError = "CUSTOM_AI_TEXT_TOO_LONG"; if (waitingForChapter) failRole(roleError); return; }
+                    roleChapters.removeFirst(); queuedRoleChapter = chapter.index;
+                    if (waitingForChapter && queue.playing) { queue.move(1); queue.resume(); waitingForChapter = false; speak(); }
+                    else if (queue.playing && status.equals("playing")) prefetchCloud();
+                });
+            } catch (Exception failure) {
+                main.post(() -> {
+                    if (roleAI != client || queue != expected || revision != roleRevision) return;
+                    roleTask = null;
+                    String code = failure.getMessage();
+                    roleError = code != null && code.matches("CUSTOM_AI_(NOT_CONFIGURED|REQUEST_FAILED|SERVICE_BUSY|INVALID_RESPONSE|INCOMPLETE_RESPONSE|TEXT_TOO_LONG)") ? code : "CUSTOM_AI_REQUEST_FAILED";
+                    if (waitingForChapter) failRole(roleError);
+                });
+            }
+        });
+    }
+    private void cancelRoleWork() {
+        roleRevision++;
+        if (roleTask != null) { roleTask.cancel(true); roleTask = null; }
+        if (roleAI != null) roleAI.cancel();
+    }
+    private void closeRole() {
+        cancelRoleWork(); if (roleAI != null) roleAI.close(); roleAI = null;
+        roleChapters.clear(); queuedRoleChapter = -1; waitingForChapter = false; roleError = "";
+    }
+    private void failRole(String code) {
+        if (queue != null) queue.pause(); engine.stop(); closeCloud(); status = "error"; error = code;
+        releasePlayback(); session.setActive(false); publish();
+    }
+
     // Only MediaStyle notifications with this MediaSession token are posted.
     // https://developer.android.com/develop/ui/views/notifications/notification-permission#exemptions-media-sessions
     @SuppressLint("NotificationPermission")
     private void publish() {
+        saveProgress();
         int playback = "buffering".equals(status) ? PlaybackState.STATE_BUFFERING : "playing".equals(status) ? PlaybackState.STATE_PLAYING : "paused".equals(status) ? PlaybackState.STATE_PAUSED : PlaybackState.STATE_STOPPED;
         session.setPlaybackState(new PlaybackState.Builder().setActions(PlaybackState.ACTION_PLAY | PlaybackState.ACTION_PAUSE
             | PlaybackState.ACTION_STOP | PlaybackState.ACTION_SKIP_TO_NEXT | PlaybackState.ACTION_SKIP_TO_PREVIOUS)
@@ -430,7 +548,7 @@ public class NativeSpeechService extends Service {
     @Override public void onTaskRemoved(Intent rootIntent) { stop(); }
     @Override public void onDestroy() {
         listener = null; ready.completeExceptionally(new IllegalStateException("ANDROID_SPEECH_UNAVAILABLE"));
-        stop(); cloudWorker.shutdownNow(); engine.shutdown(); session.release(); unregisterReceiver(noisy); main.removeCallbacksAndMessages(null);
+        stop(); cloudWorker.shutdownNow(); roleWorker.shutdownNow(); engine.shutdown(); session.release(); unregisterReceiver(noisy); main.removeCallbacksAndMessages(null);
         super.onDestroy();
     }
 }

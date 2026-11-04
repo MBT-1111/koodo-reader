@@ -1,5 +1,7 @@
 # Android 系统朗读原型
 
+2026-11-04 最新行为见 [ANDROID_READING_SPEECH.md](ANDROID_READING_SPEECH.md)：EPUB/TXT 跟读翻页、阅读位置持久化及中断终止已接入。下文的暂停中断和不保存位置描述属于早期原型记录。
+
 2026-11-04 后续：系统语音的 EPUB/TXT 自动跨章已完成本地及短时 Home 真机检查，见 [ANDROID_CHAPTER_SPEECH.md](ANDROID_CHAPTER_SPEECH.md)。
 
 后续已接入手机 Azure / MiMo 云朗读，详见 [ANDROID_CLOUD_SPEECH.md](ANDROID_CLOUD_SPEECH.md)。本文保留系统语音批次的历史范围与验收记录。

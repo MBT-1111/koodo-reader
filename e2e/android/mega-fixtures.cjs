@@ -67,7 +67,7 @@ const server = (cached = false) => {
         await catchUpMegaStorage(storage);
         return storage;
     };
-    return { nodes, commands, open, fetch, failUpload: (value) => { uploadFailure = value; }, failDownload: (value) => { downloadFailure = value; }, reverseTree: () => { reverseTree = true; }, corruptTree: () => { corruptTree = true; } };
+    return { nodes, commands, open, fetch, staleDeletion: () => { changes.push({ a: "d", n: "alreadygone" }); }, failUpload: (value) => { uploadFailure = value; }, failDownload: (value) => { downloadFailure = value; }, reverseTree: () => { reverseTree = true; }, corruptTree: () => { corruptTree = true; } };
 };
 
 module.exports = { server };

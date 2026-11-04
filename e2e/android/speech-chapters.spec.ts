@@ -92,7 +92,7 @@ test("oversized continuous text leaves the current chapter available and PDF doe
   expect(await starts(page)).toHaveLength(0);
   await checkbox.uncheck(); await page.getByRole("button", { name: "Read aloud", exact: true }).click();
   await expect.poll(() => starts(page)).toHaveLength(1);
-  expect((await starts(page))[0]).not.toHaveProperty("followingChapters");
+  expect((await starts(page))[0]).toHaveProperty("followingChapters", []);
   await page.getByRole("button", { name: "Stop", exact: true }).click();
   await page.locator(".android-speech").getByRole("button", { name: "Close", exact: true }).click();
   await showReadingTools(page); await page.getByRole("button", { name: "Exit reader", exact: true }).click();

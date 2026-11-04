@@ -9,6 +9,7 @@ final class NativeSpeechQueue {
     final List<String> text = new ArrayList<>();
     final List<String> roles = new ArrayList<>();
     final List<Integer> chapters = new ArrayList<>();
+    final List<String> anchors = new ArrayList<>();
     int index;
     private long revision;
     private final String session = java.util.UUID.randomUUID().toString();
@@ -21,6 +22,9 @@ final class NativeSpeechQueue {
     NativeSpeechQueue(List<String> paragraphs, int limit, List<Integer> chapterIndexes) {
         this(paragraphs, limit, true, null, chapterIndexes);
     }
+    NativeSpeechQueue(List<String> paragraphs, int limit, List<Integer> chapterIndexes, List<String> sourceAnchors) {
+        this(paragraphs, limit, true, null, chapterIndexes, sourceAnchors);
+    }
 
     private NativeSpeechQueue(List<String> paragraphs, int limit, boolean sentences) {
         this(paragraphs, limit, sentences, null);
@@ -31,7 +35,12 @@ final class NativeSpeechQueue {
     }
 
     private NativeSpeechQueue(List<String> paragraphs, int limit, boolean sentences, List<String> speakers, List<Integer> chapterIndexes) {
+        this(paragraphs, limit, sentences, speakers, chapterIndexes, null);
+    }
+    private NativeSpeechQueue(List<String> paragraphs, int limit, boolean sentences, List<String> speakers, List<Integer> chapterIndexes, List<String> sourceAnchors) {
         if (limit < 2 || paragraphs.size() > 20000) throw new IllegalArgumentException("ANDROID_SPEECH_TEXT");
+        if (sourceAnchors != null && (sourceAnchors.size() != paragraphs.size() || sourceAnchors.stream().anyMatch(value -> value == null || value.length() > 2000000))) throw new IllegalArgumentException("ANDROID_SPEECH_TEXT");
+        if (sourceAnchors != null && sourceAnchors.stream().mapToLong(String::length).sum() > 2000000) throw new IllegalArgumentException("ANDROID_SPEECH_TEXT");
         if (speakers != null && (speakers.size() != paragraphs.size() || speakers.stream().anyMatch(role -> !Arrays.asList("narrator", "male", "female", "child").contains(role)))) throw new IllegalArgumentException("ANDROID_SPEECH_ROLES");
         if (chapterIndexes != null) {
             if (chapterIndexes.size() != paragraphs.size()) throw new IllegalArgumentException("ANDROID_SPEECH_CHAPTERS");
@@ -54,6 +63,9 @@ final class NativeSpeechQueue {
                     text.add(remaining.substring(0, end));
                     roles.add(speakers == null ? "narrator" : speakers.get(index));
                     chapters.add(chapterIndexes == null ? 0 : chapterIndexes.get(index));
+                    String original = sourceAnchors == null ? paragraph : sourceAnchors.get(index);
+                    String part = remaining.substring(0, end);
+                    anchors.add(original.contains(part) ? part : readingAnchor(original));
                     if (text.size() > 20000) throw new IllegalArgumentException("ANDROID_SPEECH_TEXT");
                     remaining = remaining.substring(end).trim();
                 }
@@ -71,24 +83,39 @@ final class NativeSpeechQueue {
     }
 
     static NativeSpeechQueue cloud(List<String> paragraphs, List<String> speakers, List<Integer> chapterIndexes) {
-        NativeSpeechQueue queue = new NativeSpeechQueue(paragraphs, 1200, false, speakers, chapterIndexes);
+        return cloud(paragraphs, speakers, chapterIndexes, null);
+    }
+    static NativeSpeechQueue cloud(List<String> paragraphs, List<String> speakers, List<Integer> chapterIndexes, List<String> sourceAnchors) {
+        NativeSpeechQueue queue = new NativeSpeechQueue(paragraphs, 1200, false, speakers, chapterIndexes, sourceAnchors);
         List<String> combined = new ArrayList<>();
         List<String> combinedRoles = new ArrayList<>();
         List<Integer> combinedChapters = new ArrayList<>();
+        List<String> combinedAnchors = new ArrayList<>();
         for (int index = 0; index < queue.text.size(); index++) {
             String part = queue.text.get(index), role = queue.roles.get(index);
             int last = combined.size() - 1;
             int chapter = queue.chapters.get(index);
             if (last >= 0 && combinedChapters.get(last) == chapter && combinedRoles.get(last).equals(role) && combined.get(last).length() + part.length() + 1 <= 1200) combined.set(last, combined.get(last) + "\n" + part);
-            else { combined.add(part); combinedRoles.add(role); combinedChapters.add(chapter); }
+            else { combined.add(part); combinedRoles.add(role); combinedChapters.add(chapter); combinedAnchors.add(queue.anchors.get(index)); }
         }
         queue.text.clear(); queue.text.addAll(combined);
         queue.roles.clear(); queue.roles.addAll(combinedRoles);
         queue.chapters.clear(); queue.chapters.addAll(combinedChapters);
+        queue.anchors.clear(); queue.anchors.addAll(combinedAnchors);
         return queue;
     }
 
     String token() { return session + ":" + revision + ":" + index; }
+    static String readingAnchor(String text) {
+        int end = Math.min(text.length(), 512);
+        if (end < text.length() && Character.isHighSurrogate(text.charAt(end - 1))) end--;
+        return text.substring(0, end);
+    }
+    void append(NativeSpeechQueue next) {
+        if (text.size() + next.text.size() > 20000 || text.stream().mapToLong(String::length).sum() + next.text.stream().mapToLong(String::length).sum() > 2000000) throw new IllegalArgumentException("ANDROID_SPEECH_TEXT");
+        text.addAll(next.text); roles.addAll(next.roles); chapters.addAll(next.chapters); anchors.addAll(next.anchors);
+    }
+    String positionToken() { return session + ":" + index; }
     void resume() { revision++; playing = true; }
     void pause() { revision++; playing = false; }
     void move(int delta) { pause(); index = Math.max(0, Math.min(text.size() - 1, index + delta)); }

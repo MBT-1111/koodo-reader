@@ -133,10 +133,10 @@ async function main() {
     await page.waitForTimeout(700); assert.equal((await state()).index, mimoIndex);
     await speech({ action: "resume" }); await expect.poll(async () => (await state()).status).toBe("playing");
     await device.shell(`am start -n ${pkg}.test/xyz.koodoreader.custom.android.SpeechFocusProbeActivity --es mode transient`);
-    await expect.poll(async () => (await state()).status).toBe("paused");
+    await expect.poll(async () => (await state()).status).toBe("idle");
     await device.shell("input keyevent KEYCODE_BACK"); await device.shell(`am start -n ${pkg}/.MainActivity`);
-    await page.waitForTimeout(800); assert.equal((await state()).status, "paused");
-    await speech({ action: "resume" }); await expect.poll(async () => (await state()).status).toBe("playing");
+    await page.waitForTimeout(800); assert.equal((await state()).status, "idle");
+    await panel().getByRole("button", { name: "Read aloud", exact: true }).click(); await expect.poll(async () => (await state()).status).toBe("playing");
     await speech({ action: "stop" }); await released();
     checked("MiMo synthesis supports playback speed, cached resume and cross-UID audio-focus interruption without unsolicited restart");
     mode.invalid = true;

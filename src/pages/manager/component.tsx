@@ -39,8 +39,7 @@ import {
 import Footer from "../../components/footer";
 import ProtectionOverlay from "../../components/protection";
 import { useAppStore } from "../../store/useAppStore";
-import { scheduleCustomSync, syncErrorKey } from "../../custom/sync/service";
-import { scheduleAndroidSync } from "../../custom/android/sync";
+import { scheduleCustomSync } from "../../custom/sync/service";
 import AndroidBookList from "../../containers/lists/bookList";
 
 export interface ManagerState {
@@ -125,9 +124,7 @@ const Manager = () => {
     if (count > 0) toast(t("android.backup.pendingBooks", { count }), { duration: 12000 });
   }, [t]);
   useEffect(() => {
-    if (isNativeAndroid) return scheduleAndroidSync((result) => {
-      if (result.conflicts.length) toast(t("custom.sync.conflictsPending"));
-    }, (error) => toast.error(t(syncErrorKey(error))));
+    if (isNativeAndroid) return;
     if (!window.electronAPI) return;
     return scheduleCustomSync((result) => {
       if (result.conflicts.length) toast(t("custom.sync.conflictsPending"));

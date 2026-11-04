@@ -1,5 +1,7 @@
 # Android 多角色朗读
 
+后续原生逐章分析、自动跨章和正文位置保存见 [ANDROID_READING_SPEECH.md](ANDROID_READING_SPEECH.md)。下文为初次接入记录。
+
 2026-11-03，在 `codex/android-phone-prototype` 接入手机多角色朗读，复用桌面的个人 AI 角色分析和 Azure 情绪设置。
 
 ## 使用

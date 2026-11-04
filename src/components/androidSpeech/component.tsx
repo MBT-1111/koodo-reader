@@ -13,8 +13,10 @@ import EmotionSelect from "../../custom/tts/EmotionSelect";
 import { selectedAzureDegree, selectedAzureStyle } from "../../custom/tts/emotion";
 import type { PluginConfig, PluginVoice } from "../../utils/plugins/types";
 import { hasReadingAI, readingAIErrorKey } from "../../custom/ai/reader";
-import { analyzeAndroidSpeech, dialogueRoles, roleConfigKey, speechRoleLabels } from "../../custom/android/roleSpeech";
+import { analyzeAndroidSpeech, androidRoleRequest, dialogueRoles, roleConfigKey, speechRoleLabels } from "../../custom/android/roleSpeech";
 import { prepareSpeechChapters } from "../../custom/android/speechChapters";
+import { followSpeechPosition } from "../../custom/android/speechPosition";
+import type { AndroidSpeechPosition } from "../../custom/android/speech";
 import "./androidSpeech.css";
 
 interface AndroidSpeechProps { open: boolean; onClose: () => void }
@@ -50,9 +52,24 @@ const AndroidSpeech = ({ open, onClose }: AndroidSpeechProps) => {
   const roleRequest = useRef<AbortController | null>(null);
   const voicesLoaded = useRef(false);
   const generation = useRef(0);
+  const followQueue = useRef(Promise.resolve());
+  const lastPosition = useRef<AndroidSpeechPosition | undefined>(undefined);
+  if (lastPosition.current?.bookKey !== book.key) lastPosition.current = undefined;
+  if (playback?.position && playback.position.bookKey === book.key) lastPosition.current = playback.position;
+  const position = lastPosition.current;
+  useEffect(() => {
+    if (!position || !htmlBook?.rendition || htmlBook.key !== book.key) return;
+    let valid = true;
+    const revision = generation.current;
+    const current = () => valid && revision === generation.current && useAppStore.getState().reader.htmlBook === htmlBook;
+    followQueue.current = followQueue.current.catch(() => {}).then(async () => {
+      if (current()) await followSpeechPosition(htmlBook.rendition, position, current);
+    }).catch(() => { if (current()) setError(true); });
+    return () => { valid = false; };
+  }, [htmlBook, book.key, position?.id]);
   const active = !!playback && playback.bookKey === book.key && ["buffering", "playing", "paused"].includes(playback.status);
   const locked = busy || analyzing || preparing || active;
-  const supportsAutoChapters = ["EPUB", "TXT"].includes(book.format) && (source === "system" || !multiRole);
+  const supportsAutoChapters = ["EPUB", "TXT"].includes(book.format);
   const speaking = playback?.status === "playing" || playback?.status === "buffering";
   const playbackError = playback?.status === "error" && playback.bookKey === book.key && (!playback.source || playback.source === source);
   const plugin = source === "system" ? undefined : (plugins || []).find((item) => item.key === cloudSpeechPlugins[source]);
@@ -119,8 +136,13 @@ const AndroidSpeech = ({ open, onClose }: AndroidSpeechProps) => {
         const [text, visible] = await Promise.all([htmlBook.rendition.audioText(), htmlBook.rendition.visibleText()]);
         if (current !== generation.current || useAppStore.getState().reader.htmlBook !== htmlBook || useAppStore.getState().reader.isSpeechAutoStart) return;
         TTSUtil.setTextRules(getTextRules(book.key));
-        const paragraphs = speechFromVisible(text, visible, selectedStart).map((item) => TTSUtil.applyTextRules(item));
-        let chapters: Awaited<ReturnType<typeof prepareSpeechChapters>> | undefined;
+        const anchors = speechFromVisible(text, visible, selectedStart);
+        const paragraphs = anchors.map((item) => TTSUtil.applyTextRules(item));
+        const canFollow = ["EPUB", "TXT"].includes(book.format);
+        const chapterIndex = Number(htmlBook.rendition.getPosition().chapterDocIndex);
+        let chapters: Awaited<ReturnType<typeof prepareSpeechChapters>> | undefined = canFollow ? {
+          chapterIndex, chapterTitle: htmlBook.rendition.getChapterDoc()[chapterIndex]?.label || "", followingChapters: [],
+        } : undefined;
         if (autoChapters && supportsAutoChapters) {
           const controller = new AbortController(); roleRequest.current = controller; setPreparing(true);
           chapters = await prepareSpeechChapters(htmlBook.rendition, paragraphs, item => TTSUtil.applyTextRules(item), controller.signal);
@@ -129,7 +151,7 @@ const AndroidSpeech = ({ open, onClose }: AndroidSpeechProps) => {
         let classified: Awaited<ReturnType<typeof analyzeAndroidSpeech>> | undefined;
         if (source !== "system" && multiRole) {
           const controller = new AbortController(); roleRequest.current = controller; setAnalyzing(true);
-          try { classified = await analyzeAndroidSpeech(paragraphs, controller.signal); }
+          try { classified = await analyzeAndroidSpeech(paragraphs, controller.signal, anchors); }
           catch (failure) { if (current === generation.current) setAnalysisError(readingAIErrorKey(failure)); return; }
           if (current !== generation.current || useAppStore.getState().reader.htmlBook !== htmlBook || useAppStore.getState().reader.isSpeechAutoStart) return;
           setAnalysisNotice(classified.fallbackCount);
@@ -142,9 +164,10 @@ const AndroidSpeech = ({ open, onClose }: AndroidSpeechProps) => {
           return option ? [[role, { source: option.source, config: voiceConfig(option.voice, option.config) }]] : [];
         }));
         result = await androidSpeech.execute({ action, bookKey: book.key, title: book.name, text: classified?.text || paragraphs, voice, speed: Number(speed), source,
+          anchors: classified?.anchors || anchors, saveReadingPosition: canFollow,
           ...chapters,
           ...(source !== "system" && plugin && cloudVoice ? { config: voiceConfig(cloudVoice, plugin.config) } : {}),
-          ...(classified ? { roles: classified.roles, roleVoices } : {}) });
+          ...(classified ? { roles: classified.roles, roleVoices, ...(chapters?.followingChapters.length ? { roleAI: androidRoleRequest() } : {}) } : {}) });
         if (current === generation.current && !useAppStore.getState().reader.isSpeechAutoStart && useAppStore.getState().reader.speechStartText === selectedStart) handleSpeechStartText("");
       } else {
         if (action === "stop") { handleSpeechStartText(""); handleSpeechAutoStart(false); }
@@ -239,7 +262,7 @@ const AndroidSpeech = ({ open, onClose }: AndroidSpeechProps) => {
           {!!analysisNotice && <p role="status">{t("custom.ai.roleFallback", { count: analysisNotice })}</p>}
           {analysisError && <p role="alert">{t(analysisError)}</p>}
           {!analyzing && playback?.bookKey === book.key && playback.total > 0 && <p role="status">{t(`android.speech.${playback.status}`)} · {playback.chapterTitle ? `${playback.chapterTitle} · ` : ""}{playback.index + 1}/{playback.total}{playback.multiRole && playback.role ? ` · ${t(speechRoleLabels[playback.role])}` : ""}</p>}
-          {(error || playbackError) && <p role="alert">{t(playbackError && playback?.error === "ANDROID_SPEECH_AUTH" ? "android.speech.authFailed" : playbackError && playback?.error === "ANDROID_SPEECH_QUOTA" ? "android.speech.quotaFailed" : "android.speech.failed")}</p>}
+          {(error || playbackError) && <p role="alert">{t(playbackError && playback?.error.startsWith("CUSTOM_AI_") ? readingAIErrorKey(new Error(playback.error)) : playbackError && playback?.error === "ANDROID_SPEECH_AUTH" ? "android.speech.authFailed" : playbackError && playback?.error === "ANDROID_SPEECH_QUOTA" ? "android.speech.quotaFailed" : "android.speech.failed")}</p>}
           <div className="android-speech-actions">
             {active && <button type="button" disabled={busy} onClick={() => void command("previous")}>{t(source === "system" ? "android.speech.previous" : "android.speech.previousSegment")}</button>}
             <button type="button" disabled={busy || analyzing || !voice || !htmlBook || htmlBook.key !== book.key || (!active && source !== "system" && multiRole && !hasReadingAI("roles"))} onClick={() => void command(active ? speaking ? "pause" : "resume" : "start")}>

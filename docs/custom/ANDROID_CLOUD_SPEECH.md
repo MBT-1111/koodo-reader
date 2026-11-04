@@ -1,5 +1,7 @@
 # Android Azure 与 MiMo 朗读
 
+2026-11-04 最新行为见 [ANDROID_READING_SPEECH.md](ANDROID_READING_SPEECH.md)：已支持 EPUB/TXT 正文跟随、多角色自动跨章、阅读位置持久化及中断终止。下文保留早期云朗读的行为与验收记录。
+
 2026-11-04 后续：EPUB/TXT 单音色自动跨章已完成本地及短时 Home 真机检查，见 [ANDROID_CHAPTER_SPEECH.md](ANDROID_CHAPTER_SPEECH.md)；多角色继续按章朗读。
 
 后续已接入 Gemini 角色分析及 Azure/MiMo 混合多角色队列，使用与边界见 [ANDROID_MULTIROLE.md](ANDROID_MULTIROLE.md)。下文保留首批云朗读的验收记录。

@@ -1,5 +1,9 @@
 # Android 手机原型
 
+2026-11-04 后续范围：增加首页手动云同步、停用安卓自动调度；实现 EPUB/TXT 正文随朗读定位、保存普通阅读进度，以及原生多角色逐章分析。真实 MEGA 已在独立测试空间通过双向和部分书库合并，真实空间未混入样本。说明和最新验收见 [ANDROID_READING_SPEECH.md](ANDROID_READING_SPEECH.md)。
+
+2026-11-04 编码边界补充：推送检查点后修复安卓新导入的无 BOM UTF-16 TXT 乱码，补齐 CRLF 与约 3.8–5.3 MB 文本的目录、重载进度验收。200 项单测及 13 项生产浏览器回归通过；本批没有连接手机，新 APK 尚未安装。范围见 [ANDROID_TEXT_ENCODING.md](ANDROID_TEXT_ENCODING.md)。
+
 2026-11-04 TXT 编码补充：UTF-8、UTF-8 BOM、UTF-16LE/BE BOM、GB18030、Big5 的 6 项浏览器及 8 项隔离真机检查通过，含系统选书器、原字节指纹、目录和进程重启恢复；主库与设置保持完整。样本范围见 [ANDROID_TEXT_ENCODING.md](ANDROID_TEXT_ENCODING.md)。
 
 2026-11-04 自动跨章：EPUB/TXT 的系统语音及 Azure/MiMo 单音色已接入原生连续章节队列；随后在 SM-S9110 完成 8 项真机检查，覆盖四组语音/格式组合、断开调试后的 Home 跨章、媒体控制与数据保全。范围及待验收项见 [ANDROID_CHAPTER_SPEECH.md](ANDROID_CHAPTER_SPEECH.md)。

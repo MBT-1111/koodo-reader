@@ -78,4 +78,17 @@ public class NativeSpeechQueueTest {
         assertThrows(IllegalArgumentException.class, () -> new NativeSpeechQueue(Collections.singletonList("One"), 100, Collections.singletonList(-1)));
         assertThrows(IllegalArgumentException.class, () -> new NativeSpeechQueue(Collections.singletonList("One"), 100, Collections.singletonList(20000)));
     }
+    @Test public void keepsSourceAnchorsAndAppendedRoleChaptersAligned() {
+        NativeSpeechQueue first = NativeSpeechQueue.cloud(Collections.singletonList("Changed sentence."), Collections.singletonList("male"), Collections.singletonList(1), Collections.singletonList("Original sentence."));
+        NativeSpeechQueue next = NativeSpeechQueue.cloud(Arrays.asList("Next sentence.", "Other role."), Arrays.asList("male", "female"), Arrays.asList(2, 2), Arrays.asList("Next sentence.", "Other role."));
+        first.append(next);
+        assertEquals(Arrays.asList(1, 2, 2), first.chapters);
+        assertEquals(Arrays.asList("male", "male", "female"), first.roles);
+        assertEquals(Arrays.asList("Original sentence.", "Next sentence.", "Other role."), first.anchors);
+        String token = first.positionToken(); first.resume(); first.pause(); assertEquals(token, first.positionToken());
+        first.move(1); assertNotEquals(token, first.positionToken());
+    }
+    @Test public void readingAnchorsNeverCutASurrogatePair() {
+        assertEquals(511, NativeSpeechQueue.readingAnchor("a".repeat(511) + "😀tail").length());
+    }
 }

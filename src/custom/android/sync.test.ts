@@ -23,6 +23,7 @@ vi.mock("./backup", () => ({
   snapshotJob: async (task: (source: { tables: RawData["tables"]; preferences: { values: Record<string, string> } }, token: string) => Promise<unknown>) => task({ tables: structuredClone(fixture.current!.tables), preferences: { values: { ...fixture.current!.values } } }, crypto.randomUUID()),
   commit: async (tables: RawData["tables"], values: Record<string, string>) => { fixture.current!.tables = structuredClone(tables); fixture.current!.values = { ...values }; },
 }));
+vi.mock("./speechPosition", () => ({ flushSpeechReadingPositions: async () => {} }));
 vi.mock("../../store/useAppStore", () => ({ useAppStore: { getState: () => ({ manager: { isSettingOpen: false }, handleFetchBooks: async () => {}, handleFetchNotes: async () => {}, handleFetchBookmarks: async () => {} }) } }));
 import { runAndroidSync } from "./sync";
 
@@ -38,6 +39,32 @@ beforeEach(() => {
 });
 
 describe("Android shared sync workflow", () => {
+  it("keeps a full desktop library when the phone only imports two books", async () => {
+    const desktop = client("desktop-a"), phone = client("phone-a");
+    for (const [target, prefix, count] of [[desktop, "desktop", 3], [phone, "phone", 2]] as const) {
+      target.tables.books = Array.from({ length: count }, (_, index) => ({ key: `${prefix}-${index}`, format: "TXT", name: `Book ${index}`, path: `content://fixture/${prefix}-${index}` }));
+      target.hashes = Object.fromEntries(target.tables.books.map((row, index) => [row.key, String(index + 1).repeat(64)]));
+      target.values = { readingTime: JSON.stringify(Object.fromEntries(target.tables.books.map(row => [row.key, 100]))) };
+    }
+    desktop.tables.notes = desktop.tables.books.map((row, index) => ({ key: `note-${index}`, bookKey: row.key, text: `Note ${index}` }));
+    desktop.values.recordLocation = JSON.stringify(Object.fromEntries(desktop.tables.books.map(row => [row.key, { percentage: 0.2 }])));
+    desktop.values.shelfList = JSON.stringify({ Shared: desktop.tables.books.map(row => row.key) });
+    desktop.values.favoriteBooks = JSON.stringify(desktop.tables.books.map(row => row.key));
+    await sync(desktop); await sync(phone);
+    expect(phone.tables.books).toHaveLength(2); expect(phone.tables.notes).toHaveLength(2);
+    expect(Object.keys(JSON.parse(phone.values.readingTime))).toHaveLength(2);
+    expect(JSON.parse(phone.values.shelfList).Shared).toHaveLength(2);
+    phone.values.readingTime = JSON.stringify({ "phone-0": 110, "phone-1": 100 });
+    phone.values.recordLocation = JSON.stringify({ "phone-0": { percentage: 0.4 }, "phone-1": { percentage: 0.2 } });
+    await sync(phone); await sync(desktop); await sync(phone);
+    expect(desktop.tables.books).toHaveLength(3); expect(desktop.tables.notes).toHaveLength(3);
+    expect(JSON.parse(desktop.values.readingTime)).toEqual({ "desktop-0": 110, "desktop-1": 100, "desktop-2": 100 });
+    expect(JSON.parse(desktop.values.recordLocation)["desktop-2"]).toEqual({ percentage: 0.2 });
+    const cloud = materialize(mergeDocuments(fixture.documents));
+    expect(Object.keys(cloud).filter(key => key.startsWith("book/"))).toHaveLength(3);
+    expect(Object.keys(cloud).filter(key => key.startsWith("trash/"))).toHaveLength(0);
+    expect((await sync(phone)).unchanged).toBe(true);
+  });
   it("shares progress and annotations across local book keys, preserving file mappings and stable backup identities", async () => {
     const a = client("phone-a"), b = client("phone-b");
     a.tables.notes = [{ key: "note-a", bookKey: "phone-a", notes: "A note", text: "Quote" }];

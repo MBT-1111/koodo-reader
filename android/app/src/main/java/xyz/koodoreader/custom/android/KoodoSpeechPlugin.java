@@ -9,6 +9,15 @@ import java.util.concurrent.atomic.AtomicBoolean;
 
 @CapacitorPlugin(name = "KoodoSpeech")
 public class KoodoSpeechPlugin extends Plugin {
+    @PluginMethod public void readingPosition(PluginCall call) {
+        String key = call.getString("bookKey", "");
+        if (key.isEmpty() && !call.getData().has("acknowledge")) { call.resolve(new JSObject().put("positions", NativeSpeechProgress.pending(getContext()))); return; }
+        if (key.isEmpty() || key.length() > 256) { call.reject("ANDROID_SPEECH_INPUT"); return; }
+        String id = call.getString("acknowledge");
+        if (id != null && !id.matches("[0-9a-f-]{36}")) { call.reject("ANDROID_SPEECH_INPUT"); return; }
+        if (id != null) NativeSpeechProgress.acknowledge(getContext(), key, id);
+        call.resolve(new JSObject().put("position", NativeSpeechProgress.read(getContext(), key)));
+    }
     private final Handler main = new Handler(Looper.getMainLooper());
     private CompletableFuture<NativeSpeechService> connected = new CompletableFuture<>();
     private NativeSpeechService service;

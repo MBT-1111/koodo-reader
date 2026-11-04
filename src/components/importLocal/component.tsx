@@ -39,6 +39,7 @@ import { useAppStore } from "../../store/useAppStore";
 import { isAndroid, isNativeAndroid } from "../../utils/platform";
 import { nativeFiles, pickNativeBooks } from "../../custom/android/storage";
 import { sha256 } from "../../custom/backup/dataBackup";
+import { detectBomlessUtf16 } from "../../custom/android/textEncoding";
 
 export interface ImportLocalProps {
   handleDrag: (isDrag: boolean) => void;
@@ -817,12 +818,13 @@ const ImportLocal = (props: ImportLocalProps) => {
         recordPath = "";
         isConverted = true;
       }
+      const importCharset = isAndroid && extension === "txt" ? detectBomlessUtf16(file_content) : "";
       let rendition = BookHelper.getRendition(
         file_content,
         {
           format: extension.toUpperCase(),
           readerMode: "",
-          charset: "",
+          charset: importCharset,
           animation: ConfigService.getReaderConfig("animation") || "none",
           convertChinese: ConfigService.getReaderConfig("convertChinese"),
           bookLayout: ConfigService.getReaderConfig("bookLayout"),
@@ -848,6 +850,7 @@ const ImportLocal = (props: ImportLocalProps) => {
         file_content,
         rendition
       );
+      if (importCharset) result.charset = importCharset;
 
       if (
         ConfigService.getReaderConfig("isPrecacheBook") === "yes" &&

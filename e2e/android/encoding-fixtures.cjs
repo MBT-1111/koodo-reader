@@ -9,11 +9,12 @@ const anchors = {
   big5: ["這是繁體中文閱讀測試，標點與漢字必須正確顯示。", "後續章節也要保留原來的繁體文字，不能出現亂碼。"],
 };
 const simple = ["第一章 编码验证", anchors.gb18030[0], "第二章 继续阅读", anchors.gb18030[1]];
-function text(parts) {
-  return [parts[0], ...Array.from({ length: 35 }, (_, index) => `${parts[1]} ${index + 1}`), parts[2], ...Array.from({ length: 35 }, (_, index) => `${parts[3]} ${index + 1}`)].join("\n\n");
+function text(parts, paragraphsPerChapter) {
+  return [parts[0], ...Array.from({ length: paragraphsPerChapter }, (_, index) => `${parts[1]} ${index + 1}`), parts[2], ...Array.from({ length: paragraphsPerChapter }, (_, index) => `${parts[3]} ${index + 1}`)].join("\n\n");
 }
-function encodedTextFixtures() {
-  const content = text(simple), utf16 = Buffer.from(content, "utf16le");
+function encodedTextFixtures(paragraphsPerChapter = 35) {
+  const content = text(simple, paragraphsPerChapter), utf16 = Buffer.from(content, "utf16le");
+  /** @type {Array<[string, Buffer]>} */
   const buffers = [
     ["utf8", Buffer.from(content, "utf8")],
     ["utf8-bom", Buffer.concat([Buffer.from([0xef, 0xbb, 0xbf]), Buffer.from(content, "utf8")])],
@@ -22,7 +23,7 @@ function encodedTextFixtures() {
   ];
   for (const encoding of ["gb18030", "big5"]) {
     const parts = legacy[encoding].map(value => Buffer.from(value, "base64"));
-    const list = [parts[0], ...Array.from({ length: 35 }, (_, index) => Buffer.concat([parts[1], Buffer.from(` ${index + 1}`)])), parts[2], ...Array.from({ length: 35 }, (_, index) => Buffer.concat([parts[3], Buffer.from(` ${index + 1}`)]))];
+    const list = [parts[0], ...Array.from({ length: paragraphsPerChapter }, (_, index) => Buffer.concat([parts[1], Buffer.from(` ${index + 1}`)])), parts[2], ...Array.from({ length: paragraphsPerChapter }, (_, index) => Buffer.concat([parts[3], Buffer.from(` ${index + 1}`)]))];
     buffers.push([encoding, Buffer.concat(list.flatMap((part, index) => index ? [Buffer.from("\n\n"), part] : [part]))]);
   }
   return buffers.map(([encoding, buffer]) => ({ encoding, name: `Koodo-Encoding-${encoding}.txt`, title: `Koodo-Encoding-${encoding}`, mimeType: "text/plain", buffer,

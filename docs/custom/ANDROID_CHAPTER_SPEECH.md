@@ -1,5 +1,7 @@
 # Android 自动跨章朗读
 
+后续已按所有者要求推进正文跟随、保存阅读位置及多角色原生连续章节；最新行为和验证见 [ANDROID_READING_SPEECH.md](ANDROID_READING_SPEECH.md)。下文保留前一批单音色实现与验收记录。
+
 2026-11-04，分支 `codex/android-phone-prototype`。首轮按用户要求仅完成本地验证；用户随后连接手机并授权测试，本轮已补上下面的真机验收。
 
 ## 使用范围

@@ -8,7 +8,8 @@ const { showReadingTools } = require("../e2e/android/fixtures.cjs");
 const { systemPicker } = require("./android-system-picker.cjs");
 const { selectSpeechParagraph } = require("../e2e/android/speech-selection.cjs");
 
-const pkg = "xyz.koodoreader.custom.android", testPkg = `${pkg}.test`;
+const pkg = process.env.ANDROID_TEST_PACKAGE || "xyz.koodoreader.custom.android", testPkg = `${pkg}.test`;
+assert.ok(["xyz.koodoreader.custom.android", "xyz.koodoreader.custom.android.restoreqa"].includes(pkg));
 const output = path.join(__dirname, "..", "dist", "android-device");
 const hash = (value) => createHash("sha256").update(JSON.stringify(value)).digest("hex");
 const configKeys = ["readerConfig", "recordLocation", "readingTime", "readingStats", "recentBooks"];
@@ -27,7 +28,7 @@ async function main() {
   const rows = async () => Object.fromEntries(await Promise.all(["books", "notes", "bookmarks", "words", "plugins"].map(async (dbName) =>
     [dbName, await storage({ channel: "database-command", dbName, statement: "getAllStatement" })])));
   const attach = async () => {
-    await device.shell(`am start -n ${pkg}/.MainActivity`);
+    await device.shell(`am start -n ${pkg}/xyz.koodoreader.custom.android.MainActivity`);
     page = await (await device.webView({ pkg })).page();
     page.setDefaultTimeout(20000);
     page.on("pageerror", (error) => report.errors.push(error.message));
@@ -94,7 +95,7 @@ async function main() {
     await ui.tap(panel.getByRole("button", { name: "Close", exact: true }));
     await expect(panel).toHaveCount(0); await advance(); checked("panel closure retains native playback without leaving UI copies");
 
-    const primaryUid = (await device.shell(`pm list packages -U --user 0 ${pkg}`)).toString().match(/package:xyz\.koodoreader\.custom\.android uid:(\d+)/)?.[1];
+    const primaryUid = (await device.shell(`pm list packages -U --user 0 ${pkg}`)).toString().split("\n").find(line => line.startsWith(`package:${pkg} uid:`))?.match(/uid:(\d+)/)?.[1];
     assert.ok(primaryUid);
     for (const mode of ["duck", "transient", "gain"]) {
       await device.shell(`run-as ${testPkg} rm -f files/focus-probe.json`);
@@ -106,12 +107,14 @@ async function main() {
         return probe.mode === mode && probe.granted;
       }, { timeout: 15000 }).toBe(true);
       assert.notEqual(String(probe.uid), primaryUid);
-      await expect.poll(async () => (await state()).status).toBe("paused");
+      await expect.poll(async () => (await state()).status).toBe("idle");
       await device.shell("input keyevent KEYCODE_BACK");
-      await device.shell(`am start -n ${pkg}/.MainActivity`);
-      await page.waitForTimeout(1500); assert.equal((await state()).status, "paused");
-      await speech({ action: "resume" }); await advance();
-      checked(`separate-UID ${mode} audio focus pauses speech without unsolicited resume`);
+      await device.shell(`am start -n ${pkg}/xyz.koodoreader.custom.android.MainActivity`);
+      await page.waitForTimeout(1500); assert.equal((await state()).status, "idle");
+      await showReadingTools(page); await page.getByRole("button", { name: "Text to speech", exact: true }).click();
+      await panel.getByRole("button", { name: "Read aloud", exact: true }).click(); await advance();
+      await panel.getByRole("button", { name: "Close", exact: true }).click();
+      checked(`separate-UID ${mode} audio focus ends speech without unsolicited resume`);
     }
 
     monitor = await device.open("shell:cmd media_session monitor KoodoSpeech");
@@ -133,7 +136,7 @@ async function main() {
       console.log("Unlock the phone to finish physical reader-exit QA.");
       await expect.poll(async () => (await device.shell("dumpsys window")).toString().includes("mDreamingLockscreen=true"), { timeout: 120000 }).toBe(false);
     }
-    await device.shell(`am start -n ${pkg}/.MainActivity`); await closeReader();
+    await device.shell(`am start -n ${pkg}/xyz.koodoreader.custom.android.MainActivity`); await closeReader();
     assert.equal((await state()).status, "idle");
     const services = (await device.shell(`dumpsys activity services ${pkg}`)).toString();
     assert.ok(!services.includes("isForeground=true"));
@@ -165,7 +168,7 @@ async function main() {
     } catch (error) {
       report.passed = false; report.cleanupError = error.message; cleanupError = error;
     } finally {
-      await fs.writeFile(path.join(output, "speech-report.json"), JSON.stringify(report, null, 2));
+      await fs.writeFile(path.join(output, pkg.endsWith(".restoreqa") ? "speech-qa-report.json" : "speech-report.json"), JSON.stringify(report, null, 2));
       await Promise.all(devices.map((item) => item.close()));
     }
     if (cleanupError) throw cleanupError;

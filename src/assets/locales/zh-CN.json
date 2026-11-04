@@ -15,7 +15,7 @@
   "android.stats.moreActivity": "较多",
   "android.speech.fromSelection": "本次朗读从书内选中的句子开始。",
   "android.speech.autoChapters": "自动朗读后续章节",
-  "android.speech.autoChaptersHelp": "支持 EPUB、TXT 的系统语音与单音色云朗读。播放前在本机准备后续章节文字，保留当前阅读位置。",
+  "android.speech.autoChaptersHelp": "支持 EPUB、TXT 的系统、云语音与多角色连续朗读。正文按音频片段跟随并保存阅读位置，多角色只提前分析下一章。",
   "android.speech.continuousScope": "从当前位置连续朗读后续章节，后台也可继续；关闭面板继续朗读，退出阅读器停止。",
   "android.speech.preparingChapters": "正在准备章节…",
   "android.speech.chapterLimit": "后续文字超出连续朗读的限制。可关闭自动朗读后续章节，仅朗读本章。",
@@ -26,7 +26,7 @@
   "android.plugins.noAvailable": "此分类的可用插件均已安装。",
   "android.speech.enabled": "开启",
   "android.speech.disabled": "关闭",
-  "android.speech.rolesHelp": "AI 辅助模型逐句标记角色，原文由所选 Azure 或 MiMo 音色朗读。未选择或不可用的角色音色使用旁白。分析范围为本章剩余文字，上限 5 万字符；播放前可停止分析。",
+  "android.speech.rolesHelp": "AI 辅助模型逐句标记角色，原文由所选 Azure 或 MiMo 音色朗读，未选角色音色使用旁白。每章上限 5 万字符；开启连续章节后，播放本章时分析下一章。停止会取消未完成的分析。",
   "android.speech.useNarrator": "使用旁白音色",
   "android.speech.azure": "Azure",
   "android.speech.mimo": "MiMo",
@@ -1443,6 +1443,7 @@
   "android.mappedImport.unsupported": "此类书包需要转换或解包，请映射原始 EPUB、PDF 等可直接阅读的书籍。",
   "android.mappedImport.linked": "已关联书籍来源，原有阅读数据已保留",
   "android.sync.help": "使用与 Windows 相同的 MEGA 账号和同步空间，共享进度、笔记、高亮、书签、书架及阅读统计，不上传原书。阅读偏好目前可通过阅读数据备份交换。",
-  "android.sync.foreground": "自动同步在书库处于前台且阅读器已关闭时运行。登录会话仅保存在本机，不进入阅读数据备份。",
+  "android.sync.foreground": "仅在点击首页“云同步”或此处“立即同步”时同步。登录会话仅保存在本机，不进入阅读数据备份。",
+  "android.sync.home": "云同步",
   "android.sync.nativeOnly": "请在已安装的安卓应用中连接 MEGA。"
 }

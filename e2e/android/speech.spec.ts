@@ -81,7 +81,7 @@ test("analyzes roles with Gemini, preserves originals, mixes cloud voices and ca
   const panel = page.locator(".android-speech");
   await panel.getByLabel("Speech service", { exact: true }).selectOption("azure");
   await panel.getByRole("switch", { name: /AI multi-role speech/ }).click();
-  await expect(panel.getByRole("checkbox", { name: "Continue to next chapters", exact: true })).toBeDisabled();
+  await expect(panel.getByRole("checkbox", { name: "Continue to next chapters", exact: true })).toBeEnabled();
   await expect(panel.getByRole("button", { name: "Read aloud", exact: true })).toBeDisabled();
   await expect(panel).toContainText("Configure the corresponding personal model");
   await page.evaluate(() => {
@@ -95,6 +95,7 @@ test("analyzes roles with Gemini, preserves originals, mixes cloud voices and ca
   await panel.getByLabel("Male voice", { exact: true }).selectOption(JSON.stringify(["mimo-tts-voice-plugin", "冰糖"]));
   await panel.getByLabel("Female voice", { exact: true }).selectOption(JSON.stringify(["azure-tts-voice-plugin", "zh-CN-XiaoxiaoNeural"]));
   await panel.getByLabel("Child voice", { exact: true }).selectOption(JSON.stringify(["mimo-tts-voice-plugin", "苏打"]));
+  await panel.getByRole("checkbox", { name: "Continue to next chapters", exact: true }).check();
   await panel.getByRole("button", { name: "Read aloud", exact: true }).click();
   await expect(panel).toContainText("Generating speech");
   await expect(panel).toContainText(/The model omitted/);
@@ -108,6 +109,9 @@ test("analyzes roles with Gemini, preserves originals, mixes cloud voices and ca
   expect(await panel.evaluate(element => element.scrollWidth <= element.clientWidth)).toBe(true);
   await page.screenshot({ path: testInfo.outputPath("mixed-role-voices.png") });
   const starts = await page.evaluate(() => (window as unknown as { speechQA: SpeechHarness }).speechQA.requests.filter(item => item.action === "start").length);
+  const continuous = await page.evaluate(() => (window as unknown as { speechQA: SpeechHarness }).speechQA.requests.find(item => item.action === "start"));
+  expect(continuous).toMatchObject({ roleAI: { native: true }, followingChapters: [expect.objectContaining({ index: 1 })] });
+  expect(analyzed.some(text => text.includes("第二章"))).toBe(false);
   delay = true;
   await panel.getByRole("button", { name: "Read aloud", exact: true }).click();
   await expect(panel).toContainText("Analyzing roles, please wait...");

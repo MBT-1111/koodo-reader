@@ -129,6 +129,8 @@
     "test:android:sync": "node scripts/android-sync-device.cjs",
     "test:android:speech": "node scripts/android-speech-device.cjs",
     "test:android:chapters": "node scripts/android-chapter-speech-device.cjs",
+    "test:android:speech-progress": "node scripts/android-speech-progress-device.cjs",
+    "test:android:mega-live": "node scripts/android-mega-live.cjs",
     "test:android:encoding": "node scripts/android-encoding-device.cjs",
     "test:android:screen": "node scripts/android-screen-device.cjs",
     "test:android:cloud-speech": "node scripts/android-cloud-speech-device.cjs",

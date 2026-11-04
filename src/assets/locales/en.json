@@ -15,7 +15,7 @@
   "android.stats.moreActivity": "More",
   "android.speech.fromSelection": "This reading starts from the sentence selected in the book.",
   "android.speech.autoChapters": "Continue to next chapters",
-  "android.speech.autoChaptersHelp": "Available for EPUB and TXT with system or single-voice cloud speech. Remaining chapter text is prepared locally before playback; your reading position stays unchanged.",
+  "android.speech.autoChaptersHelp": "EPUB and TXT can continue with system, cloud or multi-role voices. The text follows each audio segment and saves your reading position. Multi-role speech analyzes only the next chapter ahead.",
   "android.speech.continuousScope": "Reads from the current position through the remaining chapters, including in the background. Closing this panel keeps speech playing; exiting the reader stops it.",
   "android.speech.preparingChapters": "Preparing chapters…",
   "android.speech.chapterLimit": "The remaining text exceeds the continuous reading limit. Turn off next chapters to read only this chapter.",
@@ -26,7 +26,7 @@
   "android.plugins.noAvailable": "All available plugins in this category are installed.",
   "android.speech.enabled": "On",
   "android.speech.disabled": "Off",
-  "android.speech.rolesHelp": "The AI assistance model labels each sentence. Original text is read using the selected Azure or MiMo voices. Missing or unavailable role voices use the narrator. Analysis covers the remainder of this chapter, up to 50,000 characters; it can be stopped before playback.",
+  "android.speech.rolesHelp": "The AI assistance model labels each sentence; the original text uses your Azure or MiMo voices. Missing role voices use the narrator. Each chapter allows up to 50,000 characters. With continuous chapters enabled, the next chapter is analyzed during playback. Stop cancels pending analysis.",
   "android.speech.useNarrator": "Use narrator voice",
   "android.speech.azure": "Azure",
   "android.speech.mimo": "MiMo",
@@ -1441,6 +1441,7 @@
   "android.mappedImport.unsupported": "This package requires conversion or extraction. Link the original EPUB, PDF or other directly readable book instead.",
   "android.mappedImport.linked": "Book source linked; existing reading data retained",
   "android.sync.help": "Use the same MEGA account and sync space as Windows to share progress, notes, highlights, bookmarks, shelves and reading statistics. Original books are not uploaded. Reading preferences can currently be exchanged through reading data backups.",
-  "android.sync.foreground": "Automatic sync runs while the library is open in the foreground and the reader is closed. Login sessions stay on this device and are excluded from reading data backups.",
+  "android.sync.foreground": "Sync runs only when you tap Cloud sync on Home or Sync now here. Login sessions stay on this device and are excluded from reading data backups.",
+  "android.sync.home": "Cloud sync",
   "android.sync.nativeOnly": "Connect MEGA in the installed Android app."
 }

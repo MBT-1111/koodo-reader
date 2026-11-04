@@ -1,6 +1,7 @@
 import { Capacitor, registerPlugin, type PluginListenerHandle } from "@capacitor/core";
 
 export interface AndroidVoice { name: string; locale: string; network: boolean }
+export interface AndroidSpeechPosition { id: string; bookKey: string; chapterDocIndex: number; chapterTitle: string; text: string }
 export interface AndroidSpeechState {
   status: "idle" | "buffering" | "playing" | "paused" | "completed" | "error";
   bookKey: string;
@@ -12,8 +13,11 @@ export interface AndroidSpeechState {
   role?: "narrator" | "male" | "female" | "child";
   chapterDocIndex?: number;
   chapterTitle?: string;
+  anchor?: string;
+  position?: AndroidSpeechPosition;
 }
 interface SpeechPlugin {
+  readingPosition(request: { bookKey?: string; acknowledge?: string }): Promise<{ position?: AndroidSpeechPosition; positions?: AndroidSpeechPosition[] }>;
   execute(request: Record<string, unknown>): Promise<AndroidSpeechState & { voices?: AndroidVoice[] }>;
   addListener(event: "stateChanged", callback: (state: AndroidSpeechState) => void): Promise<PluginListenerHandle>;
 }

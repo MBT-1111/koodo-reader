@@ -26,7 +26,7 @@ it("keeps original headings, punctuation, quotes and emoji while accepting only 
 it("keeps omitted assignments as narration and reports the fallback", async () => {
   network.mockResolvedValue(response({ "1": "child" }));
   const result = await analyzeAndroidSpeech(["原始旁白。", "原始童声。"], new AbortController().signal);
-  expect(result).toEqual({ text: ["原始旁白。", "原始童声。"], roles: ["narrator", "child"], fallbackCount: 1 });
+  expect(result).toEqual({ text: ["原始旁白。", "原始童声。"], roles: ["narrator", "child"], anchors: ["原始旁白。", "原始童声。"], fallbackCount: 1 });
 });
 
 it("ignores a delayed model result after stopping and rejects oversized chapters before sending", async () => {

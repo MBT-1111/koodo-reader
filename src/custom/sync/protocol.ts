@@ -105,6 +105,18 @@ export function reconcile(checkpoint: Checkpoint, local: Snapshot, documents: un
   // not an independent edit that should later conflict with a real rename.
   for (const [id, item] of Object.entries(local)) {
     const revisions = remoteEntries[id];
+    if (!state.observed[id] && isCounter(item.kind) && typeof item.value === "number") {
+      const known = heads([...(state.entries[id] || []), ...(revisions || [])]);
+      if (known.length) {
+        // A newly imported total can already include all cloud device deltas.
+        // Adopt that history, adding only any excess above the known total.
+        state.entries[id] = copy(known);
+        state.observed[id] = { kind: item.kind, value: Math.min(item.value, total(mergedCounter(known))) };
+        const context: Record<string, number> = {};
+        for (const r of known) for (const [device, count] of Object.entries(r.clock)) context[device] = Math.max(context[device] || 0, count);
+        state.context[id] = context;
+      }
+    }
     if (!state.entries[id] && !state.observed[id] && revisions?.length && !isCounter(item.kind) && revisions.every((r) => !r.deleted && r.kind === item.kind && stable(r.value) === stable(item.value))) {
       state.entries[id] = copy(revisions);
       state.observed[id] = copy(item);

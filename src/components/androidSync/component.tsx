@@ -16,17 +16,17 @@ export default function AndroidSync() {
   const canSync = useLocation().pathname.startsWith("/manager/");
   const [connection, setConnection] = useState<AndroidSyncConnection | null>(null);
   const [email, setEmail] = useState(""), [password, setPassword] = useState(""), [otp, setOtp] = useState("");
-  const [namespace, setNamespace] = useState("default"), [minutes, setMinutes] = useState(0);
+  const [namespace, setNamespace] = useState("default");
   const [busy, setBusy] = useState(false), [versions, setVersions] = useState<Conflict[]>([]);
   const pending = useRef(false);
-  const dirty = !connection || connection.email !== email || connection.namespace !== namespace || connection.autoMinutes !== minutes || !!password || !!otp;
+  const dirty = !connection || connection.email !== email || connection.namespace !== namespace || !!password || !!otp;
   useEffect(() => {
     if (!isNativeAndroid) return;
     let mounted = true;
     androidSyncConnection().then(async (saved) => {
       if (!mounted) return;
       setConnection(saved);
-      if (saved) { setEmail(saved.email); setNamespace(saved.namespace); setMinutes(saved.autoMinutes); }
+      if (saved) { setEmail(saved.email); setNamespace(saved.namespace); }
       const conflicts = await inspectAndroidConflicts();
       if (mounted) setVersions(conflicts);
     }).catch((error: unknown) => { if (mounted) toast.error(t(syncErrorKey(error))); });
@@ -59,14 +59,11 @@ export default function AndroidSync() {
       {connection && <small>{t("custom.sync.keepAccount")}</small>}
       <label>{t("custom.sync.namespace")}<input value={namespace} maxLength={64} pattern="[a-zA-Z0-9_-]+" onChange={(event) => setNamespace(event.target.value)} /></label>
       <small>{t("custom.sync.namespaceHelp")}</small>
-      <label>{t("custom.sync.automatic")}<select value={minutes} onChange={(event) => setMinutes(Number(event.target.value))}>
-        <option value={0}>{t("custom.sync.manual")}</option>{[5, 15, 30, 60].map((value) => <option key={value} value={value}>{t("custom.sync.minutes", { count: value })}</option>)}
-      </select></label>
       <small>{t("android.sync.foreground")}</small>
       {dirty && connection && <small>{t("custom.sync.unsaved")}</small>}
       <button type="button" onClick={() => void execute(async () => {
         try {
-          const saved = await configureAndroidSync({ email, password, secondFactorCode: otp, namespace, autoMinutes: minutes });
+          const saved = await configureAndroidSync({ email, password, secondFactorCode: otp, namespace, autoMinutes: 0 });
           setConnection(saved); toast.success(t("custom.sync.connectionSaved"));
         } finally { setPassword(""); setOtp(""); }
       })}>{t(connection ? "custom.sync.save" : "custom.sync.loginSave")}</button>

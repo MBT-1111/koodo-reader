@@ -1,4 +1,4 @@
-export interface SpeechChapter { index: number; title: string; text: string[] }
+export interface SpeechChapter { index: number; title: string; text: string[]; anchors?: string[] }
 interface ChapterDocument {
   label?: string;
   text: { createDocument?: () => Promise<Document>; load?: () => Promise<string> };
@@ -53,10 +53,11 @@ export async function prepareSpeechChapters(rendition: ChapterRendition, current
     signal.throwIfAborted();
     const body = doc.querySelector("body");
     if (!body) throw new Error("ANDROID_SPEECH_CHAPTERS");
-    const text = speechDocumentText(body).map(applyRules).filter(value => value.trim());
+    const paragraphs = speechDocumentText(body).map(anchor => ({ anchor, text: applyRules(anchor) })).filter(value => value.text.trim());
+    const text = paragraphs.map(value => value.text);
     size += text.reduce((sum, value) => sum + value.length, 0); count += text.length;
     if (size > 2000000 || count > 20000) throw new Error("ANDROID_SPEECH_CHAPTER_LIMIT");
-    if (text.length) followingChapters.push({ index: next, title: (docs[next].label || String(next + 1)).slice(0, 512), text });
+    if (text.length) followingChapters.push({ index: next, title: (docs[next].label || String(next + 1)).slice(0, 512), text, anchors: paragraphs.map(value => value.anchor) });
     // Let Stop/reader exit cancel preparation even when chapter documents are cached.
     await new Promise<void>(resolve => setTimeout(resolve, 0));
   }

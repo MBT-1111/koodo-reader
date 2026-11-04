@@ -58,6 +58,19 @@ describe("custom sync protocol", () => {
     expect(materialize(repeated.entries)[id].value).toBe(130);
     expect(conflicts(repeated.entries)).toEqual([]);
   });
+  it("enrolls a copied historical total after the cloud already contains device increments", () => {
+    const id = `time/${book}`, value = (seconds: number): Snapshot => ({ [id]: { kind: "time", value: seconds } });
+    const original = apply(reconcile(freshCheckpoint(), value(100), []));
+    const cloud = apply(reconcile(original, value(130), []));
+    const phone = apply(reconcile(freshCheckpoint(), value(130), [envelope(cloud)]));
+    expect(materialize(phone.entries)[id].value).toBe(130);
+    expect(materialize(reconcile(phone, value(130), [envelope(cloud)]).entries)[id].value).toBe(130);
+    const larger = apply(reconcile(freshCheckpoint(), value(150), [envelope(cloud)]));
+    expect(materialize(larger.entries)[id].value).toBe(150);
+    const pending = apply(reconcile(freshCheckpoint(), {}, [envelope(cloud)]));
+    const importedLater = apply(reconcile(pending, value(130), [envelope(cloud)]));
+    expect(materialize(importedLater.entries)[id].value).toBe(130);
+  });
   it("keeps unsent revisions in a checkpoint after an offline upload", () => {
     const local = reconcile(freshCheckpoint(), progress("offline"), []);
     const retry = reconcile(copy(local), progress("offline"), []);

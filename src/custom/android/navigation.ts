@@ -5,6 +5,7 @@ import { flushAndroidPreferences } from "./bootstrap";
 import { stopAndroidSpeech } from "./speech";
 import { isNativeAndroid } from "../../utils/platform";
 import { setNativeKeepScreenOn } from "./storage";
+import { flushSpeechReadingPositions } from "./speechPosition";
 
 export const ANDROID_READER_CLOSE_EVENT = "android-reader-close";
 export const ANDROID_READER_DISMISS_EVENT = "android-reader-dismiss";
@@ -55,6 +56,7 @@ export async function closeAndroidReader() {
   }
   window.speechSynthesis?.cancel();
   await stopAndroidSpeech();
+  await flushSpeechReadingPositions();
   await TTSUtil.stopAudio();
   if (isNativeAndroid) await setNativeKeepScreenOn(false);
   const state = useAppStore.getState();

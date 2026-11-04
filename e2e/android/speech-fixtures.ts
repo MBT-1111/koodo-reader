@@ -6,21 +6,24 @@ export interface SpeechHarness {
   fail: boolean;
   empty: boolean;
   state: AndroidSpeechState;
+  emit(state: AndroidSpeechState): void;
 }
 
 export async function mockSpeech(page: Page) {
   await page.addInitScript(() => {
     const qa: SpeechHarness = { requests: [], fail: false, empty: false,
-      state: { status: "idle", bookKey: "", index: 0, total: 0, error: "" } };
+      state: { status: "idle", bookKey: "", index: 0, total: 0, error: "" }, emit: () => {} };
     const listeners = new Map<string, (state: AndroidSpeechState) => void>();
     let sequence = 0;
+    qa.emit = state => { qa.state = state; listeners.forEach(listener => listener({ ...state })); };
     Object.assign(window, { speechQA: qa, Capacitor: {
-      PluginHeaders: [{ name: "KoodoSpeech", methods: [{ name: "execute", rtype: "promise" }, { name: "addListener" }, { name: "removeListener", rtype: "promise" }] }],
+      PluginHeaders: [{ name: "KoodoSpeech", methods: [{ name: "execute", rtype: "promise" }, { name: "readingPosition", rtype: "promise" }, { name: "addListener" }, { name: "removeListener", rtype: "promise" }] }],
       nativeCallback: (_plugin: string, _method: string, _options: unknown, callback: (state: AndroidSpeechState) => void) => {
         const id = String(++sequence); listeners.set(id, callback); return id;
       },
       nativePromise: async (_plugin: string, method: string, request: Record<string, unknown>) => {
         if (method === "removeListener") { listeners.delete(String(request.callbackId)); return; }
+        if (method === "readingPosition") return { positions: [] };
         qa.requests.push(request);
         const action = request.action;
         if (action === "voices") return { voices: qa.empty ? [] : [{ name: "fixture-offline-zh", locale: "zh-CN", network: false }] };

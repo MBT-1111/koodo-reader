@@ -81,4 +81,11 @@ describe("MEGA transfers through the installed SDK", () => {
     expect(remote.nodes.filter((node) => node.t === 1)).toHaveLength(1);
     expect(remote.nodes.filter((node) => node.t === 0)).toHaveLength(1);
   });
+  it("ignores a repeated deletion for an already absent node in cached change history", async () => {
+    const remote = server(true), state = envelope(reconcile(freshCheckpoint(), {}, []));
+    const first = new MegaProvider(await remote.open(), "default");
+    await first.append(state); await first.close(); remote.staleDeletion();
+    const second = new MegaProvider(await remote.open(), "default");
+    expect(await second.read()).toEqual([state]); await second.close();
+  });
 });

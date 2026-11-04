@@ -1,4 +1,5 @@
 import { useLatest } from "../../utils/hooks/useLatest";
+import { flushSpeechReadingPositions } from "../../custom/android/speechPosition";
 import { useEffect, useRef, useState } from "react";
 import { flushSync } from "react-dom";
 import BookUtil from "../../utils/file/bookUtil";
@@ -63,7 +64,7 @@ import { useAppStore } from "../../store/useAppStore";
 import BookModel from "../../models/Book";
 import { personalMode } from "../../custom/personal";
 import { hasReadingAI } from "../../custom/ai/reader";
-import { isAndroid } from "../../utils/platform";
+import { isAndroid, isNativeAndroid } from "../../utils/platform";
 
 export interface ViewerProps {
   book: BookModel;
@@ -649,6 +650,8 @@ const Viewer = (props: ViewerProps) => {
     }
     if (!isCurrentViewer()) return;
 
+    if (isNativeAndroid) await flushSpeechReadingPositions();
+    if (!isCurrentViewer()) return;
     let bookLocation: {
       text: string;
       count: string;

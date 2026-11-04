@@ -19,6 +19,7 @@ function model(kind: ReadingAI): Model {
   return { endpoint: endpoint.toString().replace(/\/$/, ""), modelId: config.modelId, apiKey: typeof config.apiKey === "string" ? config.apiKey : "", providerId: typeof config.providerId === "string" ? config.providerId : "" };
 }
 export function hasReadingAI(kind: ReadingAI): boolean { try { model(kind); return true; } catch { return false; } }
+export const readingAIConnection = (kind: ReadingAI) => model(kind);
 export function readingAIIdentity(kind: ReadingAI): string { const value = model(kind), url = new URL(value.endpoint); return JSON.stringify([url.origin, url.pathname, value.modelId, value.providerId]); }
 export const readingAIErrorKey = (error: unknown): string => error instanceof Error && /^CUSTOM_AI_(NOT_CONFIGURED|REQUEST_FAILED|SERVICE_BUSY|INVALID_RESPONSE|INCOMPLETE_RESPONSE|TEXT_TOO_LONG)$/.test(error.message) ? `custom.ai.${error.message}` : "custom.ai.CUSTOM_AI_REQUEST_FAILED";
 

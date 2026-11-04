@@ -5,6 +5,7 @@ import { describeConflicts, finishSync, prepareSync, sharedIdentityState } from 
 import { commit, fingerprints, snapshotJob, type NativeSnapshot } from "./backup";
 import { androidSyncConnection, configureAndroidMega, disconnectAndroidSync, isConnectingMega, withAndroidMega } from "./mega";
 import type { Conflict, RawData } from "../sync/types";
+import { flushSpeechReadingPositions } from "./speechPosition";
 
 let running = false;
 export const isAndroidSyncBusy = () => running || isConnectingMega();
@@ -17,11 +18,14 @@ const capture = (source: NativeSnapshot): RawData => {
   raw.config[DATA_STATE_KEY] = source.preferences.values[DATA_STATE_KEY] || null;
   return raw;
 };
-const userData = (raw: RawData) => ({ tables: raw.tables, config: Object.fromEntries(Object.entries(raw.config).filter(([key]) => key !== DATA_STATE_KEY)) });
+const userData = (raw: RawData) => ({
+  tables: Object.fromEntries(Object.entries(raw.tables).map(([table, rows]) => [table, [...rows].sort((a, b) => a.key.localeCompare(b.key))])),
+  config: Object.fromEntries(Object.entries(raw.config).filter(([key]) => key !== DATA_STATE_KEY)),
+});
 
 export async function configureAndroidSync(input: Parameters<typeof configureAndroidMega>[0]) {
   if (isAndroidSyncBusy()) throw new Error("CUSTOM_SYNC_BUSY");
-  return configureAndroidMega(input);
+  return configureAndroidMega({ ...input, autoMinutes: 0 });
 }
 export async function disconnectSync() {
   if (isAndroidSyncBusy()) throw new Error("CUSTOM_SYNC_BUSY");
@@ -33,11 +37,11 @@ export async function inspectAndroidConflicts(): Promise<Conflict[]> {
   const state = readDataState(localStorage.getItem(stateKey(connection.scope)));
   return describeConflicts(state);
 }
-
 export async function runAndroidSync(resolutions: Record<string, string> = {}) {
   if (isAndroidSyncBusy()) throw new Error("CUSTOM_SYNC_BUSY");
   running = true;
   try {
+    await flushSpeechReadingPositions();
     const connection = await androidSyncConnection();
     if (!connection) throw new Error("CUSTOM_NOT_CONFIGURED");
     const result = await withAndroidMega(connection, async (transport) => {
@@ -73,29 +77,4 @@ export async function runAndroidSync(resolutions: Record<string, string> = {}) {
     await Promise.all([store.handleFetchBooks(), store.handleFetchNotes(), store.handleFetchBookmarks()]);
     return result;
   } finally { running = false; }
-}
-
-// WebView timers are used only while the manager is mounted and visible. No
-// background service is claimed; a closed reader/app waits until foreground.
-export function scheduleAndroidSync(onResult: (result: Awaited<ReturnType<typeof runAndroidSync>>) => void, onError: (error: unknown) => void) {
-  let stopped = false, checking = false, retryAfter = 0, failures = 0;
-  const tick = async () => {
-    if (stopped || checking || isAndroidSyncBusy() || document.visibilityState !== "visible" || useAppStore.getState().manager.isSettingOpen || Date.now() < retryAfter) return;
-    checking = true;
-    try {
-      const connection = await androidSyncConnection();
-      if (stopped || !connection?.autoMinutes || Date.now() - Number(localStorage.getItem(lastKey(connection.scope)) || 0) < connection.autoMinutes * 60000) return;
-      const result = await runAndroidSync();
-      failures = 0; retryAfter = 0;
-      if (!stopped) onResult(result);
-    } catch (error) {
-      if (error instanceof Error && /CUSTOM_CLOSE_READERS|CUSTOM_SYNC_BUSY|CUSTOM_LOCAL_CHANGED/.test(error.message)) { retryAfter = Date.now() + 60000; return; }
-      retryAfter = Date.now() + Math.min(60, 2 ** Math.min(++failures, 6)) * 60000;
-      if (!stopped && failures === 1) onError(error);
-    } finally { checking = false; }
-  };
-  const timer = window.setInterval(() => void tick(), 30000);
-  document.addEventListener("visibilitychange", tick);
-  void tick();
-  return () => { stopped = true; window.clearInterval(timer); document.removeEventListener("visibilitychange", tick); };
 }

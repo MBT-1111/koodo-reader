@@ -4,8 +4,10 @@ const { createHash } = require("node:crypto"), { execFileSync } = require("node:
 const { _android: android } = require("playwright");
 const { expect } = require("@playwright/test");
 const { systemPicker } = require("./android-system-picker.cjs");
+const { showReadingTools } = require("../e2e/android/fixtures.cjs");
 const { wave, plugin } = require("../e2e/android/cloud-speech-fixtures.cjs");
-const pkg = "xyz.koodoreader.custom.android", output = path.join(__dirname, "..", "dist", "android-device");
+const pkg = process.env.ANDROID_TEST_PACKAGE || "xyz.koodoreader.custom.android", output = path.join(__dirname, "..", "dist", "android-device");
+assert.ok(["xyz.koodoreader.custom.android", "xyz.koodoreader.custom.android.restoreqa"].includes(pkg));
 const configKeys = ["readerConfig", "recordLocation", "readingTime", "readingStats", "recentBooks", "multiRoleVoiceBooks"];
 const canonical = value => Array.isArray(value) ? value.map(canonical) : value && typeof value === "object" ? Object.fromEntries(Object.keys(value).sort().map(key => [key, canonical(value[key])])) : value;
 const hash = value => createHash("sha256").update(JSON.stringify(canonical(value))).digest("hex");
@@ -54,10 +56,10 @@ async function main() {
     response.end(azure ? audio : JSON.stringify({ choices: [{ message: { audio: { data: audio.toString("base64") } } }] }));
   });
   try {
-    await device.shell(`am start -n ${pkg}/.MainActivity`); await attach();
+    await device.shell(`am start -n ${pkg}/xyz.koodoreader.custom.android.MainActivity`); await attach();
     await expect(page.locator(".android-header, .android-reader").first()).toBeVisible(); await closeReader();
     baseline = await rows();
-    const baselineFile = path.join(output, "chapter-device-baseline.json");
+    const baselineFile = path.join(output, pkg.endsWith(".restoreqa") ? "chapter-qa-baseline.json" : "chapter-device-baseline.json");
     if (process.argv.includes("--baseline")) {
       await fs.writeFile(baselineFile, JSON.stringify({ tables: summaries(baseline), preferences: hash((await storage({ channel: "preferences", action: "read" })).values) }, null, 2));
       checked("current library and preferences recorded as hashes without saving credentials"); return;
@@ -81,9 +83,11 @@ async function main() {
       phase = `${book.format}-${source}`;
       await page.locator(".book-list-item").filter({ hasText: book.name }).locator(".book-item-cover").click();
       await expect(page.locator("#page-area")).toHaveAttribute("aria-busy", "false");
+      await showReadingTools(page);
+      await page.getByRole("button", { name: "Chapters", exact: true }).click();
+      await page.locator(".content-chapter-title").first().click();
       const position = () => page.evaluate(key => JSON.parse(localStorage.getItem("recordLocation") || "{}")[key], book.key);
-      await expect.poll(position).toBeTruthy();
-      const before = await position();
+      await expect.poll(async () => Number((await position())?.chapterDocIndex)).toBe(0);
       const toggle = page.locator(".android-reader-menu-toggle"); if (await toggle.isVisible()) await toggle.click();
       await page.getByRole("button", { name: "Text to speech", exact: true }).click();
       const panel = page.locator(".android-speech");
@@ -113,15 +117,14 @@ async function main() {
       devices = await android.devices({ omitDriverInstall: true }); device = devices.find(item => item.serial() === serial); assert.ok(device); await attach();
       const background = await state(); assert.equal(background.chapterDocIndex, 1); assert.equal(background.status, "playing"); assert.ok(background.index > boundary);
       if (source !== "system") assert.ok(received.some(item => item.phase === phase && item.time > detachedAt && item.text.includes(book.format === "TXT" ? "后续第" : "第二章")), "Next chapter synthesis must run while the debugger is detached");
-      assert.equal((await position()).chapterDocIndex, before.chapterDocIndex);
-      assert.equal((await position()).text, before.text);
       // Direct app controls are foreground gestures; background resume uses the media session.
-      await device.shell(`am start -n ${pkg}/.MainActivity`);
+      await device.shell(`am start -n ${pkg}/xyz.koodoreader.custom.android.MainActivity`);
+      await expect.poll(async () => Number((await position()).chapterDocIndex), { timeout: 15000 }).toBe(1);
       await speech({ action: "pause" }); const paused = (await state()).index; await page.waitForTimeout(500); assert.equal((await state()).index, paused);
       await speech({ action: "resume" }); await expect.poll(async () => (await state()).status).toBe("playing");
       report.cases.push({ format: book.format, source, backgroundChapter: background.chapterDocIndex, detachedMs: 10000 });
-      checked(`${phase}: native chapter transition with debugger detached, paused boundary navigation, invalid input rejection and reading position retained`);
-      await device.shell(`am start -n ${pkg}/.MainActivity`);
+      checked(`${phase}: native chapter transition with debugger detached, paused boundary navigation, invalid input rejection and reading position follows speech`);
+      await device.shell(`am start -n ${pkg}/xyz.koodoreader.custom.android.MainActivity`);
       if (source === "azure") {
         await device.shell("input keyevent KEYCODE_HOME");
         monitor = await device.open("shell:cmd media_session monitor KoodoSpeech"); let ready = false;
@@ -130,7 +133,7 @@ async function main() {
         await monitor.write(Buffer.from("play\n")); await expect.poll(async () => (await state()).status).toBe("playing");
         await monitor.write(Buffer.from("q\n")); await monitor.close(); monitor = undefined;
         checked("targeted media controls pause and resume the native queue after a chapter transition");
-        await device.shell(`am start -n ${pkg}/.MainActivity`);
+        await device.shell(`am start -n ${pkg}/xyz.koodoreader.custom.android.MainActivity`);
       }
       await closeReader(); assert.equal((await state()).status, "idle"); await released();
     }
@@ -152,11 +155,11 @@ async function main() {
     try {
       if (preferences && !page) {
         devices = await android.devices({ omitDriverInstall: true }); device = devices.find(item => item.serial() === serial); assert.ok(device, "Reconnect the test phone to restore its original preferences");
-        await device.shell(`am start -n ${pkg}/.MainActivity`); await attach();
+        await device.shell(`am start -n ${pkg}/xyz.koodoreader.custom.android.MainActivity`); await attach();
       }
       if (page && preferences) {
         if (monitor) { await monitor.write(Buffer.from("q\n")).catch(() => {}); await monitor.close().catch(() => {}); }
-        await speech({ action: "stop" }); await device.shell(`am start -n ${pkg}/.MainActivity`); await closeReader();
+        await speech({ action: "stop" }); await device.shell(`am start -n ${pkg}/xyz.koodoreader.custom.android.MainActivity`); await closeReader();
         for (const item of fixtures) {
           await storage({ channel: "database-command", dbName: "plugins", statement: "deleteStatement", data: item.key });
           const original = baseline.plugins.find(record => record.key === item.key); if (original) await storage({ channel: "database-command", dbName: "plugins", statement: "saveStatement", data: original });
@@ -169,7 +172,7 @@ async function main() {
     } catch (error) { report.passed = false; report.cleanupError = error.message; throw error; }
     finally {
       if (port) { try { execFileSync(process.env.ADB_PATH || "adb", ["-s", serial, "reverse", "--remove", `tcp:${port}`]); } catch {} }
-      if (!process.argv.includes("--baseline")) await fs.writeFile(path.join(output, "chapter-device-report.json"), JSON.stringify(report, null, 2));
+      if (!process.argv.includes("--baseline")) await fs.writeFile(path.join(output, pkg.endsWith(".restoreqa") ? "chapter-qa-report.json" : "chapter-device-report.json"), JSON.stringify(report, null, 2));
       await Promise.all(devices.map(item => item.close())); if (server.listening) await new Promise(resolve => server.close(resolve));
     }
   }
