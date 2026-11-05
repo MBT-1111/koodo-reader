@@ -1,4 +1,19 @@
 const fs = require("node:fs/promises"), path = require("node:path");
+const { PDFDocument } = require("../../public/lib/pdf-lib/pdf-lib.min.js");
+
+async function imagePdfFixture(page) {
+  const images = await page.evaluate(() => Array.from({ length: 8 }, (_, index) => {
+    const canvas = document.createElement("canvas"); canvas.width = 360; canvas.height = 540;
+    const ctx = canvas.getContext("2d");
+    ctx.fillStyle = `hsl(${index * 40}, 65%, 40%)`; ctx.fillRect(0, 0, 360, 540);
+    ctx.fillStyle = "white"; ctx.font = "32px sans-serif"; ctx.fillText(`Scanned page ${index + 1}`, 30, 70);
+    return canvas.toDataURL("image/png");
+  }));
+  const pdf = await PDFDocument.create();
+  pdf.setTitle("Android image PDF touch sample");
+  for (const image of images) pdf.addPage([360, 540]).drawImage(await pdf.embedPng(image), { x: 0, y: 0, width: 360, height: 540 });
+  return { format: "pdf", name: "android-image-touch.pdf", mimeType: "application/pdf", buffer: Buffer.from(await pdf.save()) };
+}
 
 async function amazonPdfFixtures(files) {
   const fixtures = [
@@ -20,4 +35,4 @@ const visiblePdfPage = page => page.locator("#page-area").evaluate(area => {
   }
   return selected;
 });
-module.exports = { amazonPdfFixtures, visiblePdfPage };
+module.exports = { amazonPdfFixtures, imagePdfFixture, visiblePdfPage };

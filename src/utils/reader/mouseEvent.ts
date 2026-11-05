@@ -6,6 +6,7 @@ import {
   handleExitFullScreen,
   handleFullScreen,
   isReadingAidMode,
+  isReadingRawPDF,
   sleep,
 } from "../common";
 import Hammer from "hammerjs";
@@ -517,8 +518,14 @@ export const bindHtmlEvent = (
   );
 
   if (ConfigService.getReaderConfig("isTouch") === "yes") {
-    const mc = new Hammer(doc);
+    const androidPdf = isAndroid && isReadingRawPDF(book) && readerMode !== "scroll";
+    const mc = new Hammer(androidPdf ? doc.documentElement : doc);
+    if (androidPdf) {
+      mc.get("pan").set({ direction: Hammer.DIRECTION_ALL });
+      doc.documentElement.style.touchAction = "pinch-zoom";
+    }
     mc.on(isAndroid ? "panend" : "panleft panright panup pandown", async (event: HammerInput) => {
+      if (androidPdf && doc.documentElement.dataset.androidPdfDrawing === "true") return;
       if (readerMode === "scroll") {
         return;
       }

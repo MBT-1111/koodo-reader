@@ -7,6 +7,19 @@ import { isAndroid } from "../platform";
 import { isAndroidEink } from "../../custom/android/eink";
 
 class styleUtil {
+  static configureAndroidPdfTouch(doc: Document, drawing: boolean) {
+    if (!isAndroid || !doc.head) return;
+    doc.documentElement.dataset.androidPdfDrawing = String(drawing);
+    let style = doc.getElementById("android-pdf-touch-style");
+    if (!style) {
+      style = doc.createElement("style");
+      style.id = "android-pdf-touch-style";
+      doc.head.appendChild(style);
+    }
+    // The inactive Fabric selection overlay must not intercept reading gestures.
+    style.textContent = drawing ? "" : ".canvas-container, .canvas-container * { pointer-events: none !important; touch-action: auto !important; }";
+  }
+
   // add default css for iframe
   static addDefaultCss(bookKey: string) {
     let doc = getOuterDoc();

@@ -1,5 +1,7 @@
 # Android 亚马逊格式与中文文字 PDF
 
+2026-11-05：补充修复图片 PDF 的触摸翻页与框选问题，并完成隔离真机验证和无损更新；最新记录见 [Android PDF 触摸修复](ANDROID_PDF_TOUCH.md)。下文保留格式移植验收记录。
+
 2026-11-04，分支 `codex/android-phone-prototype`。按所有者要求优先补齐常用的 MOBI、AZW、AZW3 和中文文字 PDF，再进入日常使用、边用边修阶段。样本均自行生成，不使用用户书籍或真实云空间。
 
 ## 实现范围

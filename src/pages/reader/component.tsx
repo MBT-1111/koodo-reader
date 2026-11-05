@@ -33,7 +33,8 @@ import SupportDialog from "../../components/dialogs/supportDialog";
 import WindowControls from "../../components/windowControls";
 import { READING_PANEL_TOGGLE_EVENT, toggleNavTab } from "../../utils/reader/mouseEvent";
 import { isPaginatedBook, isReadingRawPDF, throttle } from "../../utils/common";
-import { getOuterDoc } from "../../utils/reader/docUtil";
+import { getIframeDoc, getOuterDoc } from "../../utils/reader/docUtil";
+import StyleUtil from "../../utils/reader/styleUtil";
 import { useAppStore } from "../../store/useAppStore";
 import { isAndroid, isNativeAndroid } from "../../utils/platform";
 import { setNativeKeepScreenOn } from "../../custom/android/storage";
@@ -213,8 +214,11 @@ const Reader = () => {
     rendition.applyAnnotationConfig({
       isDrawing: isAnnotationOpen ? "yes" : "no",
     });
+    if (isAndroid && isReadingRawPDF(currentBook)) {
+      for (const doc of getIframeDoc(currentBook)) if (doc) StyleUtil.configureAndroidPdfTouch(doc, isAnnotationOpen);
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isAnnotationOpen, htmlBook]);
+  }, [isAnnotationOpen, htmlBook, currentBook]);
   const readingTimeUtilRef = useRef<InstanceType<
     typeof ReadingTimeUtil
   > | null>(null);
@@ -529,7 +533,7 @@ const Reader = () => {
 
         propsRef.current.handleFetchPercentage(book);
         let readerMode = isPaginatedBook(book)
-          ? ConfigService.getReaderConfig("pdfReaderMode") || "scroll"
+          ? ConfigService.getReaderConfig("pdfReaderMode") || (isAndroid && isReadingRawPDF(book) ? "single" : "scroll")
           : ConfigService.getReaderConfig("readerMode") || "double";
         propsRef.current.handleReaderMode(readerMode);
         propsRef.current.handleReadingBook(book);

@@ -471,7 +471,7 @@ const Viewer = (props: ViewerProps) => {
         backgroundColor: eink
           ? "rgba(255,255,255,1)"
           : ConfigService.getReaderConfig("backgroundColor"),
-        isMobile: "no",
+        isMobile: isAndroid && isReadingRawPDF(propsRef.current.currentBook) ? "yes" : "no",
         isIndent: ConfigService.getReaderConfig("isIndent"),
         isHyphenation: ConfigService.getReaderConfig("isHyphenation"),
         isStartFromEven: ConfigService.getReaderConfig("isStartFromEven"),
@@ -819,6 +819,9 @@ const Viewer = (props: ViewerProps) => {
     let docs = getIframeDoc(propsRef.current.currentBook);
     for (let i = 0; i < docs.length; i++) {
       let doc = docs[i];
+      if (doc && isAndroid && isReadingRawPDF(propsRef.current.currentBook)) {
+        StyleUtil.configureAndroidPdfTouch(doc, useAppStore.getState().reader.isAnnotationOpen);
+      }
       if (!doc || gestureBoundDocs.has(doc)) continue;
       gestureBoundDocs.add(doc);
       let pointer: { id: number; x: number; y: number; time: number; multiple: boolean } | null = null;
