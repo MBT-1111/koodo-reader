@@ -21,6 +21,65 @@
   width: 100%;
   height: calc(100% - 15px);
 }
+.note-option-row {
+  position: absolute;
+  top: calc(100% - 110px);
+  width: calc(100% - 40px);
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.note-option-row .color-option-container-edit {
+  position: static;
+  top: auto;
+  width: auto;
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.note-option-row .color-option-container-edit::-webkit-scrollbar {
+  display: none;
+}
+.note-option-row .color-option-container-edit > ul {
+  flex-shrink: 0;
+}
+.note-option-row .note-highlight-color-item {
+  flex-shrink: 0;
+}
+.note-type-select {
+  flex-shrink: 0;
+}
+.editor-box-parent.note-preview-enabled {
+  display: flex;
+  flex-direction: row;
+  gap: 10px;
+  box-sizing: border-box;
+  /* Reserve the same bottom space the normal textarea leaves for the
+     color options and tag row: height calc(100% - 90px) plus its 20px
+     padding, so the panes end at the same place and never overlap them. */
+  padding-bottom: 70px;
+}
+.editor-box-parent.note-preview-enabled.note-preview-docked {
+  flex-direction: column;
+}
+.editor-box-parent.note-preview-enabled > .editor-box,
+.editor-box-parent.note-preview-enabled > .note-preview-pane {
+  flex: 1 1 0;
+  width: auto;
+  height: auto;
+  min-width: 0;
+  min-height: 0;
+  box-sizing: border-box;
+}
+.note-preview-pane {
+  overflow-y: auto;
+  background-color: rgba(16, 152, 112, 0.05);
+  border-radius: 7px;
+  padding: 10px;
+  font-size: 15px;
+  line-height: 1.6;
+}
 .editor-box {
   border: none;
   outline: none;
@@ -28,6 +87,7 @@
   font-size: 15px;
   width: calc(100% - 20px);
   min-height: 120px;
+  height: calc(100% - 90px);
   line-height: 18px;
   overflow-y: scroll;
   background-color: rgba(16, 152, 112, 0.05);

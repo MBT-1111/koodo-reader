@@ -1,6 +1,7 @@
 import { copy, materialize, stable, winner } from "./protocol";
 import type { Change, Checkpoint, Json, Mappings, RawData, Row, Snapshot, Table } from "./types";
 import { fields } from "./contract";
+import { normalizeNoteType } from "../../models/Note";
 
 export const configKeys = ["recordLocation", "readingTime", "readingStats", "shelfList", "favoriteBooks", "deletedBooks", "recentBooks", "noteTags"] as const;
 export const tables: Table[] = ["books", "notes", "bookmarks"];
@@ -35,7 +36,10 @@ export function snapshot(raw: RawData, mappings: Mappings): Snapshot {
     const book = mappings.books[String(row.bookKey)];
     if (!book) continue;
     const id = mappings[table][row.key] ||= crypto.randomUUID();
-    add(id, kind, { ...pick(row, fields[kind]), book });
+    const value = pick(row, fields[kind]);
+    // Plain notes keep the original v1 payload; only rich notes need an extension.
+    if (kind === "note" && value.type === "text") delete value.type;
+    add(id, kind, { ...value, book });
   }
   const progress = record(parseConfig(raw, "recordLocation"));
   for (const [key, value] of Object.entries(progress)) if (mappings.books[key] && value !== null) {
@@ -106,6 +110,7 @@ export function plan(raw: RawData, state: Checkpoint): RawData {
         if (!known && next.tables[table].some((r) => r.key === key)) throw new Error("CUSTOM_KEY_COLLISION");
         const existing = next.tables[table].find((r) => r.key === key);
         const row: Row = { ...(existing || {}), ...pick(value, fields[chosen.kind]), key, bookKey: keys[0] };
+        if (chosen.kind === "note") row.type = normalizeNoteType(typeof value.type === "string" ? value.type : undefined);
         state.mappings[table][key] = id;
         next.tables[table] = [...next.tables[table].filter((r) => r.key !== key), row];
       }

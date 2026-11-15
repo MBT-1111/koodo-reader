@@ -620,6 +620,62 @@ export const openExternalUrl = (
 export const openInBrowser = (url: string) => {
   isElectron ? window.electronAPI.shell.openExternal(url) : window.open(url);
 };
+const escapeExternalLinkText = (text: string) =>
+  text
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+let isConfirmingExternalUrl = false;
+export const confirmOpenExternalUrl = async (url: string) => {
+  if (isConfirmingExternalUrl) {
+    return;
+  }
+  isConfirmingExternalUrl = true;
+  try {
+    const confirmed = await vexComfirmAsync(
+      i18n.t("Do you want to open this link in browser") +
+        "<br><span style='word-break:break-all'>" +
+        escapeExternalLinkText(url) +
+        "</span>"
+    );
+    if (confirmed) {
+      openExternalUrl(url);
+    }
+  } finally {
+    isConfirmingExternalUrl = false;
+  }
+};
+export const initExternalLinkGuard = () => {
+  const handleExternalLinkClick = (event: MouseEvent) => {
+    if (event.type === "auxclick" && event.button !== 1) {
+      return;
+    }
+    const anchor = (event.target as Element | null)?.closest?.("a[href]");
+    if (!anchor) {
+      return;
+    }
+    const href = anchor.getAttribute("href")?.trim();
+    if (!href || href.startsWith("#")) {
+      return;
+    }
+    let targetUrl: URL;
+    try {
+      targetUrl = new URL(href, window.location.href);
+    } catch (_) {
+      return;
+    }
+    event.preventDefault();
+    event.stopPropagation();
+    if (!/^(https?|mailto):$/i.test(targetUrl.protocol)) {
+      return;
+    }
+    void confirmOpenExternalUrl(targetUrl.href);
+  };
+  document.addEventListener("click", handleExternalLinkClick, true);
+  document.addEventListener("auxclick", handleExternalLinkClick, true);
+};
 export const getPageWidth = (
   readerMode: string,
   scale: string,
@@ -957,6 +1013,8 @@ export const getDefaultTransTarget = (langList) => {
 };
 export const WEBSITE_URL = "https://koodoreader.com/";
 export const CN_WEBSITE_URL = "https://koodoreader.cn/";
+export const WEB_APP_URL = "https://web.koodoreader.com/";
+export const CN_WEB_APP_URL = "https://web.koodoreader.cn/";
 export const WEBSITE_LANGS = [
   "zh",
   "en",
@@ -985,6 +1043,9 @@ export const getServerRegion = () => {
 };
 export const getWebsiteUrl = () => {
   return getServerRegion() === "china" ? CN_WEBSITE_URL : WEBSITE_URL;
+};
+export const getWebAppUrl = () => {
+  return getServerRegion() === "china" ? CN_WEB_APP_URL : WEB_APP_URL;
 };
 export const getWebsiteLang = () => {
   const lang = ConfigService.getReaderConfig("lang") || "en";
@@ -1987,6 +2048,7 @@ export const HIGHLIGHTER_COLORS = [
 ];
 export const HIGHLIGHTER_WIDTHS = [4, 8, 14, 20];
 export const SHAPE_TYPES = ["rect", "circle", "ellipse", "line", "arrow"];
+export const ANNOTATION_LINE_STYLES = ["solid", "dashed", "dotted"];
 export const TEXT_SIZE_MIN = 12;
 export const TEXT_SIZE_MAX = 72;
 export const TEXT_SIZE_STEP = 1;
@@ -2107,7 +2169,7 @@ export const getDefaultOcrLang = (engine: string, currentBook: any) => {
 };
 export const CONTEXT_MENU_WIDTH = 200;
 export const CONTEXT_MENU_ITEM_HEIGHT = 33;
-export const CONTEXT_MENU_PADDING = 10;
+export const CONTEXT_MENU_PADDING = 5;
 export const CONTEXT_MENU_MARGIN = 8;
 export const SUBMENU_GAP = 195; // 子菜单相对主菜单的水平偏移（约等于主菜单宽度）
 
@@ -2141,6 +2203,28 @@ export function clampMenuPosition(
     Math.min(top, vw.height - menuHeight - CONTEXT_MENU_MARGIN)
   );
   return { left: clampedLeft, top: clampedTop };
+}
+
+// 定位子菜单：默认与触发项顶部对齐并向下展开；下方空间不足时向上展开，
+// 让子菜单底部与触发项底部对齐，避免两者之间留下空隙，
+// 否则鼠标从触发项移入子菜单时会先离开菜单区域导致菜单被关闭。
+export function getSubmenuPosition(
+  left: number,
+  triggerTop: number,
+  triggerHeight: number,
+  menuWidth: number,
+  menuHeight: number,
+  viewport?: Viewport
+): { left: number; top: number } {
+  const vh = (viewport || {
+    width: window.innerWidth,
+    height: window.innerHeight,
+  }).height;
+  const top =
+    triggerTop + menuHeight + CONTEXT_MENU_MARGIN > vh
+      ? triggerTop + triggerHeight - menuHeight
+      : triggerTop;
+  return clampMenuPosition(left, top, menuWidth, menuHeight, viewport);
 }
 
 // 子菜单(宽 subWidth)从 anchorLeft 处向右(先叠 SUBMENU_GAP)展开是否会超右缘。
@@ -2322,9 +2406,9 @@ export const isReadingAidMode = (format: string, bookKey: string) => {
     format === "PDF" &&
     !ConfigService.getAllListConfig("convertPDFBooks").includes(bookKey);
   return (
-    (ConfigService.getReaderConfig("isParagraphMode") === "yes" ||
-      ConfigService.getReaderConfig("isSpeedReading") === "yes" ||
-      ConfigService.getReaderConfig("isReadingRuler") === "yes") &&
+    (ConfigService.getAllListConfig("paragraphModeBooks").includes(bookKey) ||
+      ConfigService.getAllListConfig("speedReadingBooks").includes(bookKey) ||
+      ConfigService.getAllListConfig("readingRulerBooks").includes(bookKey)) &&
     !isReadingRawPDF
   );
 };
@@ -2437,6 +2521,20 @@ export const isPaginatedBook = (book: Book) => {
     book.format === "DJV" ||
     book.format === "OFD" ||
     isFixedLayoutComic(book)
+  );
+};
+// 阅读器浮层弹窗（笔记/翻译/词典/问 AI）
+export const POPUP_BOX_MODES = ["note", "trans", "dict", "assistant"];
+
+// 弹窗正在展示且未固定到右侧时，ESC 应优先关闭弹窗而不是退出阅读
+export const isUndockedPopupBoxOpen = (
+  viewArea: { isOpenMenu: boolean; menuMode: string },
+  reader: { isDockedRight: boolean }
+) => {
+  return (
+    !reader.isDockedRight &&
+    viewArea.isOpenMenu &&
+    POPUP_BOX_MODES.includes(viewArea.menuMode)
   );
 };
 // PPTX/PPT/XPS/OXPS/DjVu/OFD 复用漫画结构渲染，暂不支持笔记和高亮

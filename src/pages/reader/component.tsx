@@ -32,15 +32,12 @@ import {
 import SupportDialog from "../../components/dialogs/supportDialog";
 import ReaderTopToolbar from "../../components/readerTopToolbar";
 import { READING_PANEL_TOGGLE_EVENT } from "../../utils/reader/mouseEvent";
-import {
-  isPaginatedBook,
-  throttle,
-} from "../../utils/common";
+import { isPaginatedBook, POPUP_BOX_MODES, throttle } from "../../utils/common";
 import { getOuterDoc } from "../../utils/reader/docUtil";
 import { isNavigationComposing } from "../../utils/reader/navigationLock";
 import { useAppStore } from "../../store/useAppStore";
 
-const QUICK_BUTTON_EDGE_DISTANCE = 60;
+const QUICK_BUTTON_EDGE_DISTANCE = 40;
 
 export interface ReaderState {
   isOpenRightPanel: boolean;
@@ -54,7 +51,7 @@ export interface ReaderState {
 }
 
 declare var window: any;
-let isMouseMoving = false;
+let lastMouseMoveTime = 0;
 const PANEL_POSITIONS = ["left", "right"] as const;
 type PanelPosition = (typeof PANEL_POSITIONS)[number];
 const PANEL_ENTER_DELAY = 500;
@@ -96,6 +93,8 @@ const Reader = () => {
   const isSettingLocked = useAppStore((s) => s.reader.isSettingLocked);
   const isDockedRight = useAppStore((s) => s.reader.isDockedRight);
   const isSettingOpen = useAppStore((s) => s.manager.isSettingOpen);
+  const isOpenMenu = useAppStore((s) => s.viewArea.isOpenMenu);
+  const menuMode = useAppStore((s) => s.viewArea.menuMode);
   const handleFetchBooks = useAppStore((s) => s.handleFetchBooks);
   const handleReadingBook = useAppStore((s) => s.handleReadingBook);
   const handleFetchPercentage = useAppStore((s) => s.handleFetchPercentage);
@@ -227,7 +226,7 @@ const Reader = () => {
     const delay = stateRef.current.isPreventTrigger ? 0 : PANEL_ENTER_DELAY;
     enterTimers[position] = setTimeout(() => {
       enterTimers[position] = null;
-      if (!isEdgeHovering[position] || isMouseMoving) return;
+      if (!isEdgeHovering[position] || Date.now() - lastMouseMoveTime < 100) return;
       handleEnterReader(position);
     }, delay);
   };
@@ -412,9 +411,7 @@ const Reader = () => {
     }
   };
   const hideQuickButtons = () => {
-    if (hideQuickButtonsTimerRef.current) {
-      clearTimeout(hideQuickButtonsTimerRef.current);
-    }
+    if (!stateRef.current.isNearEdge || hideQuickButtonsTimerRef.current) return;
     hideQuickButtonsTimerRef.current = setTimeout(() => {
       hideQuickButtonsTimerRef.current = null;
       if (stateRef.current.isNearEdge) {
@@ -461,6 +458,17 @@ const Reader = () => {
         let readerMode = isPaginatedBook(book)
           ? ConfigService.getReaderConfig("pdfReaderMode") || "scroll"
           : ConfigService.getReaderConfig("readerMode") || "double";
+        // 自动阅读改为按书开关，重新打开已开启该模式的书籍时仍强制滚动模式
+        if (
+          ConfigService.getAllListConfig("autoReadingBooks").includes(book.key)
+        ) {
+          if (isPaginatedBook(book)) {
+            ConfigService.setReaderConfig("pdfReaderMode", "scroll");
+          } else {
+            ConfigService.setReaderConfig("readerMode", "scroll");
+          }
+          readerMode = "scroll";
+        }
         propsRef.current.handleReaderMode(readerMode);
         propsRef.current.handleReadingBook(book);
         // Start event-driven reading-time tracking
@@ -481,6 +489,7 @@ const Reader = () => {
 
   useEffect(() => {
     if (ConfigService.getReaderConfig("isMergeWord") === "yes") {
+      document.documentElement.style.backgroundColor = "transparent";
       document
         .querySelector("body")
         ?.setAttribute("style", "background-color: rgba(0,0,0,0)");
@@ -503,19 +512,47 @@ const Reader = () => {
         ConfigService.setReaderConfig("isFinishWebReading", "yes");
       }
     });
-    const handleMouseMove = (e: MouseEvent) => {
-      isMouseMoving = true;
-      setTimeout(() => {
-        isMouseMoving = false;
-      }, 100);
-      if (isWithinEdgeZone(e.clientY)) {
+    let latestPointerY: number | null = null;
+    const updateQuickButtons = () => {
+      if (latestPointerY === null) return;
+      if (isWithinEdgeZone(latestPointerY)) {
         showQuickButtons();
       } else {
         hideQuickButtons();
       }
     };
-    const throttledMouseMove = throttle(handleMouseMove, 100);
-    window.addEventListener("mousemove", throttledMouseMove);
+    const throttledMouseMove = throttle(updateQuickButtons, 100);
+    const handleMouseMove = (e: MouseEvent) => {
+      lastMouseMoveTime = Date.now();
+      latestPointerY = e.clientY;
+      throttledMouseMove();
+    };
+    const handlePointerLeftWindow = () => {
+      latestPointerY = null;
+      hideQuickButtons();
+    };
+    const handleWindowMouseLeave = (e: MouseEvent) => {
+      // Entering an Electron draggable region (e.g. the toolbar) also fires
+      // mouseleave even though the pointer is still inside the window.
+      if (
+        e.clientX > 1 &&
+        e.clientY > 1 &&
+        e.clientX < window.innerWidth - 1 &&
+        e.clientY < window.innerHeight - 1
+      ) {
+        return;
+      }
+      handlePointerLeftWindow();
+    };
+    window.addEventListener("mousemove", handleMouseMove);
+    document.documentElement.addEventListener(
+      "mouseleave",
+      handleWindowMouseLeave
+    );
+    // 无边框 Electron 窗口不会派发 DOM mouseleave，由主进程轮询兜底
+    const removeMouseLeaveListener = isElectron
+      ? window.electronAPI?.on?.("reader-mouse-leave", handlePointerLeftWindow)
+      : undefined;
     window.addEventListener(
       READING_PANEL_TOGGLE_EVENT,
       handleReadingPanelToggle
@@ -529,6 +566,12 @@ const Reader = () => {
       updateState({ isNearEdge: false });
     }, 1500);
     return () => {
+      window.removeEventListener("mousemove", handleMouseMove);
+      document.documentElement.removeEventListener(
+        "mouseleave",
+        handleWindowMouseLeave
+      );
+      removeMouseLeaveListener?.();
       window.removeEventListener(
         READING_PANEL_TOGGLE_EVENT,
         handleReadingPanelToggle
@@ -559,6 +602,14 @@ const Reader = () => {
   }, []);
 
   useEffect(() => {
+    if (!isElectron) return;
+    window.electronAPI?.send?.("reader-mouse-watch", state.isNearEdge);
+    return () => {
+      window.electronAPI?.send?.("reader-mouse-watch", false);
+    };
+  }, [state.isNearEdge]);
+
+  useEffect(() => {
     if (!htmlBook) return;
     const attachedDocs = new WeakSet<Document>();
     const getPageClientY = (doc: Document, clientY: number) => {
@@ -570,18 +621,30 @@ const Reader = () => {
       }
       return y;
     };
-    const createEdgeMoveHandler = (doc: Document) =>
-      throttle((e: MouseEvent) => {
-        if (isWithinEdgeZone(getPageClientY(doc, e.clientY))) {
+    const attachEdgeHandlers = (doc: Document) => {
+      let latestPointerY: number | null = null;
+      const updateQuickButtons = throttle(() => {
+        if (latestPointerY === null) return;
+        if (isWithinEdgeZone(getPageClientY(doc, latestPointerY))) {
           showQuickButtons();
         } else {
           hideQuickButtons();
         }
       }, 100);
+      doc.addEventListener("mousemove", (e: MouseEvent) => {
+        latestPointerY = e.clientY;
+        updateQuickButtons();
+      });
+      doc.documentElement.addEventListener("mouseleave", () => {
+        // Leaving the iframe is not the same as leaving the window; the outer
+        // document's mousemove handler updates the button visibility.
+        latestPointerY = null;
+      });
+    };
     const attachToDoc = (doc: Document | null) => {
       if (!doc || attachedDocs.has(doc)) return;
       attachedDocs.add(doc);
-      doc.addEventListener("mousemove", createEdgeMoveHandler(doc));
+      attachEdgeHandlers(doc);
     };
     const collectDocs = () => {
       const outerDoc = getOuterDoc();
@@ -614,6 +677,8 @@ const Reader = () => {
   const isMacOS =
     isElectron && window.electronAPI?.runtime?.platform === "darwin";
   const isMergeWord = ConfigService.getReaderConfig("isMergeWord") === "yes";
+  const isUndockedPopupBoxOpen =
+    !isDockedRight && isOpenMenu && POPUP_BOX_MODES.includes(menuMode);
   const renditionProps = {
     handleCloseDialogs: closeSettingDialogs,
     handleLeaveReader: handleLeaveReader,
@@ -630,7 +695,7 @@ const Reader = () => {
       )}
 
       <ReaderTopToolbar
-        isNearEdge={state.isNearEdge}
+        isNearEdge={state.isNearEdge && !isUndockedPopupBoxOpen}
         currentDuration={state.currentDuration}
         isMacOS={isMacOS}
         isMergeWord={isMergeWord}
@@ -650,7 +715,7 @@ const Reader = () => {
       />
 
       <ReaderBottomToolbar
-        isNearEdge={state.isNearEdge}
+        isNearEdge={state.isNearEdge && !isUndockedPopupBoxOpen}
         showQuickButtons={showQuickButtons}
         hideQuickButtons={hideQuickButtons}
       />

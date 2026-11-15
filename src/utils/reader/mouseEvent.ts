@@ -6,8 +6,10 @@ import {
   handleExitFullScreen,
   handleFullScreen,
   isReadingAidMode,
+  isUndockedPopupBoxOpen,
   sleep,
 } from "../common";
+import { useAppStore } from "../../store/useAppStore";
 import Hammer from "hammerjs";
 import TTSUtil from "./ttsUtil";
 import {
@@ -17,13 +19,20 @@ import {
   matchShortcut,
   ShortcutAction,
 } from "./shortcutUtil";
+import { OVERLAY_TURN_DURATION } from "./overlayTurn";
 declare var window: any;
 
+// 翻页滑动动画固定时长（毫秒），需与 kookit 的 PAGE_TURN_DURATION 保持一致
+const PAGE_TURN_DURATION = 200;
+
 // 每次翻页时实时读取，避免修改动画设置后锁延迟不生效
-const getThrottleTime = () =>
-  (ConfigService.getReaderConfig("animation") || "none") !== "none"
-    ? 1000
-    : 100;
+const getThrottleTime = () => {
+  const animation = ConfigService.getReaderConfig("animation") || "none";
+  if (animation === "none") return 100;
+  // 覆盖动画由应用层单独驱动，锁需覆盖整段动画，多留 60ms 保证 busy 先释放
+  if (animation === "overlay") return OVERLAY_TURN_DURATION + 60;
+  return PAGE_TURN_DURATION;
+};
 
 export const getSelection = (book: Book) => {
   let docs = getIframeDoc(book);
@@ -200,7 +209,7 @@ const runPageAction = async (action: () => Promise<void>) => {
 };
 
 // 仿真翻页动画收敛后（kookit 派发 flipend 事件）立即解除锁，
-// 不再等待满 1000ms 的 throttleTime，滚轮/键盘可继续快速翻页
+// 不再等待满 PAGE_TURN_DURATION 的 throttleTime，滚轮/键盘可继续快速翻页
 window.addEventListener("page-flipend", () => {
   lock = false;
 });
@@ -212,12 +221,29 @@ const isRevertDirectionReading = (rendition: any) => {
   );
 };
 
+// 弹窗未固定到右侧时，ESC 只关闭弹窗；返回 true 表示按键已处理，
+// 调用方必须直接 return，避免继续走到 exitReader 而退出阅读
+const handlePopupBoxEscape = (event: any, book: Book) => {
+  if (event.keyCode !== 27) return false;
+  const state = useAppStore.getState();
+  if (!isUndockedPopupBoxOpen(state.viewArea, state.reader)) return false;
+  event.preventDefault();
+  state.handleOpenMenu(false);
+  state.handleNoteKey("");
+  state.handleMenuMode("");
+  getIframeDoc(book).forEach((doc) => doc?.getSelection()?.empty());
+  return true;
+};
+
 const arrowKeys = async (
   rendition: any,
   event: any,
   readerMode: string,
   book: Book
 ) => {
+  // 必须放在 textarea/input 提前返回之前：焦点在笔记或 AI 输入框内时，
+  // ESC 同样需要关闭弹窗，且不能继续触发 exitReader 退出阅读
+  if (handlePopupBoxEscape(event, book)) return;
   if (
     event.target.tagName.toLowerCase() === "textarea" ||
     event.target.tagName.toLowerCase() === "input"

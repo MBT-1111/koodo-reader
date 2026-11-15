@@ -109,6 +109,33 @@ describe("custom sync protocol", () => {
 });
 
 describe("upstream data mapping", () => {
+  it.each(["text", "markdown", "html"])("preserves %s notes through sync envelopes and local application", (type) => {
+    const source = raw(), target = raw();
+    source.tables.books = [{ key: "source", format: "EPUB" }];
+    target.tables.books = [{ key: "target", format: "EPUB" }];
+    source.tables.notes = [{ key: "note", bookKey: "source", notes: "<b>**Synthetic note**</b>", type }];
+    const sender = freshCheckpoint(), receiver = freshCheckpoint();
+    sender.mappings.books.source = book;
+    receiver.mappings.books.target = book;
+    const message = envelope(reconcile(sender, snapshot(source, sender.mappings), []));
+    validateEnvelope(message);
+    const noteRevision = message.entries[Object.keys(message.entries).find((key) => key.startsWith("note/"))!][0];
+    if (type === "text") expect(noteRevision.value).not.toHaveProperty("type");
+    else expect(noteRevision.value).toHaveProperty("type", type);
+    const merged = reconcile(receiver, snapshot(target, receiver.mappings), [message]);
+    expect(plan(target, merged).tables.notes[0]).toMatchObject({ bookKey: "target", notes: source.tables.notes[0].notes, type });
+    noteRevision.value = { book, type: "script" };
+    expect(() => validateEnvelope(message)).toThrow("CUSTOM_INVALID_DOCUMENT");
+  });
+  it("applies legacy notes without a type as plain text over existing rich text", () => {
+    const data = raw(), state = freshCheckpoint();
+    data.tables.books = [{ key: "local", format: "EPUB" }];
+    data.tables.notes = [{ key: "local-note", bookKey: "local", notes: "rich text", type: "html" }];
+    state.mappings.books.local = book;
+    state.mappings.notes["local-note"] = note;
+    const merged = reconcile(state, { [`note/${note}`]: { kind: "note", value: { book, notes: "legacy text" } } }, []);
+    expect(plan(data, merged).tables.notes[0]).toMatchObject({ notes: "legacy text", type: "text" });
+  });
   it("excludes paths, covers, credentials and unrelated configuration", () => {
     const data = raw();
     data.tables.books = [{ key: "123", name: "Book", format: "EPUB", path: "C:/private/book.epub", cover: "private", apiKey: "secret" }];

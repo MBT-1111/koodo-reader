@@ -1,13 +1,12 @@
 import { useTranslation } from "react-i18next";
 import { useNavigate } from "react-router-dom";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import "./actionDialog.css";
 import { Trans } from "react-i18next";
 import { useAppStore } from "../../../store/useAppStore";
 import toast from "react-hot-toast";
 import MoreAction from "../moreAction";
 import MarkAction from "../markAction";
-import DeleteDialog from "../deleteDialog";
 import {
   ConfigService,
   CollectionUtil,
@@ -39,12 +38,17 @@ export interface ActionDialogState {
 const collectionUtil = new CollectionUtil(ConfigService);
 declare var window: any;
 
+// 主菜单与子菜单是两个独立的 DOM 节点，鼠标移入子菜单时主菜单会先收到
+// mouseleave。延迟关闭可以给子菜单的 mouseenter 留出取消关闭的时机。
+const MENU_CLOSE_DELAY = 150;
+
 const ActionDialog = (props: Pick<ActionDialogProps, "left" | "top">) => {
   const currentBook = useAppStore((s) => s.book.currentBook);
   const mode = useAppStore((s) => s.sidebar.mode);
   const handleEditDialog = useAppStore((s) => s.handleEditDialog);
   const handleAddDialog = useAppStore((s) => s.handleAddDialog);
   const handleDeleteDialog = useAppStore((s) => s.handleDeleteDialog);
+  const handleDissolveDialog = useAppStore((s) => s.handleDissolveDialog);
   const handleReadingBook = useAppStore((s) => s.handleReadingBook);
   const handleActionDialog = useAppStore((s) => s.handleActionDialog);
   const handleFetchBooks = useAppStore((s) => s.handleFetchBooks);
@@ -71,7 +75,22 @@ const ActionDialog = (props: Pick<ActionDialogProps, "left" | "top">) => {
     isShowMark: false,
     isExceed: shouldSubmenuOpenLeft(props.left, CONTEXT_MENU_WIDTH),
   }));
-  const [isOpenDissolvePopup, setIsOpenDissolvePopup] = useState(false);
+  const closeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const cancelClose = () => {
+    if (closeTimerRef.current !== null) {
+      clearTimeout(closeTimerRef.current);
+      closeTimerRef.current = null;
+    }
+  };
+  const scheduleClose = () => {
+    cancelClose();
+    closeTimerRef.current = setTimeout(() => {
+      closeTimerRef.current = null;
+      handleActionDialog(false);
+    }, MENU_CLOSE_DELAY);
+  };
+  useEffect(() => cancelClose, []);
 
   const updateState = (patch: Partial<ActionDialogState>) => {
     setState((prev) => ({ ...prev, ...patch }));
@@ -116,21 +135,20 @@ const ActionDialog = (props: Pick<ActionDialogProps, "left" | "top">) => {
   };
   const handleDissolveCollection = () => {
     if (!collectionUtil.getCollection(currentBook.key)) return;
-    setIsOpenDissolvePopup(true);
-  };
-  const handleDissolvePopup = (isOpen: boolean) => {
-    setIsOpenDissolvePopup(isOpen);
-    if (!isOpen) handleActionDialog(false);
-  };
-  const handleDissolveConfirm = () => {
-    collectionUtil.dissolveCollection(currentBook.key);
-    handleFetchBooks();
+    handleReadingBook(currentBook);
+    handleDissolveDialog(true);
+    handleActionDialog(false);
   };
   const handleRestoreBook = () => {
     ConfigService.deleteListConfig(currentBook.key, "deletedBooks");
     handleActionDialog(false);
     toast.success(t("Restore successful"));
     handleFetchBooks();
+  };
+  const handleDeleteBookFromTrash = () => {
+    handleReadingBook(currentBook);
+    handleDeleteDialog(true, false);
+    handleActionDialog(false);
   };
   const handleLoveBook = () => {
     ConfigService.setListConfig(currentBook.key, "favoriteBooks");
@@ -195,7 +213,10 @@ const ActionDialog = (props: Pick<ActionDialogProps, "left" | "top">) => {
     top: props.top,
     isShowExport: state.isShowExport,
     isExceed: state.isExceed,
+    menuItemIndex: 9,
     handleMoreAction: handleMoreAction,
+    handleMenuEnter: cancelClose,
+    handleMenuLeave: scheduleClose,
   };
   const markActionProps = {
     left: props.left,
@@ -203,15 +224,9 @@ const ActionDialog = (props: Pick<ActionDialogProps, "left" | "top">) => {
     isShowMark: state.isShowMark,
     isExceed: state.isExceed,
     handleMarkAction: handleMarkAction,
+    handleMenuEnter: cancelClose,
+    handleMenuLeave: scheduleClose,
     menuItemIndex: isCollection ? 6 : 7,
-  };
-  const dissolveDialogProps = {
-    name: currentBook.name,
-    title: "Dissolve collection",
-    description:
-      "The collection will be removed and all books will be kept in your library.",
-    handleClose: () => handleDissolvePopup(false),
-    handleConfirm: handleDissolveConfirm,
   };
   if (mode === "trash") {
     return (
@@ -240,6 +255,17 @@ const ActionDialog = (props: Pick<ActionDialogProps, "left" | "top">) => {
               <Trans>Restore</Trans>
             </span>
           </div>
+          <div
+            className="action-dialog-delete"
+            onClick={() => {
+              handleDeleteBookFromTrash();
+            }}
+          >
+            <span className="icon-trash-line view-icon"></span>
+            <span className="action-name">
+              <Trans>Delete</Trans>
+            </span>
+          </div>
         </div>
       </div>
     );
@@ -249,9 +275,10 @@ const ActionDialog = (props: Pick<ActionDialogProps, "left" | "top">) => {
       <div
         className="action-dialog-container"
         onMouseLeave={() => {
-          if (!isOpenDissolvePopup) handleActionDialog(false);
+          scheduleClose();
         }}
         onMouseEnter={() => {
+          cancelClose();
           handleActionDialog(true);
         }}
         style={{ left: props.left, top: props.top }}
@@ -487,7 +514,6 @@ const ActionDialog = (props: Pick<ActionDialogProps, "left" | "top">) => {
       </div>
       <MarkAction {...(markActionProps as any)} />
       <MoreAction {...(moreActionProps as any)} />
-      {isOpenDissolvePopup && <DeleteDialog {...dissolveDialogProps} />}
     </>
   );
 };

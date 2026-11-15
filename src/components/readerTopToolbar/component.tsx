@@ -212,9 +212,28 @@ const ReaderTopToolbar = (props: ReaderTopToolbarProps) => {
 
   const showCustomWindowControls =
     props.isSeparateElectronWindow && (!props.isMacOS || props.isMergeWord);
+  const showMacWindowControls =
+    props.isSeparateElectronWindow && props.isMacOS && !props.isMergeWord;
 
   return (
     <>
+      {showMacWindowControls && (
+        <div
+          style={{
+            position: "absolute",
+            top: 0,
+            left: 15,
+            zIndex: 14,
+            display: "flex",
+            opacity: props.isNearEdge ? 1 : 0,
+            visibility: props.isNearEdge ? "visible" : "hidden",
+            transition: "opacity 0.3s ease, visibility 0.3s ease",
+            color: ConfigService.getReaderConfig("textColor") || "",
+          }}
+        >
+          <WindowControls t={t} isMacOS={props.isMacOS} />
+        </div>
+      )}
       {htmlBook && (
         <div
           style={{
@@ -225,9 +244,9 @@ const ReaderTopToolbar = (props: ReaderTopToolbarProps) => {
               props.isMacOS &&
               !props.isMergeWord &&
               props.isSeparateElectronWindow
-                ? 80
+                ? 125
                 : 15,
-            zIndex: 14,
+            zIndex: 9,
             height: 28,
             display: "flex",
             alignItems: "flex-start",
@@ -285,6 +304,7 @@ const ReaderTopToolbar = (props: ReaderTopToolbarProps) => {
             ></span>
           </div>
           <span
+            className="reader-top-toolbar-time"
             style={{
               ...DRAG_REGION_STYLE,
               height: 28,
@@ -498,7 +518,9 @@ const ReaderTopToolbar = (props: ReaderTopToolbarProps) => {
               style={{ fontSize: 16 }}
             ></span>
           </div>
-          {showCustomWindowControls && <WindowControls t={t} />}
+          {showCustomWindowControls && (
+            <WindowControls t={t} isMacOS={props.isMacOS} />
+          )}
         </div>
       </div>
     </>

@@ -76,9 +76,14 @@ const INVOKE_CHANNELS = new Set([
   "switch-moyu",
   "set-native-theme-source",
   "system-ocr",
+  "capture-reader-page",
   "file-command",
   "open-external",
   "dict-lookup",
+  "dict-migrate",
+  "dict-import",
+  "dict-import-buffer",
+  "dict-remove",
   "partial-md5",
   "crypto-file-md5",
   "backup-path",
@@ -88,7 +93,11 @@ const INVOKE_CHANNELS = new Set([
   "list-zip-file",
   "unzip-file",
 ]);
-const SEND_CHANNELS = new Set(["reader-close-ready", "tab-close-ready"]);
+const SEND_CHANNELS = new Set([
+  "reader-close-ready",
+  "tab-close-ready",
+  "reader-mouse-watch",
+]);
 const SEND_SYNC_CHANNELS = new Set([
   "preferences",
   "storage-location",
@@ -106,6 +115,7 @@ const EVENT_CHANNELS = new Set([
   "before-reader-close",
   "before-tab-close",
   "reader-window-state",
+  "reader-mouse-leave",
   "reading-finished",
   "chat-message",
   "import-url-from-link",

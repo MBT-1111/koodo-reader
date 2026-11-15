@@ -41,7 +41,7 @@ catch (error) {
 }
 const { createCustomSync } = require("./src/utils/main/custom/sync");
 const { applyBatch: applyCustomSyncBatch } = require("./src/utils/main/custom/database");
-const { pathToFileURL } = require("url");
+const { pathToFileURL, fileURLToPath } = require("url");
 const isDev = require("electron-is-dev");
 const Store = require("electron-store");
 const log = require("electron-log/main");
@@ -89,6 +89,13 @@ const {
 } = require("./src/utils/main/biometric-util");
 const { getVoicePlugin } = require("./src/utils/plugins/main/registry");
 const ttsCacheUtil = require("./src/utils/plugins/main/voice/ttsCache");
+let dictReaderModule = null;
+const getDictReader = () => {
+  if (!dictReaderModule) {
+    dictReaderModule = require("./src/utils/main/dict-reader");
+  }
+  return dictReaderModule;
+};
 const configDir = app.getPath("userData");
 const dirPath = path.join(configDir, "uploads");
 // 数据目录（即渲染进程的 getStorageLocation，见 "storage-location"）
@@ -216,6 +223,7 @@ const throttle = (func, wait = RESIZE_THROTTLE_MS) => {
     }
   };
 };
+
 const getFingerprint = async () => {
   // First, try to get cached fingerprint
   let deviceUuid = store.get("fingerPrint");
@@ -273,6 +281,52 @@ const loadUrlInAuxWindow = async (win, url) => {
   await wc.loadURL(url);
 };
 
+const isAppNavigationUrl = (url) => {
+  try {
+    const targetUrl = new URL(url);
+    if (isDev) {
+      return (
+        targetUrl.protocol === "http:" &&
+        targetUrl.hostname === "127.0.0.1" &&
+        targetUrl.port === "3000"
+      );
+    }
+    if (targetUrl.protocol !== "file:") {
+      return false;
+    }
+    const relativePath = path.relative(
+      path.resolve(__dirname, "build"),
+      fileURLToPath(targetUrl)
+    );
+    return (
+      !!relativePath &&
+      !relativePath.startsWith("..") &&
+      !path.isAbsolute(relativePath)
+    );
+  } catch (error) {
+    return false;
+  }
+};
+
+// App windows carrying preload.js expose electronAPI, so they must never
+// navigate to an untrusted origin: the preload would re-run and re-expose the
+// fs bridge on the attacker page.
+const hardenAppContents = (contents) => {
+  contents.setWindowOpenHandler(({ url }) => {
+    log.warn(`Blocked window.open to untrusted URL: ${url}`);
+    return { action: "deny" };
+  });
+  const blockExternalNavigation = (event, url) => {
+    if (isAppNavigationUrl(url)) {
+      return;
+    }
+    event.preventDefault();
+    log.warn(`Blocked navigation to untrusted URL: ${url}`);
+  };
+  contents.on("will-navigate", blockExternalNavigation);
+  contents.on("will-redirect", blockExternalNavigation);
+};
+
 var filePath = null;
 var pendingDeepLink = null;
 if (process.platform != "darwin" && process.argv.length >= 2) {
@@ -291,13 +345,36 @@ log.initialize();
 store.set("appVersion", packageJson.version);
 store.set("appPlatform", os.platform() + " " + os.release());
 const mainWinDisplayScale = store.get("mainWinDisplayScale") || 1;
+const getNativeThemeSource = (appSkin) => {
+  if (appSkin === "night") {
+    return "dark";
+  }
+  if (appSkin === "light") {
+    return "light";
+  }
+  return "system";
+};
+const getNativeDarkColorStatus = () => {
+  if (
+    typeof electronNativeTheme.shouldUseDarkColorsForSystemIntegratedUI !==
+    "undefined"
+  ) {
+    return electronNativeTheme.shouldUseDarkColorsForSystemIntegratedUI;
+  }
+  return electronNativeTheme.shouldUseDarkColors;
+};
+const getAppBackgroundColor = () => {
+  const appSkin = store.get("appSkin");
+  const isDark =
+    appSkin === "night" || (appSkin !== "light" && getNativeDarkColorStatus());
+  return isDark ? "rgba(47, 52, 55, 1)" : "#fff";
+};
 let options = {
   width: parseInt(store.get("mainWinWidth") || 1050) / mainWinDisplayScale,
   height: parseInt(store.get("mainWinHeight") || 660) / mainWinDisplayScale,
   x: parseInt(store.get("mainWinX")),
   y: parseInt(store.get("mainWinY")),
-  backgroundColor:
-    store.get("appSkin") === "night" ? "rgba(47, 52, 55, 1)" : "#fff",
+  backgroundColor: getAppBackgroundColor(),
   minWidth: 300,
   minHeight: 100,
   webPreferences: {
@@ -313,30 +390,25 @@ let options = {
   },
 };
 const Database = require("better-sqlite3");
-const isMacOS = os.platform() === "darwin";
-const getReaderWindowChromeOptions = (isMergeWord) => {
+const getReaderWindowChromeOptions = () => {
   if (isDev) {
     return { frame: true };
-  }
-  if (isMergeWord === "yes") {
-    return { frame: false };
-  }
-  if (isMacOS) {
-    return { frame: false, titleBarStyle: "customButtonsOnHover" };
   }
   return { frame: false };
 };
 const bindReaderWindowState = (win) => {
-  const sendState = () => {
+  const sendState = (isFullScreen) => {
     if (!win || win.isDestroyed()) return;
     win.webContents.send("reader-window-state", {
       isMaximized: win.isMaximized(),
-      isFullScreen: win.isFullScreen(),
+      isFullScreen:
+        typeof isFullScreen === "boolean" ? isFullScreen : win.isFullScreen(),
     });
   };
-  ["maximize", "unmaximize", "enter-full-screen", "leave-full-screen"].forEach(
-    (eventName) => win.on(eventName, sendState)
-  );
+  win.on("maximize", () => sendState());
+  win.on("unmaximize", () => sendState());
+  win.on("enter-full-screen", () => sendState(true));
+  win.on("leave-full-screen", () => sendState(false));
 };
 if (os.platform() === "linux") {
   options = Object.assign({}, options, {
@@ -424,30 +496,16 @@ const removePickerUtil = (config) => {
     pickerUtilCache[config.service] = null;
   }
 };
-const getNativeThemeSource = (appSkin) => {
-  if (appSkin === "night") {
-    return "dark";
-  }
-  if (appSkin === "light") {
-    return "light";
-  }
-  return "system";
-};
-const getNativeDarkColorStatus = () => {
-  if (
-    typeof electronNativeTheme.shouldUseDarkColorsForSystemIntegratedUI !==
-    "undefined"
-  ) {
-    return electronNativeTheme.shouldUseDarkColorsForSystemIntegratedUI;
-  }
-  return electronNativeTheme.shouldUseDarkColors;
-};
 const applyNativeThemeSource = (appSkin) => {
   if (process.type !== "browser") {
     return false;
   }
   electronNativeTheme.themeSource = getNativeThemeSource(appSkin);
   store.set("appSkin", appSkin || "system");
+  options.backgroundColor = getAppBackgroundColor();
+  if (mainWin && !mainWin.isDestroyed()) {
+    mainWin.setBackgroundColor(options.backgroundColor);
+  }
   return getNativeDarkColorStatus();
 };
 applyNativeThemeSource(store.get("appSkin"));
@@ -587,12 +645,18 @@ const createMainWin = () => {
     delete options.x;
     delete options.y;
   }
-  mainWin = new BrowserWindow(options);
+  mainWin = new BrowserWindow({ ...options, show: false });
+  hardenAppContents(mainWin.webContents);
+  mainWin.once("ready-to-show", () => {
+    if (mainWin && !mainWin.isDestroyed()) {
+      if (store.get("isAutoMaximizeWin") === "yes") {
+        mainWin.maximize();
+      }
+      mainWin.show();
+    }
+  });
   if (store.get("isAlwaysOnTop") === "yes") {
     mainWin.setAlwaysOnTop(true);
-  }
-  if (store.get("isAutoMaximizeWin") === "yes") {
-    mainWin.maximize();
   }
 
   if (!isDev) {
@@ -832,17 +896,76 @@ const createMainWin = () => {
   ipcMain.on("clipboard-read-text-sync", (event) => {
     event.returnValue = clipboard.readText();
   });
-  ipcMain.handle("dict-lookup", (event, args) => {
-    const filePath = args && args.filePath;
-    if (typeof (args && args.word) !== "string")
+  ipcMain.handle("dict-lookup", async (event, args) => {
+    const storagePath = args && args.storagePath;
+    const dictId = args && args.dictId;
+    const word = args && args.word;
+    if (typeof storagePath !== "string" || !storagePath.trim()) {
+      return { ok: false, reason: "invalid-storage" };
+    }
+    if (typeof dictId !== "string" || !dictId.trim()) {
+      return { ok: false, reason: "invalid-id" };
+    }
+    if (typeof word !== "string") {
       throw new TypeError("Invalid dictionary word");
-    const { MDX } = require("js-mdict");
-    const result = new MDX(filePath).lookup(args.word);
-    return result &&
-      result.definition !== undefined &&
-      result.definition !== null
-      ? String(result.definition)
-      : "";
+    }
+    return await getDictReader().lookupDictionary({
+      storagePath,
+      dictId,
+      word,
+    });
+  });
+  ipcMain.handle("dict-migrate", async (event, args) => {
+    const storagePath = args && args.storagePath;
+    if (typeof storagePath !== "string" || !storagePath.trim()) {
+      return { migrated: [], removedIds: [] };
+    }
+    const dicts = Array.isArray(args.dicts)
+      ? args.dicts
+          .filter((item) => item && typeof item.id === "string")
+          .slice(0, 500)
+          .map((item) => ({
+            id: item.id,
+            name: typeof item.name === "string" ? item.name : "",
+          }))
+      : [];
+    return await getDictReader().migrateDictionaries(storagePath, dicts);
+  });
+  ipcMain.handle("dict-import", async (event, args) => {
+    const storagePath = args && args.storagePath;
+    if (typeof storagePath !== "string" || !storagePath.trim()) {
+      return { ok: false, message: "Invalid storage path" };
+    }
+    const filePaths = Array.isArray(args.filePaths)
+      ? args.filePaths
+          .filter((item) => typeof item === "string" && item.trim())
+          .slice(0, 64)
+      : [];
+    if (!filePaths.length) {
+      return { ok: false, message: "No files selected" };
+    }
+    return await getDictReader().importDictionaryBundles(
+      storagePath,
+      filePaths
+    );
+  });
+  ipcMain.handle("dict-import-buffer", async (event, args) => {
+    const storagePath = args && args.storagePath;
+    if (typeof storagePath !== "string" || !storagePath.trim()) {
+      return { ok: false, message: "Invalid storage path" };
+    }
+    return await getDictReader().importDictionaryBuffer(storagePath, args);
+  });
+  ipcMain.handle("dict-remove", async (event, args) => {
+    const storagePath = args && args.storagePath;
+    const dictId = args && args.dictId;
+    if (typeof storagePath !== "string" || !storagePath.trim()) {
+      return { ok: false, message: "Invalid storage path" };
+    }
+    if (typeof dictId !== "string" || !dictId.trim()) {
+      return { ok: false, message: "Invalid dictionary id" };
+    }
+    return await getDictReader().removeDictionary(storagePath, dictId);
   });
   ipcMain.handle("partial-md5", (event, filePath) => {
     const validatedPath = filePath;
@@ -962,9 +1085,6 @@ const createMainWin = () => {
     if (customSync.busy()) throw new Error("CUSTOM_SYNC_BUSY");
     let { url, isMergeWord, isAutoFullscreen, isAutoMaximize, isPreventSleep } =
       config;
-    if (isMergeWord) {
-      delete options.backgroundColor;
-    }
     store.set({
       url,
       isMergeWord: isMergeWord || "no",
@@ -983,7 +1103,8 @@ const createMainWin = () => {
     if (isAutoFullscreen === "yes" || isAutoMaximize === "yes") {
       readerWindow = new BrowserWindow({
         ...options,
-        ...getReaderWindowChromeOptions(isMergeWord),
+        ...getReaderWindowChromeOptions(),
+        backgroundColor: isMergeWord ? undefined : getAppBackgroundColor(),
       });
       readerWindow.webContents.on(
         "console-message",
@@ -1013,9 +1134,10 @@ const createMainWin = () => {
         height: parseInt(store.get("windowHeight") || 660) / scaleRatio,
         x: isWindowVisible ? parseInt(store.get("windowX")) : undefined,
         y: isWindowVisible ? parseInt(store.get("windowY")) : undefined,
-        ...getReaderWindowChromeOptions(isMergeWord),
+        ...getReaderWindowChromeOptions(),
         hasShadow: isMergeWord === "yes" ? false : true,
         transparent: isMergeWord === "yes" ? true : false,
+        backgroundColor: isMergeWord ? undefined : getAppBackgroundColor(),
       });
       readerWindow.webContents.on(
         "console-message",
@@ -1028,6 +1150,7 @@ const createMainWin = () => {
       readerWindow.loadURL(url);
       // readerWindow.webContents.openDevTools();
     }
+    hardenAppContents(readerWindow.webContents);
     bindReaderWindowState(readerWindow);
     if (store.get("isAlwaysOnTop") === "yes") {
       readerWindow.setAlwaysOnTop(true);
@@ -1314,12 +1437,54 @@ const createMainWin = () => {
     return path.filePaths[0];
   });
   ipcMain.handle("select-file", async (event, config) => {
-    const dialogOptions = { properties: ["openFile"] };
+    const multiple = !!(config && config.multiple);
+    const dialogOptions = {
+      properties: multiple ? ["openFile", "multiSelections"] : ["openFile"],
+    };
     if (config && config.filters) {
       dialogOptions.filters = config.filters;
     }
     var result = await dialog.showOpenDialog(dialogOptions);
-    return result.filePaths[0];
+    return multiple ? result.filePaths : result.filePaths[0];
+  });
+  // 「覆盖」翻页动画：截取阅读区域当前画面，交给渲染进程做滑出动画
+  ipcMain.handle("capture-reader-page", async (event, rect) => {
+    const values = rect
+      ? [rect.left, rect.top, rect.width, rect.height]
+      : [];
+    if (
+      values.length !== 4 ||
+      !values.every(
+        (value) => typeof value === "number" && Number.isFinite(value)
+      )
+    ) {
+      return "";
+    }
+    const { left, top, width, height } = rect;
+    if (
+      width < 1 ||
+      height < 1 ||
+      width > 10000 ||
+      height > 10000 ||
+      !event.sender
+    ) {
+      return "";
+    }
+    try {
+      const image = await event.sender.capturePage({
+        x: Math.round(left),
+        y: Math.round(top),
+        width: Math.round(width),
+        height: Math.round(height),
+      });
+      if (!image || image.isEmpty()) return "";
+      return (
+        "data:image/jpeg;base64," + image.toJPEG(90).toString("base64")
+      );
+    } catch (error) {
+      log.warn("capture-reader-page failed", error);
+      return "";
+    }
   });
   ipcMain.handle("encrypt-data", async (event, config) => {
     let fingerprint = await getFingerprint();
@@ -1894,6 +2059,50 @@ const createMainWin = () => {
     if (!win || win.isDestroyed() || win === mainWin) return null;
     return win;
   };
+  // 无边框窗口收不到 DOM mouseleave，用轮询系统光标位置兜底
+  const mouseLeaveWatchers = new Map();
+  const stopMouseLeaveWatcher = (webContents) => {
+    const timer = mouseLeaveWatchers.get(webContents.id);
+    if (timer) {
+      clearInterval(timer);
+      mouseLeaveWatchers.delete(webContents.id);
+    }
+  };
+  const startMouseLeaveWatcher = (webContents) => {
+    stopMouseLeaveWatcher(webContents);
+    const timer = setInterval(() => {
+      if (webContents.isDestroyed()) {
+        stopMouseLeaveWatcher(webContents);
+        return;
+      }
+      const win =
+        BrowserWindow.fromWebContents(webContents) ||
+        (mainView && mainView.webContents === webContents ? mainWin : null);
+      if (!win || win.isDestroyed()) {
+        stopMouseLeaveWatcher(webContents);
+        return;
+      }
+      const cursor = screen.getCursorScreenPoint();
+      const bounds = win.getContentBounds();
+      const isInside =
+        cursor.x >= bounds.x &&
+        cursor.x < bounds.x + bounds.width &&
+        cursor.y >= bounds.y &&
+        cursor.y < bounds.y + bounds.height;
+      if (!isInside) {
+        stopMouseLeaveWatcher(webContents);
+        webContents.send("reader-mouse-leave");
+      }
+    }, 100);
+    mouseLeaveWatchers.set(webContents.id, timer);
+  };
+  ipcMain.on("reader-mouse-watch", (event, isWatching) => {
+    if (isWatching) {
+      startMouseLeaveWatcher(event.sender);
+    } else {
+      stopMouseLeaveWatcher(event.sender);
+    }
+  });
   ipcMain.handle("reader-window-minimize", (event) => {
     const win = getReaderWindowFromEvent(event);
     if (!win) return false;
@@ -2010,6 +2219,7 @@ const createMainWin = () => {
     if (customSync.busy()) throw new Error("CUSTOM_SYNC_BUSY");
     if (mainWin) {
       mainView = new WebContentsView(options);
+      hardenAppContents(mainView.webContents);
       mainWin.contentView.addChildView(mainView);
       let { width, height } = mainWin.getContentBounds();
       mainView.setBounds({ x: 0, y: 0, width: width, height: height });
@@ -2124,18 +2334,17 @@ const createMainWin = () => {
       readerWindow.close();
       const currentIsMergeWord = store.get("isMergeWord") === "yes";
       const nextIsMergeWord = currentIsMergeWord ? "no" : "yes";
-      if (currentIsMergeWord) {
-        delete options.backgroundColor;
-      }
       const scaleRatio = store.get("windowDisplayScale") || 1;
       Object.assign(options, {
         width: parseInt(store.get("windowWidth") || 1050) / scaleRatio,
         height: parseInt(store.get("windowHeight") || 660) / scaleRatio,
         x: parseInt(store.get("windowX")),
         y: parseInt(store.get("windowY")),
-        ...getReaderWindowChromeOptions(nextIsMergeWord),
+        ...getReaderWindowChromeOptions(),
         hasShadow: nextIsMergeWord === "yes" ? false : true,
         transparent: nextIsMergeWord === "yes" ? true : false,
+        backgroundColor:
+          nextIsMergeWord === "yes" ? undefined : getAppBackgroundColor(),
       });
 
       store.set("isMergeWord", nextIsMergeWord);
@@ -2143,6 +2352,7 @@ const createMainWin = () => {
         readerWindowList.push(readerWindow);
       }
       readerWindow = new BrowserWindow(options);
+      hardenAppContents(readerWindow.webContents);
       bindReaderWindowState(readerWindow);
       if (store.get("isAlwaysOnTop") === "yes") {
         readerWindow.setAlwaysOnTop(true);
@@ -2377,6 +2587,7 @@ app.on("ready", async () => {
   }
   applyCorsToRendererRequests();
   await applyProxyToSession();
+  applyNativeThemeSource(store.get("appSkin"));
   createMainWin();
 });
 app.on("before-quit", () => {
@@ -2424,6 +2635,7 @@ console.info = function (...args) {
   originalConsoleInfo(...args); // 保留原信息日志
   log.info(args.map(serializeArg).join(" ")); // 写入信息日志文件
 };
+
 // Handle MacOS deep linking
 app.on("open-url", (event, url) => {
   event.preventDefault();

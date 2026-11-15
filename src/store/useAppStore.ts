@@ -27,6 +27,8 @@ import ConfigUtil from "../utils/file/configUtil";
 import DictUtil from "../utils/file/dictUtil";
 import TokenService from "../utils/storage/tokenService";
 import { resolveStoredPlugin } from "../utils/plugins/records";
+import { NATURAL_VOICE_SAPI_ADAPTER_PLUGIN_KEY } from "../utils/plugins/catalog";
+import type { PluginConfig, PluginVoice } from "../utils/plugins/types";
 import { handleExitApp } from "../utils/request/common";
 import { HighlightValue, langToName } from "../utils/common";
 import toast from "react-hot-toast";
@@ -34,6 +36,34 @@ import i18n from "../i18n";
 
 const collectionUtil = new CollectionUtil(ConfigService);
 const highlightUtil = new HighlightUtil(ConfigService);
+
+// NaturalVoiceSAPIAdapter 的音色列表是动态的：每次加载插件时向主进程取一次。
+// 主进程按应用生命周期缓存 PowerShell 枚举结果，重启应用后自动重新枚举。
+const fetchDynamicVoiceList = async (
+  plugin: PluginModel
+): Promise<PluginVoice[] | null> => {
+  if (window.electronAPI?.runtime?.platform !== "win32") {
+    return null;
+  }
+  try {
+    const request: { pluginKey: string; config: PluginConfig } = {
+      pluginKey: plugin.key,
+      config: (plugin.config || {}) as PluginConfig,
+    };
+    const voices = await window.electronAPI.invoke<PluginVoice[]>(
+      "get-tts-voices",
+      request
+    );
+    if (!Array.isArray(voices) || voices.length === 0) return null;
+    return voices.map((voice) => ({
+      ...voice,
+      plugin: plugin.key,
+    }));
+  } catch (error) {
+    console.error("Failed to load SAPI voice list:", error);
+    return null;
+  }
+};
 
 const initialManager = {
   books: null as unknown as BookModel[],
@@ -70,6 +100,8 @@ const initialBook = {
   isOpenEditDialog: false,
   isDetailDialog: false,
   isOpenDeleteDialog: false,
+  isDeleteAllBooksInTrash: true,
+  isOpenDissolveDialog: false,
   isOpenAddDialog: false,
   isOpenActionDialog: false,
   isReading: false,
@@ -122,10 +154,10 @@ const initialReader = {
   isHideFooter: ConfigService.getReaderConfig("isHideFooter") === "yes",
   isHideHeader: ConfigService.getReaderConfig("isHideHeader") === "yes",
   isHideBackground: ConfigService.getReaderConfig("isHideBackground") === "yes",
-  isParagraphMode: ConfigService.getReaderConfig("isParagraphMode") === "yes",
-  isReadingRuler: ConfigService.getReaderConfig("isReadingRuler") === "yes",
-  isSpeedReading: ConfigService.getReaderConfig("isSpeedReading") === "yes",
-  isAutoReading: ConfigService.getReaderConfig("isAutoReading") === "yes",
+  isParagraphMode: false,
+  isReadingRuler: false,
+  isSpeedReading: false,
+  isAutoReading: false,
   isMergeWord: ConfigService.getReaderConfig("isMergeWord") === "yes",
   isShowPageBorder: ConfigService.getReaderConfig("isShowPageBorder") === "yes",
   textOrientation: ConfigService.getReaderConfig("textOrientation") || "",
@@ -216,6 +248,7 @@ export type AppActionName =
   | "handleDeleteDialog"
   | "handleDeletedBooks"
   | "handleDetailDialog"
+  | "handleDissolveDialog"
   | "handleDockedRight"
   | "handleEditDialog"
   | "handleFetchAuthed"
@@ -625,6 +658,7 @@ export const useAppStore = create<AppState>()((set, get) => {
             Boolean(plugin)
           );
 
+          await DictUtil.ensureMigrated();
           const localDictIds = DictUtil.getDictIds();
           for (const dictId of localDictIds) {
             const meta = DictUtil.getDictMeta(dictId);
@@ -763,6 +797,9 @@ export const useAppStore = create<AppState>()((set, get) => {
             pluginList.push(sumPlugin);
           }
           const isAuthed = (await TokenService.getToken("is_authed")) === "yes";
+          if (isAuthed && !ConfigService.getItem("serverRegion")) {
+            ConfigService.setItem("serverRegion", "global");
+          }
           if (!personalMode && ConfigService.getReaderConfig("isDisableAI") !== "yes") {
             let sortedVoiceList = [
               ...KookitConfig.OfficialVoiceList.map((item) => {
@@ -826,13 +863,31 @@ export const useAppStore = create<AppState>()((set, get) => {
             );
             pluginList.push(voicePlugin);
           }
-          TokenService.getToken("is_authed").then((value) => {
-            let isAuthed = value === "yes";
-            if (isAuthed && !ConfigService.getItem("serverRegion")) {
-              ConfigService.setItem("serverRegion", "global");
-            }
-            get().handlePlugins(pluginList.filter(availablePlugin));
-          });
+          get().handlePlugins(pluginList.filter(availablePlugin));
+          const sapiPlugin = pluginList.find(
+            (item) => item.key === NATURAL_VOICE_SAPI_ADAPTER_PLUGIN_KEY
+          );
+          if (sapiPlugin) {
+            void fetchDynamicVoiceList(sapiPlugin).then((voiceList) => {
+              if (!voiceList) return;
+              // 音色枚举可能比插件删除更慢，只更新仍然存在于当前列表中的插件
+              const currentPlugins = get().manager.plugins;
+              const current = currentPlugins?.find(
+                (item) => item.key === sapiPlugin.key
+              );
+              if (!currentPlugins || !current) return;
+              current.voiceList = voiceList;
+              const selectedEngine = ConfigService.getReaderConfig("voiceEngine");
+              const selectedVoice = ConfigService.getReaderConfig("voiceName");
+              if (
+                selectedEngine === current.key &&
+                !voiceList.some((voice) => voice.name === selectedVoice)
+              ) {
+                ConfigService.setReaderConfig("voiceName", voiceList[0].name);
+              }
+              get().handlePlugins([...currentPlugins]);
+            });
+          }
         } catch (error) {
           const errorMessage =
             error instanceof Error ? error.message : String(error);
@@ -875,8 +930,12 @@ export const useAppStore = create<AppState>()((set, get) => {
 
     // book
     handleEditDialog: (mode: boolean) => setBook({ isOpenEditDialog: mode }),
-    handleDeleteDialog: (mode: boolean) =>
-      setBook({ isOpenDeleteDialog: mode }),
+    handleDeleteDialog: (
+      mode: boolean,
+      isDeleteAllBooksInTrash: boolean = true
+    ) => setBook({ isOpenDeleteDialog: mode, isDeleteAllBooksInTrash }),
+    handleDissolveDialog: (mode: boolean) =>
+      setBook({ isOpenDissolveDialog: mode }),
     handleAddDialog: (mode: boolean) => setBook({ isOpenAddDialog: mode }),
     handleRenderBookFunc: (renderBookFunc: () => void) =>
       setBook({ renderBookFunc }),

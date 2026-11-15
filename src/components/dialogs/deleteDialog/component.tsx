@@ -22,6 +22,8 @@ export interface DeleteDialogProps {
   title?: string;
   name?: string;
   description?: string;
+  confirmText?: string;
+  successText?: string;
   handleClose?: () => void;
   handleConfirm?: () => void;
 }
@@ -33,6 +35,9 @@ const DeleteDialog = (props: DeleteDialogProps) => {
   const shelfTitle = useAppStore((s) => s.sidebar.shelfTitle);
   const selectedBooks = useAppStore((s) => s.manager.selectedBooks);
   const isSelectBook = useAppStore((s) => s.manager.isSelectBook);
+  const isDeleteAllBooksInTrash = useAppStore(
+    (s) => s.book.isDeleteAllBooksInTrash
+  );
   const handleFetchBooks = useAppStore((s) => s.handleFetchBooks);
   const handleSelectBook = useAppStore((s) => s.handleSelectBook);
   const handleDeleteDialog = useAppStore((s) => s.handleDeleteDialog);
@@ -55,7 +60,7 @@ const DeleteDialog = (props: DeleteDialogProps) => {
     const handleGenericConfirm = () => {
       props.handleClose?.();
       props.handleConfirm?.();
-      toast.success(t("Deletion successful"));
+      toast.success(t(props.successText || "Deletion successful"));
     };
     return (
       <div className="delete-dialog-container">
@@ -73,7 +78,11 @@ const DeleteDialog = (props: DeleteDialogProps) => {
             <Trans>Cancel</Trans>
           </div>
           <div className="add-dialog-confirm" onClick={handleGenericConfirm}>
-            <Trans>Delete</Trans>
+            {props.confirmText ? (
+              <Trans>{props.confirmText}</Trans>
+            ) : (
+              <Trans>Delete</Trans>
+            )}
           </div>
         </div>
       </div>
@@ -185,6 +194,21 @@ const DeleteDialog = (props: DeleteDialogProps) => {
     handleFetchNotes();
   };
 
+  const deleteBookInTrash = async (key: string) => {
+    toast.loading(t("Deleting..."), {
+      id: "delete-books",
+    });
+    const deletedBook = await DatabaseService.getRecord(key, "books");
+    let format = deletedBook?.format.toLowerCase();
+    await deleteBook(key, format || "epub");
+    await handleFetchBooks();
+    if (useAppStore.getState().manager.books.length === 0) {
+      navigate("/manager/empty");
+    }
+    handleFetchBookmarks();
+    handleFetchNotes();
+  };
+
   const deleteSelectedBook = () => {
     selectedBooks.forEach((item) => {
       if (collectionUtil.isCollection(item)) {
@@ -232,7 +256,11 @@ const DeleteDialog = (props: DeleteDialogProps) => {
     ) {
       deleteBookFromShelf();
     } else if (mode === "trash") {
-      await deleteAllBookInTrash();
+      if (isDeleteAllBooksInTrash) {
+        await deleteAllBookInTrash();
+      } else {
+        await deleteBookInTrash(currentBook.key);
+      }
     } else if (isDisableTrashBin) {
       deleteBooks();
       await deleteAllBookInTrash();
@@ -257,9 +285,13 @@ const DeleteDialog = (props: DeleteDialogProps) => {
         <div className="delete-dialog-title">
           <Trans>Delete from shelf</Trans>
         </div>
-      ) : mode === "trash" ? (
+      ) : mode === "trash" && isDeleteAllBooksInTrash ? (
         <div className="delete-dialog-title">
           <Trans>Delete all books</Trans>
+        </div>
+      ) : mode === "trash" ? (
+        <div className="delete-dialog-title">
+          <Trans>Delete this book</Trans>
         </div>
       ) : isCollection ? (
         <div className="delete-dialog-title">
@@ -270,7 +302,7 @@ const DeleteDialog = (props: DeleteDialogProps) => {
           <Trans>Delete this book</Trans>
         </div>
       )}
-      {mode === "trash" ? null : (
+      {mode === "trash" && isDeleteAllBooksInTrash ? null : (
         <div className="delete-dialog-book">
           <div className="delete-dialog-book-title">
             {isSelectBook ? (
@@ -288,12 +320,18 @@ const DeleteDialog = (props: DeleteDialogProps) => {
         <div className="delete-dialog-other-option" style={{ top: "100px" }}>
           <Trans>This action won't delete the original book</Trans>
         </div>
-      ) : mode === "trash" ? (
+      ) : mode === "trash" && isDeleteAllBooksInTrash ? (
         <div className="delete-dialog-other-option" style={{ top: "80px" }}>
           <Trans>
             This action will remove all the books in recycle bin,together with
             their notes, bookmarks and digests
           </Trans>
+        </div>
+      ) : mode === "trash" ? (
+        <div className="delete-dialog-other-option" style={{ top: "100px" }}>
+          {t(
+            "This action will permanently delete this book, together with its notes, bookmarks and digests"
+          )}
         </div>
       ) : isCollection ? (
         <div className="delete-dialog-other-option" style={{ top: "100px" }}>

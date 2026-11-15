@@ -2,7 +2,7 @@ import type { Json, Kind } from "./types";
 
 export const fields = {
   book: ["name", "author", "description", "md5", "format", "publisher", "size", "page", "charset", "published", "modified", "identifier", "language", "subject", "rights", "isbn", "layout"],
-  note: ["date", "chapter", "chapterIndex", "text", "cfi", "range", "notes", "percentage", "color", "tag"],
+  note: ["date", "chapter", "chapterIndex", "text", "cfi", "range", "notes", "percentage", "color", "tag", "type"],
   bookmark: ["cfi", "label", "percentage", "chapter"],
   progress: ["text", "count", "chapterTitle", "chapterDocIndex", "chapterHref", "percentage", "cfi", "page", "xpath", "chapterIndex", "sectionIndex", "location", "scroll"],
 };
@@ -29,6 +29,7 @@ export function validPayload(kind: Kind, value: Json): boolean {
   if (!keys || !Object.keys(value).every((k) => keys.includes(k) || ((kind === "note" || kind === "bookmark") && k === "book"))) return false;
   if ((kind === "note" || kind === "bookmark") && (typeof value.book !== "string" || !hash.test(value.book))) return false;
   return Object.entries(value).every(([key, v]) => {
+    if (kind === "note" && key === "type") return v === "text" || v === "markdown" || v === "html";
     if (key === "tag") return Array.isArray(v) && v.every((tag) => typeof tag === "string");
     if (key === "date") return object(v) && Object.keys(v).every((k) => ["year", "month", "day"].includes(k)) && Object.values(v).every((n) => typeof n === "number" && Number.isSafeInteger(n));
     const numeric = kind === "progress" || ["size", "page", "chapterIndex", "percentage", "color"].includes(key);

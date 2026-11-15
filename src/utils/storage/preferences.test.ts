@@ -58,6 +58,16 @@ afterAll(() => {
 });
 
 describe("desktop preference persistence", () => {
+  it("persists bulk reader settings updates used when clearing styles", () => {
+    launch(memoryStorage({ readerConfig: '{"textColor":"saved-color","isEinkMode":"yes"}' }));
+    const config = engine.ConfigService;
+    const settings = config.getAllObjectConfig("readerConfig");
+    delete settings.textColor;
+    config.setAllObjectConfig(settings, "readerConfig");
+    launch();
+    expect(config.getReaderConfig("textColor")).toBeFalsy();
+    expect(config.getReaderConfig("isEinkMode")).toBe("yes");
+  });
   it("persists recovery of an old IME navigation lock after hydration", () => {
     launch(memoryStorage({ readerConfig: '{"isNavLocked":"yes","isTempLocked":"yes","textColor":"saved-color"}' }));
     clearLegacyNavigationLock(engine.ConfigService);

@@ -63,6 +63,21 @@ async function client(id: number, namespace: string): Promise<Client> {
 async function sync(client: Client) { fixture.current = client; return runCustomSync(); }
 
 describe("full personal-sync lifecycle with separate device profiles", () => {
+  it("converges rich note formats and does not republish unchanged imports", async () => {
+    const a = await client(50, "rich-notes"), b = await client(51, "rich-notes");
+    a.raw.tables.notes = [{ key: "note", bookKey: "50-book", notes: "**Markdown**", type: "markdown" }];
+    await sync(a); await sync(b);
+    expect(b.raw.tables.notes[0]).toMatchObject({ notes: "**Markdown**", type: "markdown" });
+    expect((await sync(b)).unchanged).toBe(true);
+    b.raw.tables.notes[0].type = "html";
+    b.raw.tables.notes[0].notes = "<b>HTML</b>";
+    await sync(b); await sync(a);
+    expect(a.raw.tables.notes[0]).toMatchObject({ notes: "<b>HTML</b>", type: "html" });
+    a.raw.tables.notes[0].type = "text";
+    await sync(a); await sync(b);
+    expect(b.raw.tables.notes[0].type).toBe("text");
+    expect((await sync(a)).unchanged).toBe(true);
+  });
   it("does not publish new generations for unchanged data, and publishes actual edits", async () => {
     const a = await client(40, "unchanged");
     await sync(a);

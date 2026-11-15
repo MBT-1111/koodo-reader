@@ -47,15 +47,24 @@ describe("real public persistence contracts using synthetic data", () => {
     };
     const note = { key: "synthetic-note", bookKey: "synthetic-book", date: { year: 2026, month: 10, day: 31 }, chapter: "Chapter", chapterIndex: 0, text: "original", cfi: "{}", range: "[]", notes: "", percentage: "0.5", color: "1", tag: [] };
     applyBatch(facade, statements, "notes", [{ key: note.key, before: null, value: note }]);
+    // Model a pre-2.4.8 database, then run the same public migrations as main.js.
+    db.exec("ALTER TABLE notes DROP COLUMN type");
+    for (const sql of statements.sqlStatement.migrateStatement.notes || []) {
+      try { db.exec(sql); } catch { /* Existing columns are skipped by the main process too. */ }
+    }
+    expect(db.prepare("PRAGMA table_info(notes)").all().map((column) => column.name)).toContain("type");
     const read = () => statements.sqliteToJson.notes(db.prepare(statements.sqlStatement.getStatement.notes).get(note.key));
     const before = read(); expect(before.text).toBe("original");
+    expect(before.type).toBe("text");
     expect(() => applyBatch(facade, statements, "notes", [
       { key: note.key, before, value: { ...before, text: "changed" } },
       { key: "missing", before: { ...before, key: "missing" }, value: null },
     ])).toThrow("CUSTOM_LOCAL_CHANGED");
     expect(read().text).toBe("original");
-    applyBatch(facade, statements, "notes", [{ key: note.key, before, value: { ...before, text: "changed" } }]);
+    applyBatch(facade, statements, "notes", [{ key: note.key, before, value: { ...before, text: "changed", notes: "**Markdown note**", type: "markdown" } }]);
     expect(read().text).toBe("changed");
+    expect(read().type).toBe("markdown");
+    expect(read().notes).toBe("**Markdown note**");
     expect(() => applyBatch(facade, statements, "books", [{ key: "book", before: { key: "book", path: "old" }, value: { key: "book", path: "new" } }])).toThrow("CUSTOM_UNSAFE_BOOK_CHANGE");
     db.close();
   });

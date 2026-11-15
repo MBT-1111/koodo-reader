@@ -194,7 +194,7 @@ const ReaderBottomToolbar = (props: ReaderBottomToolbarProps) => {
         bottom: 0,
         left: isNavLocked ? 315 : 15,
         right: isSettingLocked || isDockedRight ? 315 : 15,
-        zIndex: 14,
+        zIndex: 9,
         display: "flex",
         alignItems: "center",
         justifyContent: "space-between",
@@ -208,22 +208,38 @@ const ReaderBottomToolbar = (props: ReaderBottomToolbarProps) => {
     >
       <div className="reader-bottom-toolbar-left">
         <div
-          className="previous-chapter-single-container"
+          className="previous-chapter"
           onClick={() => {
             handlePrevPage();
           }}
+          style={{
+            width: 40,
+            height: 40,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+          }}
         >
-          <span className="icon-dropdown previous-chapter-single"></span>
+          <span className="icon-dropdown previous-chapter-icon"></span>
         </div>
         <div
-          className="previous-chapter"
+          className="previous-chapter previous-chapter-double"
           aria-label={t("Previous chapter")}
           data-tooltip-id="my-tooltip"
           data-tooltip-content={t("Previous chapter")}
           onClick={() => {
             prevChapter();
           }}
+          style={{
+            width: 30,
+            height: 30,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            fontSize: 12,
+          }}
         >
+          <span className="icon-dropdown previous-chapter-icon"></span>
           <span className="icon-dropdown previous-chapter-icon"></span>
         </div>
         <input
@@ -327,23 +343,39 @@ const ReaderBottomToolbar = (props: ReaderBottomToolbarProps) => {
           </span>
         </span>
         <div
-          className="next-chapter"
+          className="next-chapter next-chapter-double"
           aria-label={t("Next chapter")}
           data-tooltip-id="my-tooltip"
           data-tooltip-content={t("Next chapter")}
           onClick={() => {
             nextChapter();
           }}
+          style={{
+            width: 30,
+            height: 30,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            fontSize: 12,
+          }}
         >
+          <span className="icon-dropdown next-chapter-icon"></span>
           <span className="icon-dropdown next-chapter-icon"></span>
         </div>
         <div
-          className="next-chapter-single-container"
+          className="next-chapter"
           onClick={() => {
             handleNextPage();
           }}
+          style={{
+            width: 40,
+            height: 40,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+          }}
         >
-          <span className="icon-dropdown next-chapter-single"></span>
+          <span className="icon-dropdown next-chapter-icon"></span>
         </div>
       </div>
     </div>

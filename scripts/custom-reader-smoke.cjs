@@ -1,19 +1,20 @@
-// Start `yarn start`, then pass an installed Custom executable. The renderer
-// under test comes from localhost; the installed application files stay intact.
+// Start `yarn start`, then pass an installed Custom executable or --source-main
+// to use the repository's Electron dependency and current main/preload code.
 const { _electron: electron } = require('@playwright/test');
 const fs = require('fs'), path = require('path');
 const assert = require('assert/strict');
 const { isInside } = require('../src/utils/main/custom/runtime');
 (async () => {
-  const executablePath = process.argv[2];
+  const sourceMain = process.argv[2] === '--source-main';
+  const executablePath = sourceMain ? require('electron') : process.argv[2];
   assert.ok(executablePath && path.isAbsolute(executablePath) && fs.existsSync(executablePath), 'Pass the absolute path to Koodo Reader Custom.exe');
-  assert.equal(path.basename(executablePath).toLowerCase(), 'koodo reader custom.exe');
+  if (!sourceMain) assert.equal(path.basename(executablePath).toLowerCase(), 'koodo reader custom.exe');
   const output = path.resolve(__dirname, '../dist'); fs.mkdirSync(output, { recursive: true });
   let app;
   const root = fs.mkdtempSync(path.join(require('os').tmpdir(), 'krc-test-reader-'));
   try {
-    const env = { ...process.env, KRC_TEST_PROFILE: root, ELECTRON_IS_DEV: '0' }; delete env.ELECTRON_RUN_AS_NODE;
-    app = await electron.launch({ executablePath, env, timeout: 60000 });
+    const env = { ...process.env, KRC_TEST_PROFILE: root, ELECTRON_IS_DEV: sourceMain ? '1' : '0' }; delete env.ELECTRON_RUN_AS_NODE;
+    app = await electron.launch({ executablePath, args: sourceMain ? [path.resolve(__dirname, '..')] : [], env, timeout: 60000 });
     const locations = await app.evaluate(({ app }) => ['userData', 'sessionData', 'temp', 'logs', 'crashDumps'].map(name => app.getPath(name)));
     assert.ok(locations.every(location => isInside(root, location)), 'Every writable profile location must be isolated');
     await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().forEach(window => { window.webContents.setBackgroundThrottling(false); window.showInactive(); }));
@@ -79,11 +80,11 @@ const { isInside } = require('../src/utils/main/custom/runtime');
       }, { once: true });
       return { position: rendition.getPosition(), page: (await rendition.getProgress()).currentPage };
     });
-    await page.locator('.reader-bottom-toolbar .next-chapter-single-container').evaluate(node => node.click());
+    await page.locator('.reader-bottom-toolbar .next-chapter:not(.next-chapter-double)').evaluate(node => node.click());
     await page.waitForFunction(() => window.__turnFailureObserved);
     await page.evaluate(async () => { const { useAppStore } = await import('/src/store/useAppStore.ts'); useAppStore.getState().reader.htmlBook.rendition.next = window.__originalNextPage; });
     await page.waitForTimeout(250);
-    await page.locator('.reader-bottom-toolbar .next-chapter-single-container').evaluate(node => node.click());
+    await page.locator('.reader-bottom-toolbar .next-chapter:not(.next-chapter-double)').evaluate(node => node.click());
     await page.waitForFunction(async previous => { const { useAppStore } = await import('/src/store/useAppStore.ts'); return (await useAppStore.getState().reader.htmlBook.rendition.getProgress()).currentPage > previous; }, originalPosition.page);
     await page.evaluate(async position => { const { useAppStore } = await import('/src/store/useAppStore.ts'); await useAppStore.getState().reader.htmlBook.rendition.goToPosition(JSON.stringify(position)); }, originalPosition.position);
     console.log('PASS new bottom-toolbar page turning recovers after an injected failure');
@@ -224,17 +225,27 @@ const { isInside } = require('../src/utils/main/custom/runtime');
     await page.locator('.tag-list-item').filter({ hasText: 'Fixture tag' }).locator('.center').evaluate(node => node.click());
     await page.locator('.tag-list-item.active-tag').waitFor();
     assert.match(await page.locator('.tag-list-item.active-tag').innerText(), /Fixture tag/);
-    await page.locator('.editor-box').fill('A synthetic note');
+    await page.locator('.note-type-select').selectOption('markdown');
+    await page.locator('.editor-box').fill('**A synthetic note**');
+    assert.equal(await page.locator('.note-preview-pane strong').innerText(), 'A synthetic note');
     await page.locator('.note-button-container .book-manage-title').last().evaluate(node => node.click());
     await page.locator('.note-editor').waitFor({ state: 'detached' });
     const notes = await page.evaluate(async () => (await import('/src/utils/storage/databaseService.ts')).default.getRecordsByBookKey('reader-fixture', 'notes'));
     assert.equal(notes.length, 1); assert.deepEqual(notes[0].tag, ['Fixture tag']);
+    assert.equal(notes[0].type, 'markdown'); assert.equal(notes[0].notes, '**A synthetic note**');
     console.log('PASS first-click tag feedback and saved note');
     await page.evaluate(async key => {
       const state = (await import('/src/store/useAppStore.ts')).useAppStore.getState();
       state.handleNoteKey(key); state.handleMenuMode('note'); state.handleOpenMenu(true);
     }, notes[0].key);
     await page.locator('.tag-list-item.active-tag').waitFor();
+    assert.equal(await page.locator('.note-type-select').inputValue(), 'markdown');
+    const safePreview = await page.evaluate(async () => {
+      const { renderNoteHtml } = await import('/src/components/noteContent/component.tsx');
+      return renderNoteHtml('<b>Safe</b><script>alert(1)</script><img src="x" onerror="alert(1)">', 'html');
+    });
+    assert.ok(safePreview.includes('<b>Safe</b>')); assert.doesNotMatch(safePreview, /script|onerror/i);
+    console.log('PASS rich note preview, database type round trip and sanitized HTML');
     const tag = page.locator('.tag-list-item').filter({ hasText: 'Fixture tag' }).locator('.center');
     await tag.evaluate(node => node.click());
     assert.equal(await page.locator('.tag-list-item.active-tag').count(), 0);
@@ -296,7 +307,7 @@ const { isInside } = require('../src/utils/main/custom/runtime');
     await page.evaluate(async () => {
       const { ConfigService } = await import('/src/assets/lib/kookit-extra-browser.min.js');
       ConfigService.setReaderConfig('appSkin', 'night'); ConfigService.setReaderConfig('backgroundColor', 'rgba(44,47,49,1)');
-      ConfigService.setReaderConfig('textColor', 'rgba(255,255,255,1)'); ConfigService.setReaderConfig('animation', 'slide');
+      ConfigService.setReaderConfig('textColor', 'rgba(255,255,255,1)'); ConfigService.setReaderConfig('animation', 'overlay');
       ConfigService.setReaderConfig('isEinkMode', 'yes');
     });
     await page.reload();
@@ -311,8 +322,20 @@ const { isInside } = require('../src/utils/main/custom/runtime');
         grayscale: getComputedStyle(document.getElementById('root')).filter, savedBackground: ConfigService.getReaderConfig('backgroundColor'), savedAnimation: ConfigService.getReaderConfig('animation') };
     });
     assert.equal(appearance.enabled, 'true'); assert.equal(appearance.background, 'rgb(255, 255, 255)'); assert.equal(appearance.color, 'rgb(0, 0, 0)');
-    assert.equal(appearance.grayscale, 'grayscale(1)'); assert.equal(appearance.savedBackground, 'rgba(44,47,49,1)'); assert.equal(appearance.savedAnimation, 'slide');
+    assert.equal(appearance.grayscale, 'grayscale(1)'); assert.equal(appearance.savedBackground, 'rgba(44,47,49,1)'); assert.equal(appearance.savedAnimation, 'overlay');
     console.log('PASS monochrome reader body and unchanged saved appearance preferences');
+    const overlayCount = await page.evaluate(async () => {
+      const { useAppStore } = await import('/src/store/useAppStore.ts');
+      let count = 0;
+      const observer = new MutationObserver(records => records.forEach(record => record.addedNodes.forEach(node => {
+        if (node instanceof Element && node.classList.contains('koodo-overlay-turn')) count++;
+      })));
+      observer.observe(document.body, { childList: true });
+      await useAppStore.getState().reader.htmlBook.rendition.next();
+      await new Promise(resolve => setTimeout(resolve, 450)); observer.disconnect();
+      return count;
+    });
+    assert.equal(overlayCount, 0); console.log('PASS E-ink page turns skip overlay screenshots and animation');
     await page.screenshot({ path: path.join(output, 'reader-eink.png') });
     const ended = await page.evaluate(() => new Promise(resolve => {
       const style = document.createElement('style'); style.textContent = '@keyframes fixture-animation { from { opacity: 0; } to { opacity: 1; } }'; document.head.append(style);
@@ -325,7 +348,7 @@ const { isInside } = require('../src/utils/main/custom/runtime');
     assert.equal(await page.evaluate(() => document.documentElement.dataset.theme), 'dark');
     console.log('PASS disabling E-ink restores the saved dark theme');
     assert.deepEqual(errors, [], 'The source renderer must not raise uncaught errors');
-    fs.writeFileSync(path.join(output, 'custom-reader-smoke.json'), JSON.stringify({ passed: true, mode: 'isolated Windows runtime with localhost source renderer', checks: ['preload-native-file-path', 'toolbar-error-unlock', 'stale-navigation-lock', 'navigation-mouse-leave', 'navigation-ime-lifecycle', 'full-book-search-ime', 'navigation-pin-restoration', 'selection-during-speech', 'new-note-tag-feedback', 'existing-note-tag-feedback', 'speech-panel-reopen', 'system-pause-resume', 'custom-loading-pause', 'custom-position-resume', 'custom-fast-pause-resume', 'stop-after-reopen', 'monochrome-book-style', 'eink-theme-restoration', 'dialog-animation-lifecycle'] }, null, 2));
+    fs.writeFileSync(path.join(output, 'custom-reader-smoke.json'), JSON.stringify({ passed: true, mode: 'isolated Windows runtime with localhost source renderer', sourceMain, checks: ['preload-native-file-path', 'toolbar-error-unlock', 'stale-navigation-lock', 'navigation-mouse-leave', 'navigation-ime-lifecycle', 'full-book-search-ime', 'navigation-pin-restoration', 'selection-during-speech', 'new-note-tag-feedback', 'rich-note-preview-persistence-sanitization', 'existing-note-tag-feedback', 'speech-panel-reopen', 'system-pause-resume', 'custom-loading-pause', 'custom-position-resume', 'custom-fast-pause-resume', 'stop-after-reopen', 'monochrome-book-style', 'eink-overlay-disabled', 'eink-theme-restoration', 'dialog-animation-lifecycle'] }, null, 2));
   } finally {
     if (app) await app.close();
     if (root && path.dirname(path.resolve(root)) === path.resolve(require('os').tmpdir()) && path.basename(root).startsWith('krc-test-reader-')) fs.rmSync(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
