@@ -1,6 +1,6 @@
 // Start `yarn start`, then pass an installed Custom executable or --source-main
 // to use the repository's Electron dependency and current main/preload code.
-const { _electron: electron } = require('@playwright/test');
+const { _electron: electron, expect } = require('@playwright/test');
 const fs = require('fs'), path = require('path');
 const assert = require('assert/strict');
 const { isInside } = require('../src/utils/main/custom/runtime');
@@ -32,6 +32,12 @@ const { isInside } = require('../src/utils/main/custom/runtime');
     window.SpeechSynthesisUtterance = class { text = ''; };
   });
   const page = await app.firstWindow(), errors = [];
+  // waitForFunction treats an async predicate's Promise as truthy before it resolves.
+  const waitForAsync = (predicate, arg) => expect.poll(() => page.evaluate(predicate, arg), { timeout: 30000 }).toBeTruthy();
+  const waitForReader = () => waitForAsync(async () => {
+    const state = (await import('/src/store/useAppStore.ts')).useAppStore.getState();
+    return state.book.isReading && !!state.reader.htmlBook?.rendition;
+  });
   page.on('pageerror', error => { errors.push(error.message); console.error('PAGE_ERROR', error.message); });
     const bridgeWindow = app.waitForEvent('window');
     await app.evaluate(async ({ BrowserWindow }, preload) => {
@@ -67,7 +73,7 @@ const { isInside } = require('../src/utils/main/custom/runtime');
     await page.goto('http://127.0.0.1:3000/#/html/reader-fixture?title=Synthetic');
     // Hash navigation reuses the manager's store; reload to exercise startup hydration.
     await page.reload();
-    await page.waitForFunction(async () => (await import('/src/store/useAppStore.ts')).useAppStore.getState().reader.htmlBook?.rendition?.audioText);
+    await waitForReader();
     await page.waitForTimeout(1800);
     const originalPosition = await page.evaluate(async () => {
       const { useAppStore } = await import('/src/store/useAppStore.ts');
@@ -85,7 +91,7 @@ const { isInside } = require('../src/utils/main/custom/runtime');
     await page.evaluate(async () => { const { useAppStore } = await import('/src/store/useAppStore.ts'); useAppStore.getState().reader.htmlBook.rendition.next = window.__originalNextPage; });
     await page.waitForTimeout(250);
     await page.locator('.reader-bottom-toolbar .next-chapter:not(.next-chapter-double)').evaluate(node => node.click());
-    await page.waitForFunction(async previous => { const { useAppStore } = await import('/src/store/useAppStore.ts'); return (await useAppStore.getState().reader.htmlBook.rendition.getProgress()).currentPage > previous; }, originalPosition.page);
+    await waitForAsync(async previous => { const { useAppStore } = await import('/src/store/useAppStore.ts'); return (await useAppStore.getState().reader.htmlBook.rendition.getProgress()).currentPage > previous; }, originalPosition.page);
     await page.evaluate(async position => { const { useAppStore } = await import('/src/store/useAppStore.ts'); await useAppStore.getState().reader.htmlBook.rendition.goToPosition(JSON.stringify(position)); }, originalPosition.position);
     console.log('PASS new bottom-toolbar page turning recovers after an injected failure');
     const navigationIsHidden = () => page.waitForFunction(() => document.querySelector('.navigation-panel-container').getBoundingClientRect().right <= 0, undefined, { timeout: 5000 });
@@ -162,7 +168,7 @@ const { isInside } = require('../src/utils/main/custom/runtime');
     assert.equal((await navigationConfig()).pin, 'yes');
     await clickBook(); await assertNavigationOpen();
     await page.reload();
-    await page.waitForFunction(async () => (await import('/src/store/useAppStore.ts')).useAppStore.getState().reader.htmlBook?.rendition?.audioText);
+    await waitForReader();
     await assertNavigationOpen();
     await page.locator('.book-content-expand').filter({ has: page.locator('.icon-search') }).evaluate(node => node.click());
     await page.locator('.book-content-search-input').evaluate(node => {
@@ -174,7 +180,7 @@ const { isInside } = require('../src/utils/main/custom/runtime');
     await page.waitForTimeout(1000);
     await clickBook(); await navigationIsHidden();
     await page.reload();
-    await page.waitForFunction(async () => (await import('/src/store/useAppStore.ts')).useAppStore.getState().reader.htmlBook?.rendition?.audioText);
+    await waitForReader();
     await navigationIsHidden();
     console.log('PASS intentional pins survive input and restart; unlocking restores the default hidden panel');
     const openSpeech = () => page.locator('.icon-earphone-line').evaluate(node => node.closest('.reader-setting-icon-container').click());
@@ -283,7 +289,7 @@ const { isInside } = require('../src/utils/main/custom/runtime');
     assert.match(await page.locator('.tts-player-btn-main').innerText(), /Resume|继续/);
     console.log('PASS pause during custom voice generation does not play late audio');
     await page.locator('.tts-player-btn-main').evaluate(node => node.click());
-    await page.waitForFunction(async () => (await import('/src/utils/reader/ttsUtil.ts')).default.getPlayer()?.playing());
+    await waitForAsync(async () => (await import('/src/utils/reader/ttsUtil.ts')).default.getPlayer()?.playing());
     await page.waitForTimeout(150);
     await page.locator('.tts-player-btn-main').evaluate(node => node.click());
     const pausedAt = await page.evaluate(async () => { const player = (await import('/src/utils/reader/ttsUtil.ts')).default.getPlayer(); window.__pausedPlayer = player; return player.seek(); });
@@ -301,7 +307,7 @@ const { isInside } = require('../src/utils/main/custom/runtime');
     await page.waitForFunction(() => window.__customRequests > 0);
     await page.locator('.tts-player-btn-main').evaluate(node => node.click());
     await page.locator('.tts-player-btn-main').evaluate(node => node.click());
-    await page.waitForFunction(async () => (await import('/src/utils/reader/ttsUtil.ts')).default.getPlayer()?.playing());
+    await waitForAsync(async () => (await import('/src/utils/reader/ttsUtil.ts')).default.getPlayer()?.playing());
     await page.locator('.tts-player-btn').last().evaluate(node => node.click());
     console.log('PASS immediate pause/resume during generation reuses the pending load');
     await page.evaluate(async () => {
@@ -311,7 +317,7 @@ const { isInside } = require('../src/utils/main/custom/runtime');
       ConfigService.setReaderConfig('isEinkMode', 'yes');
     });
     await page.reload();
-    await page.waitForFunction(async () => (await import('/src/store/useAppStore.ts')).useAppStore.getState().reader.htmlBook?.rendition?.audioText);
+    await waitForReader();
     await page.waitForTimeout(1500);
     const appearance = await page.evaluate(async () => {
       const { ConfigService } = await import('/src/assets/lib/kookit-extra-browser.min.js');
@@ -353,4 +359,4 @@ const { isInside } = require('../src/utils/main/custom/runtime');
     if (app) await app.close();
     if (root && path.dirname(path.resolve(root)) === path.resolve(require('os').tmpdir()) && path.basename(root).startsWith('krc-test-reader-')) fs.rmSync(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
   }
-})().catch(error => { console.error(error.message); process.exitCode = 1; });
+})().catch(error => { console.error(error.stack); process.exitCode = 1; });

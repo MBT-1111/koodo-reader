@@ -42,6 +42,8 @@ jobs:
         run: yarn build
       - name: Smoke test with synthetic isolated data and blocked external network
         run: yarn custom:smoke
+      - name: Check statistics with empty and recorded reading history
+        run: node scripts/custom-stats-smoke.cjs
       - name: Build unsigned Windows x64 archive without publishing
         run: yarn electron-builder --win zip --x64 --publish never --config.win.signAndEditExecutable=false
       - name: Upload reviewable build and provenance
@@ -51,6 +53,7 @@ jobs:
           path: |
             dist/*-Win.zip
             dist/custom-smoke.json
+            dist/custom-stats-smoke.json
             package.json
             yarn.lock
           if-no-files-found: error

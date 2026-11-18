@@ -1686,6 +1686,13 @@ const createMainWin = () => {
   });
   ipcMain.handle("database-command", async (event, config) => {
     if (storageRestartPending) throw new Error("CUSTOM_PROFILE_RESTART_REQUIRED");
+    if (config?.statement === "getByKeysStatement") {
+      if (config.statementType !== "function" || config.executeType !== "all" ||
+          !Array.isArray(config.data) || config.data.some((key) => typeof key !== "string" || !key)) {
+        throw new Error("CUSTOM_INVALID_DATABASE_REQUEST");
+      }
+      if (config.data.length === 0) return [];
+    }
     if (config?.statement === "customSyncBatch") {
       customSync.authorize(event, config.customSyncToken, config.storagePath);
       if (!["books", "notes", "bookmarks"].includes(config.dbName)) throw new Error("CUSTOM_INVALID_DATABASE_REQUEST");
@@ -1711,7 +1718,9 @@ const createMainWin = () => {
       if (statement.startsWith("save") || statement.startsWith("update")) {
         data = SqlStatement.jsonToSqlite[dbName](data);
       }
-      result = row[executeType](data);
+      // Ordered batch queries bind keys in both IN (...) and ORDER BY CASE.
+      const parameters = statement === "getByKeysStatement" ? [...data, ...data] : data;
+      result = row[executeType](parameters);
     } else {
       result = row[executeType]();
     }

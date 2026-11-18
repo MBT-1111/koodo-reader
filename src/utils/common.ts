@@ -2508,6 +2508,19 @@ export const isFixedLayoutComic = (book: Book) => {
     book.layout === "pre-paginated"
   );
 };
+// “从偶数页开始渲染”目前只支持原始 PDF、漫画（CB 系列）和固定版式 EPUB/MOBI，
+// 其余分页格式（PPTX/XPS/DjVu/OFD）的页数据不在 chapterDocList 里，无法前置空白页
+// 当前书籍尚未加载时（currentBook 为 {}）没有 format，直接视为不支持
+export const isStartFromEvenSupported = (book: Book) => {
+  if (!book || !book.format) {
+    return false;
+  }
+  return (
+    isReadingRawPDF(book) ||
+    book.format.startsWith("CB") ||
+    isFixedLayoutComic(book)
+  );
+};
 // PDF（原始版式）、漫画（CB 系列）、PPTX/PPT、XPS、OXPS、DjVu、OFD 共用多 iframe 分页结构
 export const isPaginatedBook = (book: Book) => {
   return (
@@ -2522,6 +2535,19 @@ export const isPaginatedBook = (book: Book) => {
     book.format === "OFD" ||
     isFixedLayoutComic(book)
   );
+};
+// 双页模式所需的最小窗口宽度，低于该值时未手动设置模式的书籍自动使用单页
+export const AUTO_SINGLE_PAGE_MAX_WIDTH = 900;
+// 返回 null 表示不接管阅读模式：分页格式（PDF/漫画等）、用户手动设置过、自动阅读开启
+// 自动结果只用于运行时，不写回 readerMode 配置，窗口变宽后可以切回双页
+export const getAutoReaderMode = (book: Book): "single" | "double" | null => {
+  if (isPaginatedBook(book)) return null;
+  if (ConfigService.getReaderConfig("readerMode")) return null;
+  if (ConfigService.getAllListConfig("autoReadingBooks").includes(book.key))
+    return null;
+  return document.body.clientWidth < AUTO_SINGLE_PAGE_MAX_WIDTH
+    ? "single"
+    : "double";
 };
 // 阅读器浮层弹窗（笔记/翻译/词典/问 AI）
 export const POPUP_BOX_MODES = ["note", "trans", "dict", "assistant"];
@@ -2620,49 +2646,4 @@ export const removeCollectionToTrash = (collectionKey: string) => {
     });
   }
   collectionUtil.dissolveCollection(collectionKey);
-};
-
-export const getCoverTheme = (format: string) => {
-  switch (format) {
-    case "PDF":
-      return "rgba(55, 170, 81, 0.7)";
-    case "TXT":
-      return "rgba(251, 191, 16,1)";
-    case "EPUB":
-      return "rgba(33, 165, 241,1)";
-    case "MOBI":
-      return "rgba(255, 108, 110,1)";
-    case "AZW3":
-    case "AZW":
-      return " #ff9900";
-    case "MD":
-      return "#5e7fff";
-    case "FB2":
-      return "#0063b1";
-    case "CHM":
-      return "#8e6fce";
-    case "DOCX":
-    case "DOC":
-      return " #118CD9";
-    case "RTF":
-      return "#0F766E";
-    case "CBT":
-    case "CBZ":
-    case "CB7":
-    case "CBR":
-      return "#00b6c2";
-    case "PPTX":
-    case "PPT":
-      return "#C43E1C";
-    case "XPS":
-    case "OXPS":
-      return "#744DA9";
-    case "DJVU":
-    case "DJV":
-      return "#003366";
-    case "OFD":
-      return "#C2185B";
-    default:
-      return "#118CD9";
-  }
 };

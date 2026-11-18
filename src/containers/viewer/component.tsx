@@ -26,6 +26,7 @@ import {
   SHAPE_TYPES,
   TEXT_COLORS,
   clearComicTemp,
+  getAutoReaderMode,
   getDefaultOcrEngine,
   getDefaultOcrLang,
   getOcrCache,
@@ -142,6 +143,7 @@ const Viewer = (props: ViewerProps) => {
   const handleMenuMode = useAppStore((s) => s.handleMenuMode);
   const handleFetchPlugins = useAppStore((s) => s.handleFetchPlugins);
   const handleScale = useAppStore((s) => s.handleScale);
+  const handleReaderMode = useAppStore((s) => s.handleReaderMode);
   const handleBackgroundColor = useAppStore((s) => s.handleBackgroundColor);
 
   const connected = {
@@ -178,6 +180,7 @@ const Viewer = (props: ViewerProps) => {
     handleMenuMode,
     handleFetchPlugins,
     handleScale,
+    handleReaderMode,
     handleBackgroundColor,
     handleLeaveReader: props.handleLeaveReader,
     handleCloseDialogs: props.handleCloseDialogs,
@@ -900,6 +903,11 @@ const Viewer = (props: ViewerProps) => {
     }
     propsRef.current.handleRenderBookFunc(handleRenderBook);
     const resizeHandler = throttle(() => {
+      const autoReaderMode = getAutoReaderMode(propsRef.current.currentBook);
+      if (autoReaderMode && autoReaderMode !== propsRef.current.readerMode) {
+        // 自动切换只更新运行时模式，不写配置；flushSync 确保重渲染读到新模式
+        flushSync(() => propsRef.current.handleReaderMode(autoReaderMode));
+      }
       flushSync(() => {
         updateState(
           getPageWidth(
