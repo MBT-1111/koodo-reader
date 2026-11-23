@@ -34,29 +34,35 @@ const { isInside } = require('../src/utils/main/custom/runtime');
     console.log('PASS empty-library statistics');
 
     const book = { key: 'stats-a', name: 'Synthetic Stats A', author: 'Test', description: '', md5: 'fixture', cover: '', format: 'EPUB', publisher: '', size: 1, page: 1, path: '', charset: 'utf-8', published: '', modified: '', identifier: '', language: 'en', subject: '', rights: '', isbn: '', layout: '' };
-    for (const data of [book, { ...book, key: 'stats-b', name: 'Synthetic Stats B' }]) {
+    for (const data of [book, { ...book, key: 'stats-b', name: '1984' }]) {
       await invoke('database-command', { statement: 'saveStatement', statementType: 'string', executeType: 'run', dbName: 'books', storagePath, data });
     }
-    const expected = await page.evaluate(async engineUrl => {
+    const missingBookKey = '1700000000000';
+    const expected = await page.evaluate(async ({ engineUrl, missingBookKey }) => {
       const exports = Object.values(await import(engineUrl));
       const config = exports.find(value => typeof value?.setReaderConfig === 'function');
       const time = exports.find(value => typeof value?.dateToKey === 'function' && typeof value?.prototype?.getRangeStats === 'function');
       if (!config || !time) throw new Error('Public statistics exports not found');
       const today = time.dateToKey(new Date());
       const yesterday = new Date(); yesterday.setDate(yesterday.getDate() - 1);
-      config.setItem('readingStats', JSON.stringify({ [today]: ['stats-a-120', 'stats-b-300', 'stats-deleted-60'], [time.dateToKey(yesterday)]: ['stats-a-60'] }));
+      config.setItem('readingStats', JSON.stringify({ [today]: ['stats-a-120', 'stats-b-300', `${missingBookKey}-60`], [time.dateToKey(yesterday)]: ['stats-a-60'] }));
       config.setItem('readingTime', JSON.stringify({ 'stats-a': 180, 'stats-b': 300 }));
       config.setItem('recordLocation', JSON.stringify({ 'stats-a': { percentage: 0.5 }, 'stats-b': { percentage: 0.25 } }));
       return { today, total: time.formatDuration(540), average: time.formatDuration(270) };
-    }, engineUrl);
+    }, { engineUrl, missingBookKey });
     await openStats();
     await page.locator('.stats-cards').waitFor();
     assert.deepEqual(errors, [], 'Statistics loading must not raise an uncaught error');
     assert.deepEqual(await page.locator('.stats-card-value').allTextContents(), ['2', expected.total, '2', expected.average]);
     assert.equal(await page.locator('.stats-leaderboard-card').count(), 2);
-    assert.deepEqual(await page.locator('.stats-leaderboard-name').allTextContents(), ['Synthetic Stats B', 'Synthetic Stats A']);
+    assert.deepEqual(await page.locator('.stats-leaderboard-name').allTextContents(), ['1984', 'Synthetic Stats A']);
     const bookPicker = page.locator('.stats-book-trigger');
     await bookPicker.click();
+    assert.deepEqual(
+      await page.locator('.stats-book-option-text .stats-book-option-name').allTextContents(),
+      ['1984', 'Synthetic Stats A'],
+      'The book filter shows recorded titles without exposing missing books as IDs'
+    );
     await page.locator('.stats-book-search').fill('Synthetic Stats A');
     const bookOptions = page.locator('.stats-book-option').filter({ hasText: 'Synthetic Stats' });
     assert.equal(await bookOptions.count(), 1);
@@ -90,7 +96,7 @@ const { isInside } = require('../src/utils/main/custom/runtime');
     assert.equal(await page.locator('.heatmap-cell[title]').count() >= 358, true);
     console.log('PASS recorded statistics, deleted-book history, ranking, book/date filters and both charts');
 
-    for (const [data, expectedKeys] of [[['stats-a'], ['stats-a']], [['stats-b', 'stats-deleted', 'stats-a'], ['stats-b', 'stats-a']], [[], []]]) {
+    for (const [data, expectedKeys] of [[['stats-a'], ['stats-a']], [['stats-b', missingBookKey, 'stats-a'], ['stats-b', 'stats-a']], [[], []]]) {
       const records = await invoke('database-command', { statement: 'getByKeysStatement', statementType: 'function', executeType: 'all', dbName: 'books', storagePath, data });
       assert.deepEqual(records.map(record => record.key), expectedKeys);
     }

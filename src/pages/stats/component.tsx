@@ -14,6 +14,7 @@ import ReadingChart from "../../components/stats/readingChart";
 import ReadingHeatmap from "../../components/stats/readingHeatmap";
 import EmptyCover from "../../components/emptyCover";
 import {
+  BookOption,
   ChartTab,
   Preset,
   RangePreset,
@@ -80,9 +81,7 @@ export interface StatsState {
   avgDailySeconds: number;
   chartDays: { date: string; seconds: number }[];
   earliestDate: string;
-  bookKeys: string[];
-  bookNamesMap: Record<string, string>;
-  bookAuthorsMap: Record<string, string>;
+  bookOptions: BookOption[];
   bookKey: string;
   leaderboard: LeaderboardBook[];
   heatmapData: { date: string; seconds: number }[];
@@ -111,9 +110,7 @@ const Stats = () => {
     avgDailySeconds: 0,
     chartDays: [],
     earliestDate: "",
-    bookKeys: [],
-    bookNamesMap: {},
-    bookAuthorsMap: {},
+    bookOptions: [],
     bookKey: "",
     leaderboard: [],
     heatmapData: [],
@@ -161,13 +158,15 @@ const Stats = () => {
       ? await DatabaseService.getRecordsByKeys(bookKeys, "books")
       : [];
     const bookRecordMap: Record<string, Book> = {};
-    const bookNamesMap: Record<string, string> = {};
-    const bookAuthorsMap: Record<string, string> = {};
+    const bookOptions: BookOption[] = [];
     for (const record of bookRecords) {
       bookRecordMap[record.key] = record;
-      bookNamesMap[record.key] = record.name;
-      bookAuthorsMap[record.key] = record.author;
+      const name = record.name?.trim();
+      if (name) {
+        bookOptions.push({ key: record.key, name, author: record.author || "" });
+      }
     }
+    bookOptions.sort((a, b) => a.name.localeCompare(b.name));
 
     // ── 4. Reading time leaderboard (top 9 books) ──────────────────────
     const bookTotals = readingTimeUtil.getBookTotals() as Record<
@@ -238,9 +237,7 @@ const Stats = () => {
         prev.bookKey
       ),
       earliestDate,
-      bookKeys,
-      bookNamesMap,
-      bookAuthorsMap,
+      bookOptions,
       leaderboard,
       heatmapData,
       isLoading: false,
@@ -301,9 +298,7 @@ const Stats = () => {
     avgDailySeconds,
     chartDays,
     earliestDate,
-    bookKeys,
-    bookNamesMap,
-    bookAuthorsMap,
+    bookOptions,
     bookKey,
     leaderboard,
     heatmapData,
@@ -360,13 +355,6 @@ const Stats = () => {
 
   const todayKey = ReadingTimeUtil.dateToKey(new Date());
   const earliestKey = earliestDate || range.start;
-  const bookOptions = bookKeys
-    .map((key) => ({
-      key,
-      name: bookNamesMap[key] || key,
-      author: bookAuthorsMap[key] || "",
-    }))
-    .sort((a, b) => a.name.localeCompare(b.name));
   // Desktop keeps its previous bucketing rule: daily up to ~3 months,
   // weekly beyond (the mobile chart switches to monthly/yearly sooner).
   const chartData: ReadingChartPoint[] = ReadingTimeUtil.bucketStats(
