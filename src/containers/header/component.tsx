@@ -190,16 +190,17 @@ const Header = (props: HeaderProps) => {
   };
 
   const handleOpenLastReadBook = async () => {
-    let filePath = "";
+    let hasExternalFile = false;
     //open book when app start
     if (isElectron) {
-      const ipcRenderer = window.electronAPI;
-      filePath = ipcRenderer.sendSync("check-file-data");
+      hasExternalFile = await window.electronAPI.invoke(
+        "has-external-open-request"
+      );
     }
     if (
       ConfigService.getReaderConfig("isOpenBook") === "yes" &&
       !currentBook.key &&
-      !filePath
+      !hasExternalFile
     ) {
       let lastReadBookKey = ConfigService.getAllListConfig("recentBooks")[0];
       if (lastReadBookKey) {
@@ -209,9 +210,7 @@ const Header = (props: HeaderProps) => {
         if (collectionKey) {
           let collection = collectionUtil.getCollection(collectionKey);
           if (collection) {
-            handleReadingBook(
-              collectionUtil.getCollectionAsBook(collection)
-            );
+            handleReadingBook(collectionUtil.getCollectionAsBook(collection));
             handleCurrentCollectionKey(collectionKey);
             handleCollectionDetailDialog(true);
             return;
@@ -484,9 +483,7 @@ const Header = (props: HeaderProps) => {
           }
           let result = await vexComfirmAsync(
             `<h3>${t("Enable Koodo Sync")}</h3><p>${
-              t(
-                "To enjoy a faster and seamless synchronization experience."
-              ) +
+              t("To enjoy a faster and seamless synchronization experience.") +
               " " +
               t(
                 "Your reading progress, notes, highlights, bookmarks, and other data will be stored and synced through our cloud service. Your books and covers will still be synced by your added data sources. All your data will be encrypted and stored securely in our cloud. You can disable this feature anytime in the settings."
@@ -775,10 +772,7 @@ const Header = (props: HeaderProps) => {
   }, [isAuthed]);
 
   return (
-    <div
-      className="header"
-      style={isCollapsed ? { marginLeft: "40px" } : {}}
-    >
+    <div className="header" style={isCollapsed ? { marginLeft: "40px" } : {}}>
       {!personalMode && isAuthed && (
         <div
           className="header-chat-widget"
@@ -791,7 +785,7 @@ const Header = (props: HeaderProps) => {
               "/faq" +
               "?referer=app&version=" +
               packageJson.version +
-              "&client=web&device=" +
+              `&client=${isElectron ? "desktop" : "web"}&device=` +
               deviceUuid;
             if (isElectron) {
               window.electronAPI?.invoke("new-chat", {
@@ -995,8 +989,7 @@ const Header = (props: HeaderProps) => {
       {!personalMode && isAuthed &&
       userInfo &&
       ((userInfo.type === "pro" &&
-        userInfo.valid_until <
-          new Date().getTime() / 1000 + 30 * 24 * 3600) ||
+        userInfo.valid_until < new Date().getTime() / 1000 + 30 * 24 * 3600) ||
         (userInfo.type === "trial" &&
           userInfo.valid_until <
             new Date().getTime() / 1000 + 3 * 24 * 3600)) ? (
@@ -1038,8 +1031,7 @@ const Header = (props: HeaderProps) => {
       {!personalMode && isAuthed &&
       userInfo &&
       userInfo.type === "trial" &&
-      userInfo.valid_until >
-        new Date().getTime() / 1000 + 3 * 24 * 3600 ? (
+      userInfo.valid_until > new Date().getTime() / 1000 + 3 * 24 * 3600 ? (
         <div className="header-report-container" style={{ right: "200px" }}>
           <span
             data-tooltip-id="my-tooltip"

@@ -19,20 +19,7 @@ import {
   matchShortcut,
   ShortcutAction,
 } from "./shortcutUtil";
-import { OVERLAY_TURN_DURATION } from "./overlayTurn";
 declare var window: any;
-
-// 翻页滑动动画固定时长（毫秒），需与 kookit 的 PAGE_TURN_DURATION 保持一致
-const PAGE_TURN_DURATION = 200;
-
-// 每次翻页时实时读取，避免修改动画设置后锁延迟不生效
-const getThrottleTime = () => {
-  const animation = ConfigService.getReaderConfig("animation") || "none";
-  if (animation === "none") return 100;
-  // 覆盖动画由应用层单独驱动，锁需覆盖整段动画，多留 60ms 保证 busy 先释放
-  if (animation === "overlay") return OVERLAY_TURN_DURATION + 60;
-  return PAGE_TURN_DURATION;
-};
 
 export const getSelection = (book: Book) => {
   let docs = getIframeDoc(book);
@@ -194,32 +181,15 @@ const NAV_TAB_SHORTCUTS: Array<{
   { shortcut: "openHighlightList", tab: "highlights" },
   { shortcut: "openToc", tab: "contents" },
 ];
-let lock = false; //prevent from clicking too fasts
-
-const runPageAction = async (action: () => Promise<void>) => {
-  if (lock) return;
-  lock = true;
-  try {
-    await action();
-  } finally {
-    // Saving the position can fail independently of a successful page turn.
-    // Never strand both keyboard and wheel input behind that failed save.
-    setTimeout(() => (lock = false), getThrottleTime());
-  }
-};
-
-// 仿真翻页动画收敛后（kookit 派发 flipend 事件）立即解除锁，
-// 不再等待满 PAGE_TURN_DURATION 的 throttleTime，滚轮/键盘可继续快速翻页
-window.addEventListener("page-flipend", () => {
-  lock = false;
-});
-
 const isRevertDirectionReading = (rendition: any) => {
-  return (
-    rendition?.revertDirection === "yes" &&
-    !(rendition?.isVertical && rendition.isVertical())
-  );
+  // 竖排同样遵循「从右往左翻页」：按键/滚轮/手势方向一起镜像
+  return rendition?.revertDirection === "yes";
 };
+
+// 翻页方向键分组：LTR 下 ↓ → PageDown 是「下一页」，RTL 下整体反过来
+const LTR_NEXT_DIRECTION_KEYS = [40, 39, 34]; // ↓ → PageDown
+const PAGE_DIRECTION_KEYS = [37, 38, 33, 40, 39, 34]; // ← ↑ PageUp ↓ → PageDown
+const isHorizontalArrow = (keyCode: number) => keyCode === 37 || keyCode === 39;
 
 // 弹窗未固定到右侧时，ESC 只关闭弹窗；返回 true 表示按键已处理，
 // 调用方必须直接 return，避免继续走到 exitReader 而退出阅读
@@ -254,20 +224,26 @@ const arrowKeys = async (
   const revertDirection =
     isRevertDirectionReading(rendition) &&
     (readerMode !== "scroll" || isReadingAid);
-  if (revertDirection && (event.keyCode === 37 || event.keyCode === 39)) {
-    // RTL 下左右方向键整体镜像：← 下一页，→ 上一页
+  const shortcutConfig = getShortcutConfig();
+  // RTL 下翻页方向整体镜像：← ↑ PageUp 下一页，→ ↓ PageDown 上一页。
+  // matchShortcut 为修饰键精确匹配，因此 Ctrl+Alt+←/→ 这类章节快捷键不会被误拦截
+  if (
+    revertDirection &&
+    PAGE_DIRECTION_KEYS.includes(event.keyCode) &&
+    (matchShortcut(event, shortcutConfig.nextPage) ||
+      matchShortcut(event, shortcutConfig.prevPage))
+  ) {
     event.preventDefault();
-    if (event.keyCode === 37) {
-      await rendition.next();
-    } else {
+    if (LTR_NEXT_DIRECTION_KEYS.includes(event.keyCode)) {
       await rendition.prev();
+    } else {
+      await rendition.next();
     }
     handleShortcut(event, book, rendition);
     return;
   }
   if (readerMode === "scroll" && isReadingAid) {
     // 段落模式下拦截滚动模式的原生滚动按键，改为逐段导航
-    const shortcutConfig = getShortcutConfig();
     if (matchShortcut(event, shortcutConfig.prevPage)) {
       event.preventDefault();
       await rendition.prev();
@@ -374,13 +350,23 @@ const handleShortcut = (event: any, book: Book, rendition?: any) => {
     const bookmarkBtn = document.querySelector(".reader-toolbar-bookmark");
     bookmarkBtn?.dispatchEvent(clickEvent());
   }
+  const revertChapter = isRevertDirectionReading(rendition);
+  // RTL 下 ← → 的空间含义整体反转，章节快捷键同步反转
   if (rendition && matchShortcut(event, shortcuts.prevChapter)) {
     event.preventDefault();
-    rendition.prevChapter();
+    if (isHorizontalArrow(event.keyCode) && revertChapter) {
+      rendition.nextChapter();
+    } else {
+      rendition.prevChapter();
+    }
   }
   if (rendition && matchShortcut(event, shortcuts.nextChapter)) {
     event.preventDefault();
-    rendition.nextChapter();
+    if (isHorizontalArrow(event.keyCode) && revertChapter) {
+      rendition.prevChapter();
+    } else {
+      rendition.nextChapter();
+    }
   }
   for (const { shortcut, optionName } of SELECTION_SHORTCUT_OPTIONS) {
     if (matchShortcut(event, shortcuts[shortcut])) {
@@ -449,10 +435,8 @@ export const bindHtmlEvent = (
   doc.addEventListener(
     "keydown",
     async (event) => {
-      await runPageAction(async () => {
-        await arrowKeys(rendition, event, readerMode, book);
-        handleLocation(key, rendition);
-      });
+      await arrowKeys(rendition, event, readerMode, book);
+      handleLocation(key, rendition);
     },
     { passive: false }
   );
@@ -477,10 +461,8 @@ export const bindHtmlEvent = (
         renderBookFunc();
         return;
       }
-      // 阅读尺等辅助模式下滚轮完全接管为逐段导航，preventDefault 必须在
-      // lock 检查之前执行：锁定期内到达的连续滚轮事件若不拦截默认行为，
-      // 会触发原生滚动与遮罩过渡动画叠加，造成动画掉帧（键盘事件无默认
-      // 滚动行为，所以键盘快捷键不存在此问题）
+      // 阅读尺等辅助模式下滚轮完全接管为逐段导航，先拦截原生滚动，
+      // 避免与遮罩过渡动画叠加造成动画掉帧
       if (
         readerMode === "scroll" &&
         Math.abs(event.deltaX) === 0 &&
@@ -488,51 +470,38 @@ export const bindHtmlEvent = (
       ) {
         event.preventDefault();
       }
-      await runPageAction(async () => {
-        if (readerMode === "scroll") {
-          if (Math.abs(event.deltaX) === 0 && isReadingAidMode(format, key)) {
-            // 段落/阅读尺/速读模式内部实际按单页渲染，同样遵循 RTL
-            await mouseChrome(
-              rendition,
-              event.deltaY,
-              isRevertDirectionReading(rendition)
-            );
-          } else {
-            await sleep(200);
-            await rendition.record();
-            if (
-              Math.abs(event.deltaX) === 0 &&
-              ConfigService.getReaderConfig("isDisableAutoScroll") !== "yes"
-            ) {
-              let srollElement = document.getElementById("page-area");
-              await scrollChapter(srollElement, rendition, event.deltaY);
-            }
-          }
+      if (readerMode === "scroll") {
+        if (Math.abs(event.deltaX) === 0 && isReadingAidMode(format, key)) {
+          // 段落/阅读尺/速读模式内部实际按单页渲染，同样遵循 RTL
+          await mouseChrome(
+            rendition,
+            event.deltaY,
+            isRevertDirectionReading(rendition)
+          );
         } else {
-          const revertDirection = isRevertDirectionReading(rendition);
-          if (Math.abs(event.deltaX) === 0) {
-            await mouseChrome(rendition, event.deltaY, revertDirection);
-          } else if (
-            revertDirection &&
-            Math.abs(event.deltaY) < Math.abs(event.deltaX)
+          await sleep(200);
+          await rendition.record();
+          if (
+            Math.abs(event.deltaX) === 0 &&
+            ConfigService.getReaderConfig("isDisableAutoScroll") !== "yes"
           ) {
-            // RTL 下触控板水平滚动：向左滚动（deltaX<0）为下一页
-            await mouseChrome(rendition, event.deltaX, true);
+            const scrollElement = document.getElementById("page-area");
+            await scrollChapter(scrollElement, rendition, event.deltaY);
           }
         }
-        handleLocation(key, rendition);
-      });
-    },
-    { passive: false }
-  );
-
-  window.addEventListener(
-    "keydown",
-    async (event) => {
-      await runPageAction(async () => {
-        await arrowKeys(rendition, event, readerMode, book);
-        handleLocation(key, rendition);
-      });
+      } else {
+        const revertDirection = isRevertDirectionReading(rendition);
+        if (Math.abs(event.deltaX) === 0) {
+          await mouseChrome(rendition, event.deltaY, revertDirection);
+        } else if (
+          revertDirection &&
+          Math.abs(event.deltaY) < Math.abs(event.deltaX)
+        ) {
+          // RTL 下触控板水平滚动：向左滚动（deltaX<0）为下一页
+          await mouseChrome(rendition, event.deltaX, true);
+        }
+      }
+      handleLocation(key, rendition);
     },
     { passive: false }
   );
@@ -544,27 +513,28 @@ export const bindHtmlEvent = (
         return;
       }
       if (event.pointerType === "mouse") return;
-      await runPageAction(async () => {
-        await gesture(rendition, event.type);
-        handleLocation(key, rendition);
-      });
+      await gesture(rendition, event.type);
+      handleLocation(key, rendition);
     });
   }
 
   doc.addEventListener(
     "touchend",
     async () => {
-      await runPageAction(async () => {
-        if (readerMode === "scroll") {
-          await sleep(200);
-          await rendition.record();
-        }
-        handleLocation(key, rendition);
-      });
+      if (readerMode === "scroll") {
+        await sleep(200);
+        await rendition.record();
+      }
+      handleLocation(key, rendition);
     },
     { passive: false }
   );
 };
+// PDF/漫画等分页格式每个子 iframe 都会走到 bindHtmlEvent，若在逐个 doc 的
+// 路径里注册 window keydown，一次按键会被多个监听器重复处理。这里改为每次
+// 渲染时替换旧监听，保证每个阅读器只有一个监听器，且绑定最新的
+// rendition/book/readerMode
+let windowKeydownHandler: ((event: KeyboardEvent) => Promise<void>) | null = null;
 export const htmlMouseEvent = (
   rendition: any,
   book: Book,
@@ -572,6 +542,16 @@ export const htmlMouseEvent = (
   handleScale: (scale: string) => void,
   renderBookFunc: () => void
 ) => {
+  if (windowKeydownHandler) {
+    window.removeEventListener("keydown", windowKeydownHandler);
+  }
+  const key = book.key;
+  windowKeydownHandler = async (event) => {
+    await arrowKeys(rendition, event, readerMode, book);
+    handleLocation(key, rendition);
+  };
+  window.addEventListener("keydown", windowKeydownHandler, { passive: false });
+
   rendition.on("rendered", () => {
     let iframe = getIframeWin();
     if (!iframe) return;
@@ -589,6 +569,5 @@ export const htmlMouseEvent = (
         renderBookFunc
       );
     }
-    lock = false;
   });
 };

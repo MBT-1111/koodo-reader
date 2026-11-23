@@ -18,8 +18,10 @@ const { isInside } = require('../src/utils/main/custom/runtime');
     const locations = await app.evaluate(({ app }) => ['userData', 'sessionData', 'temp', 'logs', 'crashDumps'].map(name => app.getPath(name)));
     assert.ok(locations.every(location => isInside(root, location)), 'Every writable profile location must be isolated');
     await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().forEach(window => { window.webContents.setBackgroundThrottling(false); window.showInactive(); }));
-    // Playwright's launch arguments are not a book-open request.
-    await app.evaluate(({ ipcMain }) => { ipcMain.removeAllListeners('get-file-data'); ipcMain.on('get-file-data', event => { event.returnValue = ''; }); });
+    if (!sourceMain) {
+      // Ignore Playwright arguments in installed versions that predate the open-file queue.
+      await app.evaluate(({ ipcMain }) => { ipcMain.removeAllListeners('get-file-data'); ipcMain.on('get-file-data', event => { event.returnValue = ''; }); });
+    }
   const context = app.context();
   await context.route('**/*', route => {
     const protocol = new URL(route.request().url()).protocol, hostname = new URL(route.request().url()).hostname;

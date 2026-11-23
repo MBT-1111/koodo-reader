@@ -1,4 +1,4 @@
-// Start yarn start, then pass an installed Custom executable. Uses an isolated
+// Start yarn start, then pass --source-main or an installed Custom executable. Uses an isolated
 // profile and a synthetic EPUB; never locks or edits the owner's configuration.
 const { _electron: electron, expect } = require("@playwright/test");
 const fs = require("node:fs"), path = require("node:path"), os = require("node:os");
@@ -30,20 +30,23 @@ async function lockRename(filename) {
 }
 
 (async () => {
-  const executablePath = process.argv[2];
+  const sourceMain = process.argv[2] === "--source-main";
+  const executablePath = sourceMain ? require("electron") : process.argv[2];
   const packaged = process.argv.includes("--packaged");
   assert.ok(executablePath && path.isAbsolute(executablePath) && fs.existsSync(executablePath), "Pass an installed Custom executable");
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "krc-test-page-turn-"));
-  const env = { ...process.env, KRC_TEST_PROFILE: root, ELECTRON_IS_DEV: "0" }; delete env.ELECTRON_RUN_AS_NODE;
+  const env = { ...process.env, KRC_TEST_PROFILE: root, ELECTRON_IS_DEV: sourceMain ? "1" : "0" }; delete env.ELECTRON_RUN_AS_NODE;
   let app, locker;
   const output = path.resolve("dist/page-turn-smoke.json"), report = { passed: false, checks: [] };
   fs.mkdirSync(path.dirname(output), { recursive: true });
   const checked = value => { report.checks.push(value); console.log(`PASS ${value}`); };
   try {
-    app = await electron.launch({ executablePath, env, timeout: 60000 });
+    app = await electron.launch({ executablePath, args: sourceMain ? [path.resolve(__dirname, "..")] : [], env, timeout: 60000 });
     const profile = await app.evaluate(({ app }) => app.getPath("userData"));
     assert.ok(isInside(root, profile));
-    await app.evaluate(({ ipcMain }) => { ipcMain.removeAllListeners("get-file-data"); ipcMain.on("get-file-data", event => { event.returnValue = ""; }); });
+    if (!sourceMain) {
+      await app.evaluate(({ ipcMain }) => { ipcMain.removeAllListeners("get-file-data"); ipcMain.on("get-file-data", event => { event.returnValue = ""; }); });
+    }
     await app.context().route("**/*", route => {
       const url = new URL(route.request().url());
       return ["127.0.0.1", "localhost"].includes(url.hostname) || ["file:", "data:", "blob:"].includes(url.protocol) ? route.continue() : route.abort();
@@ -63,7 +66,7 @@ async function lockRename(filename) {
     }, await fixture());
     // Run the exact main-process helpers from this checkout using the installed
     // Electron/SQLite runtime, without replacing any installed application file.
-    if (!packaged) await app.evaluate(({ app, ipcMain }, { source, root }) => {
+    if (!packaged && !sourceMain) await app.evaluate(({ app, ipcMain }, { source, root }) => {
       const req = process.getBuiltinModule("module").createRequire(app.getAppPath() + "/package.json");
       const Store = req("electron-store"), { createConfigStore } = req(source + "/src/utils/main/config-store.js");
       const store = createConfigStore(Store, app.getPath("userData"));
@@ -78,7 +81,7 @@ async function lockRename(filename) {
         catch (error) { event.returnValue = { ok: false, error: error.message }; }
       });
     }, { source: path.resolve("."), root });
-    if (packaged) await app.evaluate(({ ipcMain }) => {
+    if (packaged || sourceMain) await app.evaluate(({ ipcMain }) => {
       const original = ipcMain.listeners("preferences")[0];
       ipcMain.removeAllListeners("preferences");
       ipcMain.on("preferences", (event, request) => {
@@ -117,7 +120,7 @@ async function lockRename(filename) {
     await wheel(100); assert.ok(await position() > afterFailedSave);
     assert.ok(errors.includes("SYNTHETIC_POSITION_SAVE_FAILED"));
     assert.ok(errors.every(error => error === "SYNTHETIC_POSITION_SAVE_FAILED"));
-    checked("an actual rejected save releases the shared input lock for the following turn");
+    checked("an actual rejected save leaves the following page turn responsive");
     const saved = await position();
     await page.reload(); await ready(); assert.equal(await position(), saved);
     checked("cold renderer startup hydrates the saved position while the rename lock remains held");

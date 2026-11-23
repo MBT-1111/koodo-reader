@@ -7,11 +7,11 @@ import {
   KookitConfig,
 } from "../../../assets/lib/kookit-extra-browser.min";
 import Parser from "html-react-parser";
-import DOMPurify from "dompurify";
 import { Trans } from "react-i18next";
 import {
   handleContextMenu,
   REPORT_REASONS,
+  sanitizeUnsafeHtml,
   vexSelectAsync,
 } from "../../../utils/common";
 import toast from "react-hot-toast";
@@ -585,7 +585,7 @@ const PopupAssist = (props: PopupAssistProps) => {
           }
         >
           {Parser(
-            DOMPurify.sanitize(
+            sanitizeUnsafeHtml(
               marked.parse(item.content) + "<address></address>"
             ) || " ",
             {
@@ -946,7 +946,7 @@ const PopupAssist = (props: PopupAssistProps) => {
                   ).length > 0 ? (
                   <div className="popup-message-assistant">
                     {Parser(
-                      DOMPurify.sanitize(
+                      sanitizeUnsafeHtml(
                         marked.parse(
                           state.answer ? state.answer : ""
                         ) + "<address></address>"

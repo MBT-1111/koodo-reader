@@ -46,9 +46,8 @@ const ReaderBottomToolbar = (props: ReaderBottomToolbarProps) => {
     const position = htmlBook.rendition.getPosition();
     ConfigService.setObjectConfig(currentBook.key, position, "recordLocation");
     handleCurrentChapter(position.chapterTitle);
-    setTimeout(() => {
-      scrollContents(position.chapterTitle, position.chapterHref);
-    }, 1000);
+
+    scrollContents(position.chapterTitle, position.chapterHref);
   };
 
   const handleCurrentChapterIndex = (rendition: any) => {
@@ -130,10 +129,7 @@ const ReaderBottomToolbar = (props: ReaderBottomToolbarProps) => {
     if (lock) return;
     lock = true;
     try {
-      if (
-        ConfigService.getReaderConfig("revertDirection") === "yes" &&
-        ConfigService.getReaderConfig("textOrientation") !== "vertical"
-      ) {
+      if (ConfigService.getReaderConfig("revertDirection") === "yes") {
         await htmlBook.rendition.next();
       } else {
         await htmlBook.rendition.prev();
@@ -148,10 +144,7 @@ const ReaderBottomToolbar = (props: ReaderBottomToolbarProps) => {
     if (lock) return;
     lock = true;
     try {
-      if (
-        ConfigService.getReaderConfig("revertDirection") === "yes" &&
-        ConfigService.getReaderConfig("textOrientation") !== "vertical"
-      ) {
+      if (ConfigService.getReaderConfig("revertDirection") === "yes") {
         await htmlBook.rendition.prev();
       } else {
         await htmlBook.rendition.next();

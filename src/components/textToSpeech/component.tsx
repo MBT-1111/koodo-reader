@@ -187,9 +187,7 @@ const TextToSpeech = () => {
         ];
       } else {
         customVoicesRef.current = getAllVoices(
-          plugins.filter(
-            (item) => item.key === "official-ai-voice-plugin"
-          )
+          plugins.filter((item) => item.key === "official-ai-voice-plugin")
         );
         voicesRef.current = [
           ...nativeVoicesRef.current,
@@ -326,15 +324,9 @@ const TextToSpeech = () => {
         handleSettingMode("account");
         return;
       }
-      ConfigService.setListConfig(
-        currentBook.key,
-        "multiRoleVoiceBooks"
-      );
+      ConfigService.setListConfig(currentBook.key, "multiRoleVoiceBooks");
     } else {
-      ConfigService.deleteListConfig(
-        currentBook.key,
-        "multiRoleVoiceBooks"
-      );
+      ConfigService.deleteListConfig(currentBook.key, "multiRoleVoiceBooks");
     }
     setState({ multiRoleEnabled: enabled });
   };
@@ -484,7 +476,8 @@ const TextToSpeech = () => {
   };
   const handleStartAudio = async () => {
     if (
-      !personalMode && isAuthed &&
+      !personalMode &&
+      isAuthed &&
       ConfigService.getReaderConfig("voiceEngine") !== "system"
     ) {
       toast.loading(t("Loading audio, please wait..."), {
@@ -944,7 +937,7 @@ const TextToSpeech = () => {
       nodeListRef.current = [];
       await handleAudio();
     }
-  }
+  };
   const handleSystemRead = async (index) => {
     const generation = speechGenerationRef.current;
     if (stateRef.current.isPaused || !stateRef.current.isAudioOn) return;
@@ -1030,7 +1023,7 @@ const TextToSpeech = () => {
     } else if (res === "end") {
       return;
     }
-  }
+  };
   const handleSpeech = async (index: number) => {
     return new Promise<string>(async (resolve) => {
       const generation = speechGenerationRef.current;
@@ -1284,13 +1277,8 @@ const TextToSpeech = () => {
                 return;
               }
               const newEngine = voice.plugin || "system";
-              if (
-                newEngine === "official-ai-voice-plugin" &&
-                !isAuthed
-              ) {
-                toast(
-                  t("Please upgrade to Pro to use this feature")
-                );
+              if (newEngine === "official-ai-voice-plugin" && !isAuthed) {
+                toast(t("Please upgrade to Pro to use this feature"));
                 handleSetting(true);
                 handleSettingMode("account");
                 return;
@@ -1319,19 +1307,20 @@ const TextToSpeech = () => {
               forceUpdate();
             }}
           >
-            {(stateRef.current.voiceList[stateRef.current.voiceLocale] || voicesRef.current).map(
-              (item) => {
-                return (
-                  <option
-                    value={[item.name, item.plugin].join("#")}
-                    key={[item.name, item.plugin].join("#")}
-                    className="lang-setting-option"
-                  >
-                    {t(item.displayName || item.name)}
-                  </option>
-                );
-              }
-            )}
+            {(
+              stateRef.current.voiceList[stateRef.current.voiceLocale] ||
+              voicesRef.current
+            ).map((item) => {
+              return (
+                <option
+                  value={[item.name, item.plugin].join("#")}
+                  key={[item.name, item.plugin].join("#")}
+                  className="lang-setting-option"
+                >
+                  {t(item.displayName || item.name)}
+                </option>
+              );
+            })}
           </select>
         </div>
 
@@ -1390,8 +1379,10 @@ const TextToSpeech = () => {
           variant="setting"
           title={
             <>
-              <Trans>AI multi-role speech</Trans>
-              {!personalMode && <span style={{ fontSize: "13px", color: "#f16464" }}> (Pro)</span>}
+              {t("Multi-role speech")}
+              {!personalMode && (
+                <span style={{ fontSize: "13px", color: "#f16464" }}> (Pro)</span>
+              )}
             </>
           }
           titleStyle={{ width: "calc(100% - 50px)" }}
@@ -1400,6 +1391,7 @@ const TextToSpeech = () => {
             width: "88%",
             marginTop: "20px",
             fontWeight: 500,
+            alignItems: "center",
           }}
           isEnabled={stateRef.current.multiRoleEnabled}
           onClick={() => {
@@ -1408,11 +1400,15 @@ const TextToSpeech = () => {
         />
         <p
           className="setting-option-subtitle"
-          style={{ marginLeft: "20px", marginRight: "20px" }}
+          style={{
+            marginLeft: "20px",
+            marginRight: "20px",
+            marginBottom: "10px",
+          }}
         >
           <Trans>
             {
-              "Use AI to analyze books, with different characters reading aloud in different voices"
+              "Analyze books, with different characters reading aloud in different voices"
             }
           </Trans>
         </p>
@@ -1438,7 +1434,9 @@ const TextToSpeech = () => {
                 id="multi-role-voice-type"
                 value={stateRef.current.multiRoleVoiceType}
                 onChange={(event) => {
-                  if (event.target.value === stateRef.current.multiRoleVoiceType)
+                  if (
+                    event.target.value === stateRef.current.multiRoleVoiceType
+                  )
                     return;
                   setState({ multiRoleVoiceType: event.target.value });
                   ConfigService.setReaderConfig(
@@ -1470,12 +1468,14 @@ const TextToSpeech = () => {
                 <option value="system" className="lang-setting-option">
                   {t("System voice")}
                 </option>
-                {!personalMode && <option
-                  value="official-ai-voice-plugin"
-                  className="lang-setting-option"
-                >
-                  {t("Official AI Voice")}
-                </option>}
+                {!personalMode && (
+                  <option
+                    value="official-ai-voice-plugin"
+                    className="lang-setting-option"
+                  >
+                    {t("Official Voice")}
+                  </option>
+                )}
                 <option value="custom" className="lang-setting-option">
                   {t("Custom voice")}
                 </option>

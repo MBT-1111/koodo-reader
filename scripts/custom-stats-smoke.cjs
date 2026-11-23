@@ -17,7 +17,6 @@ const { isInside } = require('../src/utils/main/custom/runtime');
     app = await electron.launch({ executablePath: require('electron'), args: [path.resolve(__dirname, '..')], env, timeout: 60000 });
     const locations = await app.evaluate(({ app }) => ['userData', 'sessionData', 'temp', 'logs', 'crashDumps'].map(name => app.getPath(name)));
     assert.ok(locations.every(location => isInside(root, location)), 'All writable profile locations must be isolated');
-    await app.evaluate(({ ipcMain }) => { ipcMain.removeAllListeners('get-file-data'); ipcMain.on('get-file-data', event => { event.returnValue = ''; }); });
     const page = await app.firstWindow(), errors = [];
     page.setDefaultTimeout(15000);
     page.on('pageerror', error => { errors.push(error.message); console.error('Renderer error:', error.message); });
@@ -56,19 +55,38 @@ const { isInside } = require('../src/utils/main/custom/runtime');
     assert.deepEqual(await page.locator('.stats-card-value').allTextContents(), ['2', expected.total, '2', expected.average]);
     assert.equal(await page.locator('.stats-leaderboard-card').count(), 2);
     assert.deepEqual(await page.locator('.stats-leaderboard-name').allTextContents(), ['Synthetic Stats B', 'Synthetic Stats A']);
-    await page.locator('.stats-book-select').selectOption('stats-a');
-    for (const range of ['7d', '3m', '6m', '1y', 'custom']) {
-      await page.locator('.stats-range-select:not(.stats-book-select)').selectOption(range);
+    const bookPicker = page.locator('.stats-book-trigger');
+    await bookPicker.click();
+    await page.locator('.stats-book-search').fill('Synthetic Stats A');
+    const bookOptions = page.locator('.stats-book-option').filter({ hasText: 'Synthetic Stats' });
+    assert.equal(await bookOptions.count(), 1);
+    await bookOptions.click();
+
+    const presets = await page.locator('.stats-range-tabs > .stats-range-pill').all();
+    assert.equal(presets.length, 5);
+    for (const preset of presets) {
+      await preset.click();
+      assert.equal(await preset.evaluate(button => button.classList.contains('is-active')), true);
       await page.locator('.recharts-surface').waitFor();
     }
-    for (const input of await page.locator('.stats-range-date').all()) await input.fill(expected.today);
-    assert.deepEqual(await page.locator('.stats-range-date').evaluateAll(inputs => inputs.map(input => input.value)), [expected.today, expected.today]);
-    await page.locator('.stats-range-select:not(.stats-book-select)').selectOption('7d');
+    const customRange = page.locator('.stats-range-picker > button');
+    await customRange.click();
+    const today = page.locator('.stats-calendar-days').getByRole('button', {
+      name: String(Number(expected.today.slice(-2))),
+      exact: true,
+    });
+    await today.click();
+    await today.click();
+    await page.locator('.stats-range-popover').waitFor({ state: 'hidden' });
+    assert.equal(await customRange.evaluate(button => button.classList.contains('is-active')), true);
+    const [start, end] = (await page.locator('.stats-chart-heading > .stats-section-title').textContent()).split(' – ');
+    assert.ok(start && start === end, 'Selecting today twice applies a single-day range');
+    await presets[0].click();
     await page.locator('.stats-chart-tab').nth(1).click();
     await page.locator('.recharts-area').waitFor();
     await page.locator('.stats-chart-tab').nth(0).click();
     await page.locator('.recharts-bar').waitFor();
-    assert.equal(await page.locator('.stats-book-select').inputValue(), 'stats-a');
+    await bookPicker.getByText('Synthetic Stats A', { exact: true }).waitFor();
     assert.equal(await page.locator('.heatmap-cell[title]').count() >= 358, true);
     console.log('PASS recorded statistics, deleted-book history, ranking, book/date filters and both charts');
 
